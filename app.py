@@ -148,7 +148,7 @@ def check_honeypot_and_blocking():
                 </table>
                 
                 <div style="background-color: #fff; border-left: 4px solid #e53e3e; padding: 12px; border-radius: 4px; font-size: 13px; color: #742a2a;">
-                    <strong>Status:</strong> {"This IP address has been automatically blocked from accessing the Portojo system." if auto_block else "IP address has not been blocked. Please check your system status and access logs."}
+                    <strong>Status:</strong> {"This IP address has been automatically blocked from accessing the PortOjo system." if auto_block else "IP address has not been blocked. Please check your system status and access logs."}
                 </div>
             </div>
             """
@@ -277,7 +277,7 @@ def check_and_send_scan_alert(scan_result):
         subject = f"[PORT SCAN SECURITY ALERT] New open ports detected on {scan_result.network_cidr}"
     elif not setting.alert_on_new_ports_only:
         should_send = True
-        subject = f"[Portojo] Scan Complete: {scan_result.network_cidr}"
+        subject = f"[PortOjo] Scan Complete: {scan_result.network_cidr}"
         
     if not should_send:
         return
@@ -385,7 +385,7 @@ def check_and_send_scan_alert(scan_result):
     body_html = f"""
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 650px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #fbfbf9; color: #2d3748;">
         <div style="text-align: center; margin-bottom: 25px;">
-            <h1 style="color: #4a5d4e; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">Portojo Security Alerts</h1>
+            <h1 style="color: #4a5d4e; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">PortOjo Security Alerts</h1>
             <p style="color: #718096; margin: 5px 0 0 0; font-size: 14px;">Network Security & Port Tracking Report</p>
         </div>
         
@@ -418,7 +418,7 @@ def check_and_send_scan_alert(scan_result):
         
         <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
             <p style="font-size: 12px; color: #a0aec0; margin: 0;">
-                This email was sent automatically by the Portojo scanning engine. To change your settings, please visit the settings tab in the application.
+                This email was sent automatically by the PortOjo scanning engine. To change your settings, please visit the settings tab in the application.
             </p>
         </div>
     </div>
@@ -763,7 +763,7 @@ def execute_scan(scan_id, audit_credentials=False):
                             
                             <div style="background-color: #fff; border-left: 4px solid #e53e3e; padding: 12px; border-radius: 4px; font-size: 13px; color: #742a2a; margin-top: 15px;">
                                 <strong>Time:</strong> {local_time_str}<br>
-                                <strong>Status:</strong> Please visit the Portojo Admin Panel to examine details and manage block actions.
+                                <strong>Status:</strong> Please visit the PortOjo Admin Panel to examine details and manage block actions.
                             </div>
                         </div>
                         """
@@ -940,7 +940,7 @@ def init_db():
 @app.cli.command("create-admin")
 def create_admin():
     """
-    Creates the only admin user for Portojo.
+    Creates the only admin user for PortOjo.
     Run with:
         python -m flask --app app create-admin
     """
@@ -950,7 +950,7 @@ def create_admin():
     existing_admin = User.query.filter_by(is_admin=True).first()
 
     if existing_admin:
-        click.echo("An admin user already exists. Portojo allows only one admin account.")
+        click.echo("An admin user already exists. PortOjo allows only one admin account.")
         return
 
     email = click.prompt("Admin email").strip().lower()
@@ -1188,7 +1188,8 @@ def dashboard():
         recent_scans=recent_scans,
         honeypot_active=honeypot_active,
         smtp_configured=smtp_configured,
-        current_date=current_date
+        current_date=current_date,
+        honeypot_paths_count=len(HONEYPOT_PATHS)
     )
 
 
@@ -1730,7 +1731,7 @@ def export_result_txt(scan_id):
 
     lines = []
 
-    lines.append("Portojo Scan Report")
+    lines.append("PortOjo Scan Report")
     lines.append("=" * 60)
     lines.append("")
     lines.append(f"Scan ID: {scan_result.id}")
@@ -1923,7 +1924,7 @@ def get_cves():
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "Portojo Vulnerability Scanner"}
+            headers={"User-Agent": "PortOjo Vulnerability Scanner"}
         )
         with urllib.request.urlopen(req, timeout=7) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -2234,12 +2235,12 @@ def test_email():
         "alert_recipient": setting.alert_recipient
     }
 
-    subject = "[Portojo] Email Notification Test"
+    subject = "[PortOjo] Email Notification Test"
     body_html = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; background-color: #fcfcf9;">
-        <h2 style="color: #4a5d4e; margin-bottom: 10px;">Portojo Email Test</h2>
+        <h2 style="color: #4a5d4e; margin-bottom: 10px;">PortOjo Email Test</h2>
         <p>Hello,</p>
-        <p>This email is a test notification sent from the Portojo port scanner application. It confirms that your SMTP settings are working correctly.</p>
+        <p>This email is a test notification sent from the PortOjo port scanner application. It confirms that your SMTP settings are working correctly.</p>
         <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
         <p style="font-size: 12px; color: #888;">Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>

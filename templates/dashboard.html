@@ -21,7 +21,8 @@
     </div>
     <div class="onboarding-content">
         <h3>Welcome aboard, {{ current_user.email }}!</h3>
-        <p>It looks like you're new here or haven't run any network scans yet. Let's get your PortOjo instance set up and start securing your network. Follow these quick steps:</p>
+        <p>It looks like you're new here or haven't run any network scans yet. Let's get your PortOjo instance set up
+            and start securing your network. Follow these quick steps:</p>
         <div class="onboarding-steps">
             <div class="onboarding-step">
                 <h4>
@@ -29,7 +30,8 @@
                     Start a New Scan
                 </h4>
                 <p>Run a fast port scan or host discovery ping sweep on your private local network.</p>
-                <a href="{{ url_for('scan') }}" class="sidebar-link" style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--olive); color: white; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none;">
+                <a href="{{ url_for('scan') }}" class="button"
+                    style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--olive); color: white; border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none;">
                     New Scan
                 </a>
             </div>
@@ -39,7 +41,8 @@
                     SMTP Notifications
                 </h4>
                 <p>Configure SMTP email settings to receive real-time alerts when new open ports are discovered.</p>
-                <a href="{{ url_for('settings', tab='smtp') }}" class="sidebar-link" style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--surface-soft); color: var(--forest); border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid var(--border);">
+                <a href="{{ url_for('settings', tab='smtp') }}" class="button"
+                    style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--surface-soft); color: var(--forest); border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid var(--border);">
                     SMTP Settings
                 </a>
             </div>
@@ -49,7 +52,8 @@
                     Scan Schedules
                 </h4>
                 <p>Automate regular scans (hourly, daily, weekly) to monitor changes in active devices over time.</p>
-                <a href="{{ url_for('new_schedule') }}" class="sidebar-link" style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--surface-soft); color: var(--forest); border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid var(--border);">
+                <a href="{{ url_for('new_schedule') }}" class="button"
+                    style="margin: 8px 0 0 0; padding: 6px 10px; width: fit-content; background: var(--surface-soft); color: var(--forest); border-radius: 6px; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid var(--border);">
                     Schedules
                 </a>
             </div>
@@ -76,7 +80,8 @@
         <div class="dashboard-card-header">
             <span class="dashboard-card-title">Running Scans</span>
             <div class="dashboard-card-icon" style="background: var(--warning-bg); color: var(--warning-text);">
-                <i data-lucide="loader-2" class="cve-loading" style="animation: cveSpin 1s linear infinite; content: none; border: none; width: 16px; height: 16px;"></i>
+                <i data-lucide="loader-2"
+                    style="animation: cveSpin 1.2s linear infinite; width: 16px; height: 16px;"></i>
             </div>
         </div>
         <p class="dashboard-card-value" style="color: var(--warning-text);">{{ user_stats.running_scans }}</p>
@@ -98,25 +103,32 @@
     <div class="dashboard-card">
         <div class="dashboard-card-header">
             <span class="dashboard-card-title">Honeypot Decoy</span>
-            <div class="dashboard-card-icon" style="background: {% if honeypot_active %}var(--success-bg){% else %}var(--surface-soft){% endif %}; color: {% if honeypot_active %}var(--success-text){% else %}var(--text-muted){% endif %};">
+            <div class="dashboard-card-icon" {% if honeypot_active
+                %}style="background: var(--success-bg); color: var(--success-text);" {% else
+                %}style="background: var(--surface-soft); color: var(--text-muted);" {% endif %}>
                 <i data-lucide="shield"></i>
             </div>
         </div>
-        <p class="dashboard-card-value" style="color: {% if honeypot_active %}var(--success-text){% else %}var(--text-muted){% endif %};">
+        <p class="dashboard-card-value" {% if honeypot_active %}style="color: var(--success-text);" {% else
+            %}style="color: var(--text-muted);" {% endif %}>
             {% if honeypot_active %}Active{% else %}Inactive{% endif %}
         </p>
-        <span class="dashboard-card-footer">decoys monitoring suspicious paths</span>
+        <span class="dashboard-card-footer">{{ honeypot_paths_count }} decoys monitoring suspicious paths</span>
     </div>
 
     {% if current_user.is_admin %}
-    <div class="dashboard-card" style="{% if admin_stats.active_anomalies > 0 %}border-color: var(--error-bg);{% endif %}">
+    <div class="dashboard-card" {% if admin_stats.active_anomalies> 0 %}style="border-color: var(--error-bg);"{% endif
+        %}>
         <div class="dashboard-card-header">
             <span class="dashboard-card-title">Unresolved Anomalies</span>
-            <div class="dashboard-card-icon" style="background: {% if admin_stats.active_anomalies > 0 %}var(--error-bg){% else %}var(--success-bg){% endif %}; color: {% if admin_stats.active_anomalies > 0 %}var(--error-text){% else %}var(--success-text){% endif %};">
+            <div class="dashboard-card-icon" {% if admin_stats.active_anomalies> 0 %}style="background: var(--error-bg);
+                color: var(--error-text);"{% else %}style="background: var(--success-bg); color: var(--success-text);"{%
+                endif %}>
                 <i data-lucide="shield-alert"></i>
             </div>
         </div>
-        <p class="dashboard-card-value" style="color: {% if admin_stats.active_anomalies > 0 %}var(--error-text){% else %}var(--success-text){% endif %};">
+        <p class="dashboard-card-value" {% if admin_stats.active_anomalies> 0 %}style="color: var(--error-text);"{% else
+            %}style="color: var(--success-text);"{% endif %}>
             {{ admin_stats.active_anomalies }}
         </p>
         <span class="dashboard-card-footer">MAC spoofing or rogue devices</span>
@@ -125,11 +137,14 @@
     <div class="dashboard-card">
         <div class="dashboard-card-header">
             <span class="dashboard-card-title">Alert Notifications</span>
-            <div class="dashboard-card-icon" style="background: {% if smtp_configured %}var(--success-bg){% else %}var(--error-bg){% endif %}; color: {% if smtp_configured %}var(--success-text){% else %}var(--error-text){% endif %};">
+            <div class="dashboard-card-icon" {% if smtp_configured
+                %}style="background: var(--success-bg); color: var(--success-text);" {% else
+                %}style="background: var(--error-bg); color: var(--error-text);" {% endif %}>
                 <i data-lucide="mail"></i>
             </div>
         </div>
-        <p class="dashboard-card-value" style="color: {% if smtp_configured %}var(--success-text){% else %}var(--error-text){% endif %};">
+        <p class="dashboard-card-value" {% if smtp_configured %}style="color: var(--success-text);" {% else
+            %}style="color: var(--error-text);" {% endif %}>
             {% if smtp_configured %}On{% else %}Off{% endif %}
         </p>
         <span class="dashboard-card-footer">SMTP email settings configuration</span>
@@ -148,7 +163,7 @@
         <p class="dashboard-card-value" style="font-size: 22px;">{{ admin_stats.total_assets }}</p>
         <span class="dashboard-card-footer" style="font-size: 11px;">Devices registered in map</span>
     </div>
-    
+
     <div class="dashboard-card" style="padding: 15px;">
         <div class="dashboard-card-header" style="margin-bottom: 4px;">
             <span class="dashboard-card-title" style="font-size: 10px;">Untrusted Devices</span>
@@ -187,56 +202,59 @@
                 <i data-lucide="history" style="width: 18px; height: 18px;"></i>
                 Recent Scans
             </h3>
-            <a href="{{ url_for('history') }}" style="font-size: 13px; font-weight: 700; text-decoration: none;">View All</a>
+            <a href="{{ url_for('history') }}" style="font-size: 13px; font-weight: 700; text-decoration: none;">View
+                All</a>
         </div>
 
         {% if recent_scans %}
-            <div style="overflow-x: auto;">
-                <table style="margin-top: 0; width: 100%;">
-                    <thead>
-                        <tr>
-                            <th>Scan ID</th>
-                            <th>Target Network</th>
-                            <th>Scan Type</th>
-                            <th>Executed At</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for scan in recent_scans %}
-                        <tr>
-                            <td style="font-weight: bold;">#{{ scan.id }}</td>
-                            <td><code>{{ scan.network_cidr }}</code></td>
-                            <td>{{ scan.scan_type | scan_name }}</td>
-                            <td>{{ scan.created_at | localtime }}</td>
-                            <td>
-                                {% if scan.status == 'completed' %}
-                                    <span class="badge success-badge">Completed</span>
-                                {% elif scan.status in ['pending', 'running'] %}
-                                    <span class="badge running-badge">{{ scan.status | capitalize }}</span>
-                                {% else %}
-                                    <span class="badge error-badge">Failed</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <a href="{{ url_for('result', scan_id=scan.id) }}" class="button" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; text-decoration: none; font-weight: 700;">
-                                    View
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        <div style="overflow-x: auto;">
+            <table style="margin-top: 0; width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Scan ID</th>
+                        <th>Target Network</th>
+                        <th>Scan Type</th>
+                        <th>Executed At</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scan in recent_scans %}
+                    <tr>
+                        <td style="font-weight: bold;">#{{ scan.id }}</td>
+                        <td><code>{{ scan.network_cidr }}</code></td>
+                        <td>{{ scan.scan_type | scan_name }}</td>
+                        <td>{{ scan.created_at | localtime }}</td>
+                        <td>
+                            {% if scan.status == 'completed' %}
+                            <span class="badge success-badge">Completed</span>
+                            {% elif scan.status in ['pending', 'running'] %}
+                            <span class="badge running-badge">{{ scan.status | capitalize }}</span>
+                            {% else %}
+                            <span class="badge error-badge">Failed</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('result', scan_id=scan.id) }}" class="button"
+                                style="padding: 6px 12px; font-size: 12px; border-radius: 6px; text-decoration: none; font-weight: 700;">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
         {% else %}
-            <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
-                <i data-lucide="search-code" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"></i>
-                <p style="margin: 0; font-size: 14px;">No scan history found. Start your first port scan to display results here!</p>
-                <a href="{{ url_for('scan') }}" class="button" style="margin-top: 15px; display: inline-block;">
-                    Launch First Scan
-                </a>
-            </div>
+        <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+            <i data-lucide="search-code" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"></i>
+            <p style="margin: 0; font-size: 14px;">No scan history found. Start your first port scan to display results
+                here!</p>
+            <a href="{{ url_for('scan') }}" class="button" style="margin-top: 15px; display: inline-block;">
+                Launch First Scan
+            </a>
+        </div>
         {% endif %}
     </div>
 
@@ -294,14 +312,14 @@
         const hours = String(now.getHours()).padStart(2, '0');
         const minutes = String(now.getMinutes()).padStart(2, '0');
         const seconds = String(now.getSeconds()).padStart(2, '0');
-        
+
         const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         const clockSpan = document.getElementById('current-date-span');
         if (clockSpan) {
             clockSpan.textContent = formattedDate;
         }
     }
-    
+
     // Update immediately and then every second
     setInterval(updateClock, 1000);
     document.addEventListener("DOMContentLoaded", updateClock);
