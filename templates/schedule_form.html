@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h2>Create Scan Schedule</h2>
+
+<p>
+    Configure a network scan to execute automatically on a recurring schedule.
+</p>
+
+<form method="POST">
+    <label>Schedule Name</label>
+    <input 
+        type="text" 
+        name="name" 
+        placeholder="e.g. Weekly Subnet Audit" 
+        required
+    >
+
+    <label>Frequency</label>
+    <select name="frequency" required>
+        <option value="hourly">Hourly (Every Hour)</option>
+        <option value="daily" selected>Daily (Every Day)</option>
+        <option value="weekly">Weekly (Every Week)</option>
+        <option value="monthly">Monthly (Every Month)</option>
+    </select>
+
+    <label>IP Address</label>
+    <input 
+        type="text" 
+        name="ip_address" 
+        placeholder="x.x.x.x" 
+        required
+    >
+
+    <label>Subnet Mask</label>
+    <input 
+        type="text" 
+        name="subnet_mask" 
+        placeholder="x.x.x.x" 
+        required
+    >
+
+    <label>Scan Type</label>
+    <select name="scan_type" id="scan_type" required onchange="updateScanDescription()">
+        <option value="">Select scan type</option>
+        <option value="fast">Fast Port Scan (TCP)</option>
+        <option value="service_version">Service & Version Scan (TCP)</option>
+        <option value="ping_sweep">Host Discovery (Ping Sweep)</option>
+        <option value="syn">TCP SYN Scan (Half-Open)</option>
+        <option value="connect">TCP Connect Scan (Full Handshake)</option>
+        <option value="udp">UDP Port Scan</option>
+        <option value="aggressive">Aggressive Scan</option>
+        <option value="vuln">Vulnerability Scan (NSE)</option>
+    </select>
+
+    <!-- Scan Description Card -->
+    <div id="scan-desc-card" class="scan-desc-card" style="display: none;">
+        <h4 id="desc-title"></h4>
+        <p id="desc-text" class="desc-text"></p>
+        
+        <div class="desc-meta-grid">
+            <div>
+                <strong>Nmap Command:</strong>
+                <code id="desc-command"></code>
+            </div>
+            <div>
+                <strong>IP Limit:</strong>
+                <span id="desc-limit"></span> IPs
+            </div>
+            <div>
+                <strong>Required Privileges:</strong>
+                <span id="desc-privs"></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="ports-field-wrapper" style="display: none;">
+        <label for="ports">Custom Ports (Optional)</label>
+        <input 
+            type="text" 
+            id="ports" 
+            name="ports" 
+            placeholder="e.g. 22,80,443 or 1-1000 (leave empty for default ports)"
+        >
+    </div>
+
+    <button type="submit">Create Schedule</button>
+</form>
+
+<script>
+    const scanInfo = {
+        "fast": {
+            title: "Fast Port Scan (TCP)",
+            text: "Scans the top 100 most common ports quickly. Highly efficient for a quick check of active services.",
+            command: "nmap -F <target>",
+            limit: 1024,
+            privs: "Standard User"
+        },
+        "service_version": {
+            title: "Service & Version Scan (TCP)",
+            text: "Scans the standard ports and probes them for service version info (e.g. Apache version, SSH daemon details). Takes slightly longer.",
+            command: "nmap -sV -T4 <target>",
+            limit: 256,
+            privs: "Standard User"
+        },
+        "ping_sweep": {
+            title: "Host Discovery (Ping Sweep)",
+            text: "Determines which hosts on the network are online. Does not perform port scanning, making it extremely fast.",
+            command: "nmap -sn <target>",
+            limit: 2048,
+            privs: "Standard User"
+        },
+        "syn": {
+            title: "TCP SYN Scan (Half-Open)",
+            text: "Performs a stealthy half-open scan by sending SYN packets and waiting for SYN-ACK response without completing the full 3-way handshake. (Falls back to TCP Connect automatically if administrator privileges are missing).",
+            command: "nmap -sS <target>",
+            limit: 512,
+            privs: "Administrator (Raw Sockets)"
+        },
+        "connect": {
+            title: "TCP Connect Scan (Full Handshake)",
+            text: "The default scan type when SYN scan is not available. It completes the TCP three-way handshake with the target ports.",
+            command: "nmap -sT <target>",
+            limit: 512,
+            privs: "Standard User"
+        },
+        "udp": {
+            title: "UDP Port Scan",
+            text: "Scans the top 100 UDP ports. UDP scans are typically much slower than TCP scans due to the nature of UDP protocol responses.",
+            command: "nmap -sU --top-ports 100 <target>",
+            limit: 64,
+            privs: "Administrator (Raw Sockets)"
+        },
+        "aggressive": {
+            title: "Aggressive Scan",
+            text: "Enables OS detection (-O), service version detection (-sV), default scripts (-sC), and traceroute. Very noisy and comprehensive.",
+            command: "nmap -A -T4 <target>",
+            limit: 64,
+            privs: "Administrator (Raw Sockets)"
+        },
+        "vuln": {
+            title: "Vulnerability Scan (NSE)",
+            text: "Runs Nmap's vulnerability detection scripts against identified open ports to check for known security flaws (CVEs).",
+            command: "nmap -sV -T4 --script vuln <target>",
+            limit: 64,
+            privs: "Standard User"
+        }
+    };
+
+    function updateScanDescription() {
+        const select = document.getElementById("scan_type");
+        const card = document.getElementById("scan-desc-card");
+        const val = select.value;
+        const portsWrapper = document.getElementById("ports-field-wrapper");
+
+        if (!val || !scanInfo[val]) {
+            card.style.display = "none";
+            if (portsWrapper) portsWrapper.style.display = "none";
+            return;
+        }
+
+        const info = scanInfo[val];
+        document.getElementById("desc-title").textContent = info.title;
+        document.getElementById("desc-text").textContent = info.text;
+        document.getElementById("desc-command").textContent = info.command;
+        document.getElementById("desc-limit").textContent = info.limit;
+        
+        const privsEl = document.getElementById("desc-privs");
+        privsEl.textContent = info.privs;
+        if (info.privs.includes("Administrator")) {
+            privsEl.className = "privs-admin";
+        } else {
+            privsEl.className = "privs-standard";
+        }
+
+        if (portsWrapper) {
+            if (val === "ping_sweep") {
+                portsWrapper.style.display = "none";
+            } else {
+                portsWrapper.style.display = "block";
+            }
+        }
+
+        card.style.display = "block";
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        updateScanDescription();
+    });
+</script>
+
+{% endblock %}

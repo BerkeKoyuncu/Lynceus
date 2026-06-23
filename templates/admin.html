@@ -1,0 +1,531 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if has_active_scans %}
+    <meta http-equiv="refresh" content="3">
+{% endif %}
+
+{% if tab == 'users' %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+        <div>
+            <h2>User Accounts (Total: {{ users|length }})</h2>
+            <p>Manage user credentials, database access permissions, and roles.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button type="submit" form="bulk-delete-users-form" id="bulk-delete-users-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected users?')">
+                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Delete Selected
+            </button>
+        </div>
+    </div>
+    
+    <div class="admin-container" style="margin-top: 25px;">
+        {% if users %}
+        <form id="bulk-delete-users-form" method="POST" action="{{ url_for('admin_bulk_delete_users') }}" style="max-width: none; width: 100%;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-users" aria-label="Select all users"></th>
+                    <th>Joined Date</th>
+                    <th>Email Address</th>
+                    <th>Role</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;">
+                        {% if user.id != current_user.id %}
+                            <input type="checkbox" class="user-checkbox" name="user_ids" value="{{ user.id }}" aria-label="Select user">
+                        {% endif %}
+                    </td>
+                    <td>{{ user.created_at|localtime }}</td>
+                    <td><strong>{{ user.email }}</strong></td>
+                    <td>
+                        {% if user.is_admin %}
+                            <span class="badge success-badge" style="background: var(--warning-bg); color: var(--warning-text);">Administrator</span>
+                        {% else %}
+                            <span class="badge pending-badge">Standard User</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                        <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
+                            {% if user.id != current_user.id %}
+                                <form method="POST" action="{{ url_for('admin_toggle_user_role', user_id=user.id) }}" style="margin: 0; display: inline-block;">
+                                    <button type="submit" class="button btn-warning" style="margin: 0 !important; padding: 6px 12px; font-size: 13px; width: 140px; min-width: 140px; text-align: center; justify-content: center;">
+                                        {% if user.is_admin %}Demote{% else %}Promote to Admin{% endif %}
+                                    </button>
+                                </form>
+                                
+                                <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}" onsubmit="return confirm('Are you sure you want to delete this user? All user scans and schedules will be permanently deleted.')" style="margin: 0; display: inline-block;">
+                                    <button type="submit" class="button btn-danger" style="margin: 0 !important; padding: 6px 12px; font-size: 13px; width: 140px; min-width: 140px; text-align: center; justify-content: center;">Delete User</button>
+                                </form>
+                            {% else %}
+                                <span style="font-size: 12px; color: var(--text-muted); font-style: italic; padding: 6px;">Current Account</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </form>
+        {% else %}
+            <p style="margin-top: 20px;">No user accounts found.</p>
+        {% endif %}
+    </div>
+
+{% elif tab == 'honeypot' %}
+    <h2>Honeypot Activity Logs</h2>
+    <p>Audit intrusions on honeypot decoy paths and manage blocked client IP addresses.</p>
+
+    <div class="admin-container" style="margin-top: 25px;">
+        <div class="dashboard-container">
+            <div class="dashboard-summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div class="stat-card" style="padding: 15px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface);">
+                    <span class="stat-card-title" style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Total Attacks</span>
+                    <span class="stat-card-value" style="font-size: 24px; font-weight: bold; display: block; margin-top: 5px; color: var(--danger);">{{ honeypot_logs|length }}</span>
+                </div>
+                <div class="stat-card" style="padding: 15px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface);">
+                    <span class="stat-card-title" style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Blocked IPs</span>
+                    <span class="stat-card-value" style="font-size: 24px; font-weight: bold; display: block; margin-top: 5px; color: var(--danger);">{{ blocked_ips|length }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blocked IPs Section -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 35px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+            <h3 style="margin: 0;"><i data-lucide="ban" class="icon-inline"></i> Blocked IP Addresses (Total: {{ blocked_ips|length }})</h3>
+            <button type="submit" form="bulk-unblock-ips-form" id="bulk-unblock-ips-btn" class="button" style="display: none; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white; border: 0;" onclick="return confirm('Are you sure you want to unblock the selected IPs?')">Unblock Selected</button>
+        </div>
+        {% if blocked_ips %}
+        <form id="bulk-unblock-ips-form" method="POST" action="{{ url_for('admin_bulk_unblock_ips') }}" style="max-width: none; width: 100%;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-blocked-ips" aria-label="Select all blocked IPs"></th>
+                    <th>Blocked Date</th>
+                    <th>IP Address</th>
+                    <th>Reason</th>
+                    <th style="text-align: right;">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for block in blocked_ips %}
+                <tr>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="blocked-ip-checkbox" name="block_ids" value="{{ block.id }}" aria-label="Select IP"></td>
+                    <td>{{ block.created_at|localtime }}</td>
+                    <td><strong style="color: var(--danger);">{{ block.ip_address }}</strong></td>
+                    <td>{{ block.reason or 'N/A' }}</td>
+                    <td style="text-align: right;">
+                        <form method="POST" action="{{ url_for('admin_unblock_ip', block_id=block.id) }}" style="margin: 0; display: inline-block;">
+                            <button type="submit" class="button" style="margin: 0 !important; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white; border: 0;">Unblock</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </form>
+        {% else %}
+            <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No IPs are currently blocked by the honeypot.</p>
+        {% endif %}
+
+        <!-- Honeypot Intrusion Logs Section -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 45px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+            <h3 style="margin: 0;"><i data-lucide="file-text" class="icon-inline"></i> Honeypot Intrusion Logs (Total: {{ honeypot_logs|length }})</h3>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="submit" form="bulk-delete-logs-form" id="bulk-delete-logs-btn" class="button btn-danger" style="display: none; padding: 5px 12px; font-size: 12.5px;" onclick="return confirm('Are you sure you want to delete the selected intrusion logs?')">Delete Selected Logs</button>
+                {% if honeypot_logs %}
+                <form method="POST" action="{{ url_for('admin_clear_honeypot_logs') }}" onsubmit="return confirm('Are you sure you want to clear all honeypot logs?')" style="margin: 0;">
+                    <button type="submit" class="button btn-danger" style="padding: 5px 12px; font-size: 12.5px;">Clear All Logs</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if honeypot_logs %}
+        <form id="bulk-delete-logs-form" method="POST" action="{{ url_for('admin_bulk_delete_logs') }}" style="max-width: none; width: 100%;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-logs" aria-label="Select all logs"></th>
+                    <th style="width: 15%;">Date</th>
+                    <th style="width: 15%;">IP Address</th>
+                    <th style="width: 25%;">Decoy Path</th>
+                    <th style="width: 45%;">User Agent & Payload</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in honeypot_logs %}
+                <tr>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="log-checkbox" name="log_ids" value="{{ log.id }}" aria-label="Select log"></td>
+                    <td>{{ log.created_at|localtime }}</td>
+                    <td><strong>{{ log.ip_address }}</strong></td>
+                    <td><code style="color: var(--danger); font-size: 12.5px;">{{ log.path }}</code></td>
+                    <td>
+                        <div style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 5px;">{{ log.user_agent }}</div>
+                        {% if log.headers %}
+                        <details style="margin-top: 5px;">
+                            <summary style="cursor: pointer; color: var(--olive); font-size: 11px; font-weight: bold; outline: none; user-select: none;">Show Request Headers</summary>
+                            <pre style="background: var(--surface-soft); color: var(--text); border: 1px solid var(--border); padding: 8px; border-radius: 4px; font-size: 10.5px; margin-top: 5px; overflow-x: auto; white-space: pre-wrap; font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;">{{ log.headers }}</pre>
+                        </details>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </form>
+        {% else %}
+            <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No honeypot logs found.</p>
+        {% endif %}
+    </div>
+
+{% elif tab == 'anomalies' %}
+    <h2>Security Anomalies</h2>
+    <p>Analyze and track rogue devices, lease hijacks, or MAC spoofing alerts.</p>
+
+    <div class="admin-container" style="margin-top: 25px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+            <h3 style="margin: 0;"><i data-lucide="alert-triangle" class="icon-inline"></i> Security Anomalies (Total: {{ security_anomalies|length }})</h3>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button type="submit" form="bulk-anomalies-form" formaction="{{ url_for('admin_bulk_resolve_anomalies') }}" id="bulk-resolve-anomalies-btn" class="button" style="display: none; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white;" onclick="return confirm('Are you sure you want to resolve the selected anomalies?')">Resolve Selected</button>
+                <button type="submit" form="bulk-anomalies-form" formaction="{{ url_for('admin_bulk_delete_anomalies') }}" id="bulk-delete-anomalies-btn" class="button btn-danger" style="display: none; padding: 5px 12px; font-size: 12.5px;" onclick="return confirm('Are you sure you want to delete the selected anomalies?')">Delete Selected</button>
+            </div>
+        </div>
+        {% if security_anomalies %}
+        <form id="bulk-anomalies-form" method="POST" style="max-width: none; width: 100%;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-anomalies" aria-label="Select all anomalies"></th>
+                    <th>Date</th>
+                    <th>IP Address</th>
+                    <th>MAC Address</th>
+                    <th>Anomaly Type</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for anomaly in security_anomalies %}
+                <tr>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="anomaly-checkbox" name="anomaly_ids" value="{{ anomaly.id }}" aria-label="Select anomaly"></td>
+                    <td>{{ anomaly.created_at|localtime }}</td>
+                    <td><strong>{{ anomaly.ip_address }}</strong></td>
+                    <td>{{ anomaly.mac_address or 'N/A' }}</td>
+                    <td>
+                        {% if anomaly.anomaly_type == 'mac_spoofing' %}
+                            <span class="badge error-badge">MAC Spoofing</span>
+                        {% elif anomaly.anomaly_type == 'ip_hijack' %}
+                            <span class="badge running-badge">IP Hijack</span>
+                        {% else %}
+                            <span class="badge pending-badge">Rogue Device</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ anomaly.description }}</td>
+                    <td>
+                        {% if anomaly.is_resolved %}
+                            <span class="badge success-badge">Resolved</span>
+                        {% else %}
+                            <span class="badge error-badge">Unresolved</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                        <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
+                            <form method="POST" action="{{ url_for('admin_resolve_anomaly', anomaly_id=anomaly.id) }}" style="margin: 0; display: inline-block;">
+                                <button type="submit" class="button" style="margin: 0 !important; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white;">
+                                    {% if anomaly.is_resolved %}Unresolve{% else %}Resolve{% endif %}
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('admin_delete_anomaly', anomaly_id=anomaly.id) }}" onsubmit="return confirm('Are you sure you want to delete this anomaly record?')" style="margin: 0; display: inline-block;">
+                                <button type="submit" class="button btn-danger" style="margin: 0 !important; padding: 5px 12px; font-size: 12.5px;">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </form>
+        {% else %}
+            <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No security anomalies detected on the network.</p>
+        {% endif %}
+    </div>
+
+{% else %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+        <div>
+            <h2>Scan Audits (Total: {{ scan_results|length }})</h2>
+            <p>Review and audit scan execution details and status logs across the user accounts.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button type="submit" form="bulk-scans-form" id="bulk-delete-scans-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected scans?')">
+                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Delete Selected
+            </button>
+        </div>
+    </div>
+
+    <div class="admin-container" style="margin-top: 25px;">
+        {% if scan_results %}
+        <form id="bulk-scans-form" method="POST" action="{{ url_for('admin_bulk_delete_scans') }}" style="max-width: none; width: 100%;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-scans" aria-label="Select all scans"></th>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Input IP</th>
+                    <th>Network Scope</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scan in scan_results %}
+                <tr>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="scan-checkbox" name="scan_ids" value="{{ scan.id }}" aria-label="Select scan"></td>
+                    <td>{{ scan.created_at|localtime }}</td>
+                    <td><strong>{{ scan.user.email }}</strong></td>
+                    <td>{{ scan.input_ip }}</td>
+                    <td>{{ scan.network_cidr }}</td>
+                    <td>{{ scan.scan_type|scan_name }}</td>
+                    <td>
+                        {% if scan.status == "completed" %}
+                            <span class="badge success-badge">Completed</span>
+                        {% elif scan.status == "running" %}
+                            <span class="badge running-badge">Running</span>
+                        {% elif scan.status == "pending" %}
+                            <span class="badge pending-badge">Pending</span>
+                        {% elif scan.status == "failed" %}
+                            <span class="badge error-badge">Failed</span>
+                        {% else %}
+                            {{ scan.status }}
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right;">
+                        <form id="delete-scan-form-{{ scan.id }}" method="POST" action="{{ url_for('admin_delete_scan', scan_id=scan.id) }}" onsubmit="return confirm('Are you sure you want to delete this scan result?')" style="display: none;"></form>
+                        
+                        <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
+                            <a href="{{ url_for('result', scan_id=scan.id) }}" class="button" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">View</a>
+                            <button type="submit" form="delete-scan-form-{{ scan.id }}" class="button btn-danger" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </form>
+        {% else %}
+            <p style="margin-top: 20px;">No scan results found.</p>
+        {% endif %}
+    </div>
+{% endif %}
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        // 1. Users Tab Bulk Selection
+        const selectAllUsers = document.getElementById("select-all-users");
+        const userCheckboxes = document.querySelectorAll(".user-checkbox");
+        const bulkDeleteUsersBtn = document.getElementById("bulk-delete-users-btn");
+
+        function updateUsersBtn() {
+            if (!bulkDeleteUsersBtn) return;
+            const checkedCount = document.querySelectorAll(".user-checkbox:checked").length;
+            if (checkedCount > 0) {
+                bulkDeleteUsersBtn.style.display = "inline-flex";
+                bulkDeleteUsersBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } else {
+                bulkDeleteUsersBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllUsers) {
+            selectAllUsers.addEventListener("change", () => {
+                userCheckboxes.forEach(cb => {
+                    cb.checked = selectAllUsers.checked;
+                });
+                updateUsersBtn();
+            });
+        }
+
+        userCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllUsers.checked = false;
+                } else {
+                    const allChecked = Array.from(userCheckboxes).every(c => c.checked);
+                    selectAllUsers.checked = allChecked;
+                }
+                updateUsersBtn();
+            });
+        });
+
+        // 2. Honeypot Blocked IPs Bulk Selection
+        const selectAllBlockedIps = document.getElementById("select-all-blocked-ips");
+        const blockedIpCheckboxes = document.querySelectorAll(".blocked-ip-checkbox");
+        const bulkUnblockIpsBtn = document.getElementById("bulk-unblock-ips-btn");
+
+        function updateBlockedIpsBtn() {
+            if (!bulkUnblockIpsBtn) return;
+            const checkedCount = document.querySelectorAll(".blocked-ip-checkbox:checked").length;
+            if (checkedCount > 0) {
+                bulkUnblockIpsBtn.style.display = "inline-block";
+                bulkUnblockIpsBtn.innerText = `Unblock Selected (${checkedCount})`;
+            } else {
+                bulkUnblockIpsBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllBlockedIps) {
+            selectAllBlockedIps.addEventListener("change", () => {
+                blockedIpCheckboxes.forEach(cb => {
+                    cb.checked = selectAllBlockedIps.checked;
+                });
+                updateBlockedIpsBtn();
+            });
+        }
+
+        blockedIpCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllBlockedIps.checked = false;
+                } else {
+                    const allChecked = Array.from(blockedIpCheckboxes).every(c => c.checked);
+                    selectAllBlockedIps.checked = allChecked;
+                }
+                updateBlockedIpsBtn();
+            });
+        });
+
+        // 3. Honeypot Intrusion Logs Bulk Selection
+        const selectAllLogs = document.getElementById("select-all-logs");
+        const logCheckboxes = document.querySelectorAll(".log-checkbox");
+        const bulkDeleteLogsBtn = document.getElementById("bulk-delete-logs-btn");
+
+        function updateLogsBtn() {
+            if (!bulkDeleteLogsBtn) return;
+            const checkedCount = document.querySelectorAll(".log-checkbox:checked").length;
+            if (checkedCount > 0) {
+                bulkDeleteLogsBtn.style.display = "inline-block";
+                bulkDeleteLogsBtn.innerText = `Delete Selected Logs (${checkedCount})`;
+            } else {
+                bulkDeleteLogsBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllLogs) {
+            selectAllLogs.addEventListener("change", () => {
+                logCheckboxes.forEach(cb => {
+                    cb.checked = selectAllLogs.checked;
+                });
+                updateLogsBtn();
+            });
+        }
+
+        logCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllLogs.checked = false;
+                } else {
+                    const allChecked = Array.from(logCheckboxes).every(c => c.checked);
+                    selectAllLogs.checked = allChecked;
+                }
+                updateLogsBtn();
+            });
+        });
+
+        // 4. Security Anomalies Bulk Selection
+        const selectAllAnomalies = document.getElementById("select-all-anomalies");
+        const anomalyCheckboxes = document.querySelectorAll(".anomaly-checkbox");
+        const bulkResolveAnomaliesBtn = document.getElementById("bulk-resolve-anomalies-btn");
+        const bulkDeleteAnomaliesBtn = document.getElementById("bulk-delete-anomalies-btn");
+
+        function updateAnomaliesBtn() {
+            const checkedCount = document.querySelectorAll(".anomaly-checkbox:checked").length;
+            if (checkedCount > 0) {
+                if (bulkResolveAnomaliesBtn) {
+                    bulkResolveAnomaliesBtn.style.display = "inline-block";
+                    bulkResolveAnomaliesBtn.innerText = `Resolve Selected (${checkedCount})`;
+                }
+                if (bulkDeleteAnomaliesBtn) {
+                    bulkDeleteAnomaliesBtn.style.display = "inline-block";
+                    bulkDeleteAnomaliesBtn.innerText = `Delete Selected (${checkedCount})`;
+                }
+            } else {
+                if (bulkResolveAnomaliesBtn) bulkResolveAnomaliesBtn.style.display = "none";
+                if (bulkDeleteAnomaliesBtn) bulkDeleteAnomaliesBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllAnomalies) {
+            selectAllAnomalies.addEventListener("change", () => {
+                anomalyCheckboxes.forEach(cb => {
+                    cb.checked = selectAllAnomalies.checked;
+                });
+                updateAnomaliesBtn();
+            });
+        }
+
+        anomalyCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllAnomalies.checked = false;
+                } else {
+                    const allChecked = Array.from(anomalyCheckboxes).every(c => c.checked);
+                    selectAllAnomalies.checked = allChecked;
+                }
+                updateAnomaliesBtn();
+            });
+        });
+
+        // 5. Scan Audits Bulk Selection
+        const selectAllScans = document.getElementById("select-all-scans");
+        const scanCheckboxes = document.querySelectorAll(".scan-checkbox");
+        const bulkDeleteScansBtn = document.getElementById("bulk-delete-scans-btn");
+
+        function updateScansBtn() {
+            if (!bulkDeleteScansBtn) return;
+            const checkedCount = document.querySelectorAll(".scan-checkbox:checked").length;
+            if (checkedCount > 0) {
+                bulkDeleteScansBtn.style.display = "inline-flex";
+                bulkDeleteScansBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } else {
+                bulkDeleteScansBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllScans) {
+            selectAllScans.addEventListener("change", () => {
+                scanCheckboxes.forEach(cb => {
+                    cb.checked = selectAllScans.checked;
+                });
+                updateScansBtn();
+            });
+        }
+
+        scanCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllScans.checked = false;
+                } else {
+                    const allChecked = Array.from(scanCheckboxes).every(c => c.checked);
+                    selectAllScans.checked = allChecked;
+                }
+                updateScansBtn();
+            });
+        });
+    });
+</script>
+
+{% endblock %}

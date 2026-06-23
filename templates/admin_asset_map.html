@@ -1,0 +1,1071 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Include vis-network library -->
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+<style>
+    /* Local Styling for Asset Map Dashboard */
+    .asset-map-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        height: calc(100vh - 120px);
+        min-height: 500px;
+    }
+
+    .map-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .map-header h2 {
+        margin: 0;
+        font-family: 'Outfit', 'Inter', sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }
+
+    /* Filter Panel styling matching Portojo style */
+    .filter-panel {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+    }
+
+    .filter-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .filter-field label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+    }
+
+    .filter-field input, .filter-field select {
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .filter-field input:focus, .filter-field select:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(110, 125, 88, 0.15); /* olive tint */
+    }
+
+    .filter-footer {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid var(--border);
+    }
+
+    /* Workspace layout split */
+    .map-workspace {
+        display: flex;
+        gap: 20px;
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        min-height: 400px;
+    }
+
+    .map-canvas-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        position: relative;
+    }
+
+    .map-controls {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 10px 15px;
+        background: var(--surface-soft);
+        border-bottom: 1px solid var(--border);
+        z-index: 10;
+        flex-wrap: wrap;
+    }
+
+    .map-controls label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--text);
+    }
+
+    .map-controls input[type="checkbox"] {
+        accent-color: var(--primary);
+    }
+
+    .map-controls-right {
+        margin-left: auto;
+        display: flex;
+        gap: 10px;
+    }
+
+    .map-viewport {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        background: var(--surface);
+    }
+
+    /* Fullscreen logic */
+    .map-canvas-container.fullscreen {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 9999;
+        border-radius: 0;
+        border: none;
+    }
+
+    /* Inspector Panel */
+    .map-inspector {
+        width: 320px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        transition: transform 0.3s ease, width 0.3s ease;
+    }
+
+    .inspector-header {
+        padding: 15px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        background: var(--surface-soft);
+        z-index: 5;
+    }
+
+    .inspector-header h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    .inspector-close-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        font-size: 20px;
+        cursor: pointer;
+        outline: none;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+    }
+
+    .inspector-close-btn:hover {
+        background-color: var(--border);
+        color: var(--text);
+    }
+
+    .inspector-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        flex: 1;
+    }
+
+    .inspector-welcome {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-muted);
+        flex: 1;
+        gap: 15px;
+    }
+
+    .inspector-welcome i {
+        color: var(--primary);
+        opacity: 0.5;
+    }
+
+    .inspector-welcome p {
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0;
+    }
+
+    .inspector-section-title {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        margin: 10px 0 5px 0;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 4px;
+    }
+
+    .inspector-meta-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 8px;
+    }
+
+    .inspector-meta-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+
+    .inspector-meta-value {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        word-break: break-all;
+    }
+
+    .inspector-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 5px;
+    }
+
+    /* Actions buttons */
+    .inspector-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+    }
+
+    .inspector-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 9px 15px;
+        border-radius: var(--radius-sm);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s, color 0.2s;
+        text-decoration: none;
+        border: none;
+        outline: none;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .inspector-btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .inspector-btn-primary:hover {
+        background: var(--olive-dark, #576346);
+    }
+
+    .inspector-btn-secondary {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+    }
+
+    .inspector-btn-secondary:hover {
+        background: var(--surface-soft);
+    }
+
+    .anomaly-alert-box {
+        background-color: var(--error-bg);
+        border: 1px solid var(--error-text);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--error-text);
+        margin-bottom: 5px;
+    }
+
+    .anomaly-alert-box strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 13px;
+    }
+
+    .criticality-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    .criticality-critical { background: #fde8e8; color: #9b2c2c; }
+    .criticality-high { background: #feebc8; color: #c05621; }
+    .criticality-medium { background: #ebf8ff; color: #2b6cb0; }
+    .criticality-low { background: #edf2f7; color: #4a5568; }
+
+    /* Custom scrollbars */
+    .map-inspector::-webkit-scrollbar {
+        width: 6px;
+    }
+    .map-inspector::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .map-inspector::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+    }
+    .map-inspector::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+    }
+</style>
+
+<div class="asset-map-container">
+    <div class="map-header">
+        <h2>Global Asset Map</h2>
+    </div>
+
+    <!-- Search/Filter Controls -->
+    <div class="filter-panel">
+        <div class="filter-grid">
+            <div class="filter-field">
+                <label for="search-term">Search Devices</label>
+                <input type="text" id="search-term" placeholder="e.g. IP, Name, MAC, Owner" oninput="applyFilters()">
+            </div>
+            <div class="filter-field">
+                <label for="filter-subnet">Subnet</label>
+                <select id="filter-subnet" onchange="applyFilters()">
+                    <option value="">All Subnets</option>
+                    <!-- Populated dynamically via JS -->
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="filter-type">Device Type</label>
+                <select id="filter-type" onchange="applyFilters()">
+                    <option value="">All Types</option>
+                    <option value="Server">Server</option>
+                    <option value="Workstation">Workstation</option>
+                    <option value="Router">Router</option>
+                    <option value="Switch">Switch</option>
+                    <option value="Firewall">Firewall</option>
+                    <option value="Printer">Printer</option>
+                    <option value="IoT">IoT</option>
+                    <option value="Mobile">Mobile</option>
+                    <option value="Unknown">Unknown</option>
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="filter-criticality">Criticality</label>
+                <select id="filter-criticality" onchange="applyFilters()">
+                    <option value="">All Criticalities</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                </select>
+            </div>
+            <div class="filter-field">
+                <label for="filter-status">Status / Trust</label>
+                <select id="filter-status" onchange="applyFilters()">
+                    <option value="">All Devices</option>
+                    <option value="trusted">Trusted Only</option>
+                    <option value="untrusted">Untrusted Only</option>
+                    <option value="anomaly">With Active Anomalies</option>
+                </select>
+            </div>
+        </div>
+        <div class="filter-footer">
+            <button type="button" class="cve-btn" onclick="resetFilters()">Clear Filters</button>
+        </div>
+    </div>
+
+    <!-- Map Workspace (Canvas & Sidebar inspector) -->
+    <div class="map-workspace">
+        <div class="map-canvas-container" id="map-container">
+            <div class="map-controls">
+                <label>
+                    <input type="checkbox" id="physics-checkbox" checked onchange="togglePhysics(this.checked)">
+                    Enable Physics
+                </label>
+                <label>
+                    <input type="checkbox" id="show-subnets-checkbox" checked onchange="toggleSubnets(this.checked)">
+                    Group by Subnets
+                </label>
+                <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="centerMap()">Center Map</button>
+                
+                <div class="map-controls-right">
+                    <button type="button" id="fullscreen-btn" class="cve-btn" style="padding: 4px 10px;" onclick="toggleFullscreen()">Fullscreen Mode</button>
+                </div>
+            </div>
+            <div class="map-viewport" id="network-map"></div>
+        </div>
+
+        <!-- Inspector Side Panel -->
+        <div class="map-inspector" id="inspector-panel">
+            <div class="inspector-header">
+                <h3 id="inspector-title">Device Inspector</h3>
+                <button class="inspector-close-btn" onclick="closeInspector()">×</button>
+            </div>
+            <div class="inspector-body" id="inspector-content">
+                <div class="inspector-welcome">
+                    <i data-lucide="network" style="width: 48px; height: 48px;"></i>
+                    <p>Click on any host or subnet node in the map to inspect its details, status, and related configuration.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Raw serialized hosts data from backend -->
+<script id="hosts-json" type="application/json">
+    {{ hosts | tojson | safe }}
+</script>
+
+<script>
+    // Master data parsed from script tag
+    const rawHosts = JSON.parse(document.getElementById('hosts-json').textContent);
+    
+    // Globals
+    let network = null;
+    let nodesDataSet = null;
+    let edgesDataSet = null;
+    let selectedNodeId = null;
+
+    // Subnet lists for filter dropdown
+    function populateSubnetDropdown() {
+        const select = document.getElementById('filter-subnet');
+        const subnets = [...new Set(rawHosts.map(h => h.subnet))].sort();
+        
+        subnets.forEach(sub => {
+            const opt = document.createElement('option');
+            opt.value = sub;
+            opt.textContent = sub;
+            select.appendChild(opt);
+        });
+    }
+
+    // Initialize Network Map
+    function initMap() {
+        const container = document.getElementById('network-map');
+        if (!container) return;
+
+        nodesDataSet = new vis.DataSet();
+        edgesDataSet = new vis.DataSet();
+
+        const data = {
+            nodes: nodesDataSet,
+            edges: edgesDataSet
+        };
+
+        const options = {
+            nodes: {
+                font: {
+                    face: 'Inter, Segoe UI, system-ui, sans-serif',
+                    size: 11
+                }
+            },
+            edges: {
+                smooth: {
+                    type: 'continuous',
+                    roundness: 0.5
+                }
+            },
+            physics: {
+                enabled: document.getElementById('physics-checkbox').checked,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -180,
+                    centralGravity: 0.015,
+                    springLength: 120,
+                    springConstant: 0.08,
+                    damping: 0.4,
+                    avoidOverlap: 1
+                },
+                stabilization: {
+                    iterations: 150,
+                    updateInterval: 25
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 150,
+                selectable: true
+            }
+        };
+
+        network = new vis.Network(container, data, options);
+
+        network.on("selectNode", function (params) {
+            if (params.nodes.length > 0) {
+                selectedNodeId = params.nodes[0];
+                showDetails(selectedNodeId);
+            }
+        });
+
+        network.on("deselectNode", function () {
+            selectedNodeId = null;
+            showWelcomePanel();
+        });
+
+        // Re-render topology based on raw data
+        buildTopology();
+        
+        network.once("stabilizationIterationsDone", function () {
+            network.fit();
+        });
+    }
+
+    // Center camera on nodes
+    function centerMap() {
+        if (network) {
+            network.fit({
+                animation: {
+                    duration: 800,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+        }
+    }
+
+    // Toggle physics solver
+    function togglePhysics(enabled) {
+        if (network) {
+            network.setOptions({ physics: { enabled: enabled } });
+        }
+    }
+
+    // Toggle subnet group nodes
+    function toggleSubnets(enabled) {
+        buildTopology();
+        centerMap();
+    }
+
+    // Rebuild visual nodes and edges from master list using active filters
+    function buildTopology() {
+        if (!nodesDataSet || !edgesDataSet) return;
+
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const groupSubnets = document.getElementById('show-subnets-checkbox').checked;
+
+        // Theme colors matching PortOjo aesthetics
+        const themeColors = {
+            coreBg: isDark ? "#24291D" : "#3A3F2F", // dark green / forest
+            coreBorder: isDark ? "#A0A494" : "#202417",
+            coreText: "#FFFDF8",
+            
+            subnetBg: isDark ? "#2D3325" : "#B7C49A", // surface-soft / sage
+            subnetBorder: isDark ? "#A0A494" : "#6E7D58",
+            subnetText: isDark ? "#F5F1E8" : "#202417",
+            
+            hostNormalBg: isDark ? "#2D3325" : "#6E7D58", // surface-soft / olive
+            hostNormalBorder: isDark ? "#A0A494" : "#3A3F2F",
+            hostNormalText: isDark ? "#F5F1E8" : "#202417",
+
+            hostAssetBg: isDark ? "#333A2B" : "#B7C49A", // sage background for registered asset
+            hostAssetBorder: isDark ? "#A0A494" : "#6E7D58",
+
+            hostUntrustedBg: isDark ? "#483A20" : "#EFE3BC", // warning sand background
+            hostUntrustedBorder: "#745A1D",
+            
+            hostAnomalyBg: isDark ? "#4C241E" : "#E9C9BE", // error pink background
+            hostAnomalyBorder: "#7A2E1E",
+            
+            edgeColor: isDark ? "#A0A494" : "#B7C49A",
+            edgeHighlight: isDark ? "#FFFDF8" : "#3A3F2F"
+        };
+
+        // Filter hosts first
+        const filteredHosts = getFilteredHosts();
+
+        const newNodes = [];
+        const newEdges = [];
+
+        // 1. Create Core Node
+        newNodes.push({
+            id: "core",
+            label: "PortOjo Gateway",
+            shape: "box",
+            margin: 12,
+            shapeProperties: { borderRadius: 8 },
+            color: {
+                background: themeColors.coreBg,
+                border: themeColors.coreBorder,
+                highlight: { background: themeColors.coreBg, border: themeColors.coreBorder }
+            },
+            font: { color: themeColors.coreText, weight: "bold", size: 14 },
+            level: 0
+        });
+
+        // 2. Process unique subnets
+        const visibleSubnets = [...new Set(filteredHosts.map(h => h.subnet))];
+        
+        if (groupSubnets) {
+            visibleSubnets.forEach(sub => {
+                newNodes.push({
+                    id: "sub_" + sub,
+                    label: sub,
+                    shape: "box",
+                    margin: 8,
+                    shapeProperties: { borderRadius: 6 },
+                    color: {
+                        background: themeColors.subnetBg,
+                        border: themeColors.subnetBorder,
+                        highlight: { background: themeColors.subnetBg, border: themeColors.subnetBorder }
+                    },
+                    font: { color: themeColors.subnetText, weight: "bold", size: 12 },
+                    level: 1
+                });
+
+                // Core to Subnet edge
+                newEdges.push({
+                    id: "edge_core_" + sub,
+                    from: "core",
+                    to: "sub_" + sub,
+                    color: { color: themeColors.edgeColor, highlight: themeColors.edgeHighlight },
+                    width: 2.5
+                });
+            });
+        }
+
+        // 3. Process hosts
+        filteredHosts.forEach(host => {
+            let bg = themeColors.hostNormalBg;
+            let border = themeColors.hostNormalBorder;
+            let size = 15;
+
+            // Adjust size based on criticality
+            if (host.criticality === "Critical" || host.criticality === "High") {
+                size = 22;
+            } else if (host.criticality === "Medium") {
+                size = 17;
+            } else {
+                size = 12;
+            }
+
+            // Determine status/color mapping
+            if (host.anomalies.length > 0) {
+                bg = themeColors.hostAnomalyBg;
+                border = themeColors.hostAnomalyBorder;
+            } else if (!host.is_trusted) {
+                bg = themeColors.hostUntrustedBg;
+                border = themeColors.hostUntrustedBorder;
+            } else if (host.is_asset) {
+                bg = themeColors.hostAssetBg;
+                border = themeColors.hostAssetBorder;
+            }
+
+            const labelText = host.ip + (host.name && host.name !== `Device ${host.ip}` ? `\n(${host.name})` : "");
+
+            newNodes.push({
+                id: "host_" + host.ip,
+                label: labelText,
+                shape: "dot",
+                size: size,
+                color: {
+                    background: bg,
+                    border: border,
+                    highlight: { background: bg, border: border }
+                },
+                font: { color: themeColors.hostNormalText, size: 11 },
+                title: `<strong>IP:</strong> ${host.ip}<br><strong>Type:</strong> ${host.device_type}<br><strong>Criticality:</strong> ${host.criticality}`,
+                level: 2
+            });
+
+            // Edge mapping
+            if (groupSubnets) {
+                newEdges.push({
+                    id: "edge_sub_host_" + host.ip,
+                    from: "sub_" + host.subnet,
+                    to: "host_" + host.ip,
+                    color: { color: themeColors.edgeColor, highlight: themeColors.edgeHighlight },
+                    width: 1.5
+                });
+            } else {
+                // Direct connect to core if grouping is disabled
+                newEdges.push({
+                    id: "edge_core_host_" + host.ip,
+                    from: "core",
+                    to: "host_" + host.ip,
+                    color: { color: themeColors.edgeColor, highlight: themeColors.edgeHighlight },
+                    width: 1.5
+                });
+            }
+        });
+
+        // Smart updating of data sets to preserve selections if possible
+        const existingNodeIds = nodesDataSet.getIds();
+        const newNodeIds = newNodes.map(n => n.id);
+
+        const nodesToRemove = existingNodeIds.filter(id => !newNodeIds.includes(id));
+        nodesDataSet.remove(nodesToRemove);
+        nodesDataSet.update(newNodes);
+
+        const existingEdgeIds = edgesDataSet.getIds();
+        const newEdgeIds = newEdges.map(e => e.id);
+
+        const edgesToRemove = existingEdgeIds.filter(id => !newEdgeIds.includes(id));
+        edgesDataSet.remove(edgesToRemove);
+        edgesDataSet.update(newEdges);
+
+        // Recover selection details if the node is still present
+        if (selectedNodeId && newNodeIds.includes(selectedNodeId)) {
+            network.selectNodes([selectedNodeId]);
+            showDetails(selectedNodeId);
+        } else {
+            showWelcomePanel();
+        }
+    }
+
+    // Get list of hosts matching search queries and dropdown options
+    function getFilteredHosts() {
+        const search = document.getElementById('search-term').value.toLowerCase().trim();
+        const subnet = document.getElementById('filter-subnet').value;
+        const type = document.getElementById('filter-type').value;
+        const criticality = document.getElementById('filter-criticality').value;
+        const status = document.getElementById('filter-status').value;
+
+        return rawHosts.filter(h => {
+            // 1. Text Search
+            if (search) {
+                const ipMatch = h.ip.toLowerCase().includes(search);
+                const nameMatch = h.name && h.name.toLowerCase().includes(search);
+                const macMatch = h.mac && h.mac.toLowerCase().includes(search);
+                const vendorMatch = h.vendor && h.vendor.toLowerCase().includes(search);
+                const ownerMatch = h.owner && h.owner.toLowerCase().includes(search);
+                const locationMatch = h.location && h.location.toLowerCase().includes(search);
+                
+                if (!ipMatch && !nameMatch && !macMatch && !vendorMatch && !ownerMatch && !locationMatch) {
+                    return false;
+                }
+            }
+
+            // 2. Subnet dropdown
+            if (subnet && h.subnet !== subnet) {
+                return false;
+            }
+
+            // 3. Device Type dropdown
+            if (type && h.device_type !== type) {
+                return false;
+            }
+
+            // 4. Criticality dropdown
+            if (criticality && h.criticality !== criticality) {
+                return false;
+            }
+
+            // 5. Status / Trust dropdown
+            if (status) {
+                if (status === "asset" && !h.is_asset) return false;
+                if (status === "known" && h.is_asset) return false;
+                if (status === "trusted" && !h.is_trusted) return false;
+                if (status === "untrusted" && h.is_trusted) return false;
+                if (status === "anomaly" && h.anomalies.length === 0) return false;
+            }
+
+            return true;
+        });
+    }
+
+    // Triggered on inputs
+    function applyFilters() {
+        buildTopology();
+    }
+
+    // Clear filters UI
+    function resetFilters() {
+        document.getElementById('search-term').value = "";
+        document.getElementById('filter-subnet').value = "";
+        document.getElementById('filter-type').value = "";
+        document.getElementById('filter-criticality').value = "";
+        document.getElementById('filter-status').value = "";
+        buildTopology();
+        centerMap();
+    }
+
+    // Toggle fullscreen map container
+    function toggleFullscreen() {
+        const container = document.getElementById('map-container');
+        const btn = document.getElementById('fullscreen-btn');
+        if (!container) return;
+
+        container.classList.toggle('fullscreen');
+        
+        if (container.classList.contains('fullscreen')) {
+            btn.textContent = "Exit Fullscreen";
+        } else {
+            btn.textContent = "Fullscreen Mode";
+        }
+
+        // Trigger resize on vis-network
+        if (network) {
+            setTimeout(() => {
+                network.redraw();
+                network.fit();
+            }, 100);
+        }
+    }
+
+    // Close Inspector
+    function closeInspector() {
+        if (network) {
+            network.unselectNodes();
+        }
+        selectedNodeId = null;
+        showWelcomePanel();
+    }
+
+    // Reset details panel state
+    function showWelcomePanel() {
+        const content = document.getElementById('inspector-content');
+        if (!content) return;
+        
+        content.innerHTML = `
+            <div class="inspector-welcome">
+                <i data-lucide="network" style="width: 48px; height: 48px;"></i>
+                <p>Click on any host or subnet node in the map to inspect its details, status, and related configuration.</p>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    // Populate Inspector panel with dynamic HTML for selected node
+    function showDetails(nodeId) {
+        const content = document.getElementById('inspector-content');
+        if (!content) return;
+
+        if (nodeId === "core") {
+            content.innerHTML = `
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Node Type</span>
+                    <span class="inspector-meta-value">Unified Controller Gateway</span>
+                </div>
+                <div class="inspector-meta-item" style="margin-top: 10px;">
+                    <span class="inspector-meta-label">Active Subnets</span>
+                    <span class="inspector-meta-value">${[...new Set(rawHosts.map(h => h.subnet))].length} Unique Clusters</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Total Connected Hosts</span>
+                    <span class="inspector-meta-value">${rawHosts.length} Host Nodes</span>
+                </div>
+            `;
+            return;
+        }
+
+        if (nodeId.startsWith("sub_")) {
+            const subnetName = nodeId.replace("sub_", "");
+            const matchingHosts = rawHosts.filter(h => h.subnet === subnetName);
+            const assetsCount = matchingHosts.filter(h => h.is_asset).length;
+            const anomaliesCount = matchingHosts.filter(h => h.anomalies.length > 0).length;
+
+            content.innerHTML = `
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Node Type</span>
+                    <span class="inspector-meta-value">Subnet Group Node</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">CIDR Address</span>
+                    <span class="inspector-meta-value">${subnetName}</span>
+                </div>
+                <div class="inspector-meta-item" style="margin-top: 10px;">
+                    <span class="inspector-meta-label">Total Host Nodes</span>
+                    <span class="inspector-meta-value">${matchingHosts.length} Hosts</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Registered Assets</span>
+                    <span class="inspector-meta-value">${assetsCount} Assets</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Active Anomalies</span>
+                    <span class="inspector-meta-value" style="color: ${anomaliesCount > 0 ? 'var(--error-text)' : 'inherit'}; font-weight: bold;">
+                        ${anomaliesCount} Anomalies
+                    </span>
+                </div>
+            `;
+            return;
+        }
+
+        if (nodeId.startsWith("host_")) {
+            const ip = nodeId.replace("host_", "");
+            const host = rawHosts.find(h => h.ip === ip);
+            if (!host) return;
+
+            // Build Anomaly blocks
+            let anomalyHtml = "";
+            if (host.anomalies.length > 0) {
+                host.anomalies.forEach(anom => {
+                    anomalyHtml += `
+                        <div class="anomaly-alert-box">
+                            <strong>⚠️ Security Alert (${anom.anomaly_type.replace('_', ' ').toUpperCase()})</strong>
+                            ${anom.description}
+                            <div style="font-size: 10.5px; opacity: 0.8; margin-top: 6px; text-align: right;">${anom.created_at}</div>
+                        </div>
+                    `;
+                });
+            }
+
+            // Badges
+            const criticalityClass = `criticality-${host.criticality.toLowerCase()}`;
+            const trustBadge = host.is_trusted 
+                ? `<span class="badge success-badge">Trusted</span>`
+                : `<span class="badge error-badge">Untrusted</span>`;
+
+            // Action Forms and Links
+            let actionsHtml = "";
+            if (host.is_asset) {
+                actionsHtml += `
+                    <a href="/admin/assets/${host.asset_id}/edit" class="inspector-btn inspector-btn-primary">
+                        <i data-lucide="edit"></i> Edit Asset
+                    </a>
+                    <form action="/admin/assets/${host.asset_id}/toggle-trust" method="POST" style="margin: 0; width: 100%;">
+                        <button type="submit" class="inspector-btn inspector-btn-secondary">
+                            <i data-lucide="shield-check"></i> ${host.is_trusted ? 'Mark Untrusted' : 'Mark Trusted'}
+                        </button>
+                    </form>
+                `;
+            }
+
+            // If it has anomalies, show resolution option
+            if (host.anomalies.length > 0) {
+                const primaryAnomaly = host.anomalies[0];
+                actionsHtml += `
+                    <form action="/admin/anomalies/${primaryAnomaly.id}/resolve" method="POST" style="margin: 0; width: 100%;">
+                        <button type="submit" class="inspector-btn inspector-btn-secondary" style="border-color: var(--error-text); color: var(--error-text);">
+                            <i data-lucide="check-circle-2"></i> Resolve Anomaly
+                        </button>
+                    </form>
+                `;
+            }
+
+            content.innerHTML = `
+                ${anomalyHtml}
+                
+                <div class="inspector-badge-row">
+                    <span class="criticality-badge ${criticalityClass}">${host.criticality}</span>
+                    ${trustBadge}
+                </div>
+
+                <div class="inspector-section-title">Identity & Network</div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">IP Address</span>
+                    <span class="inspector-meta-value" style="font-weight: 700;">${host.ip}</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Hostname / Name</span>
+                    <span class="inspector-meta-value">${host.name}</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">MAC Address</span>
+                    <span class="inspector-meta-value">${host.mac || 'N/A'}</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">MAC Vendor</span>
+                    <span class="inspector-meta-value">${host.vendor}</span>
+                </div>
+
+                <div class="inspector-section-title">Hardware & Category</div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Device Type</span>
+                    <span class="inspector-meta-value">${host.device_type}</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Operating System</span>
+                    <span class="inspector-meta-value">${host.operating_system}</span>
+                </div>
+                
+                <div class="inspector-section-title">Asset Ownership</div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Owner</span>
+                    <span class="inspector-meta-value">${host.owner || 'Unassigned'}</span>
+                </div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Location</span>
+                    <span class="inspector-meta-value">${host.location || 'Unassigned'}</span>
+                </div>
+
+                <div class="inspector-section-title">Tracking & Status</div>
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Last Seen</span>
+                    <span class="inspector-meta-value">${host.last_seen}</span>
+                </div>
+                ${host.notes ? `
+                <div class="inspector-meta-item">
+                    <span class="inspector-meta-label">Notes</span>
+                    <span class="inspector-meta-value" style="font-style: italic; font-size: 12px;">${host.notes}</span>
+                </div>` : ''}
+
+                <div class="inspector-actions">
+                    ${actionsHtml}
+                </div>
+            `;
+            
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+    }
+
+    // Page Load trigger
+    document.addEventListener("DOMContentLoaded", () => {
+        populateSubnetDropdown();
+        initMap();
+
+        // Recalculate on theme switches
+        const checkbox = document.getElementById("theme-checkbox");
+        if (checkbox) {
+            checkbox.addEventListener("change", () => {
+                setTimeout(() => {
+                    buildTopology();
+                }, 100);
+            });
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+.\app.py:127: <h2 style="color: #c53030; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">⚠️ Honeypot Security Alert</h2>
+.\app.py:288: <strong style="color: #c53030; font-size: 16px;">⚠️ SECURITY WARNING: New Open Ports Detected!</strong>
+.\app.py:562: <h2 style="color: #c53030; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">⚠️ Brute-Force Attack Alert</h2>
+.\app.py:731: <h2 style="color: #c53030; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">⚠️ MAC Address / Network Security Alert</h2>
+.\templates\compare.html:258: <span class="text-opacity-60">{{ port.service_a }}</span> → <strong>{{ port.service_b }}</strong>
+.\templates\compare.html:265: State: <span class="text-opacity-60">{{ port.state_a }}</span> → <strong>{{ port.state_b }}</strong><br>
+.\templates\compare.html:268: Version: <span class="text-opacity-60">{{ port.version_a }}</span> → <strong>{{ port.version_b }}</strong>
+.\templates\result.html:578: <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+.\templates\result.html:632: <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+.\templates\result.html:690: <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+.\templates\settings.html:56: placeholder="{% if setting and setting.smtp_password %}•••••••••••• (Leave blank to keep current){% else %}Your SMTP password{% endif %}"

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PortOjo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=1.4">
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="topbar-inner">
+
+        <div class="topbar-left">
+            {% if current_user.is_authenticated %}
+                <button type="button" id="sidebar-toggle-btn" class="sidebar-toggle-btn" aria-label="Toggle Sidebar">
+                    <i data-lucide="menu"></i>
+                </button>
+            {% endif %}
+            <a href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}" class="brand">
+                <div class="brand-mark">P</div>
+                <div class="brand-text">
+                    <h1>PortOjo</h1>
+                    <span>Network Scanner</span>
+                </div>
+            </a>
+        </div>
+
+        <div class="topbar-right">
+            <div class="theme-switch-wrapper">
+                <label class="theme-switch-container" aria-label="Toggle theme">
+                    <input type="checkbox" id="theme-checkbox">
+                    <span class="theme-slider">
+                        <span class="theme-knob"><i data-lucide="moon" style="width: 12px; height: 12px;"></i></span>
+                    </span>
+                    <script>
+                        if ((localStorage.getItem('theme') || 'light') === 'dark') {
+                            document.getElementById('theme-checkbox').checked = true;
+                        }
+                    </script>
+                </label>
+            </div>
+            {% if current_user.is_authenticated %}
+                <details class="user-menu">
+                    <summary>
+                        <span class="user-avatar">
+                            {{ current_user.email[0]|upper }}
+                        </span>
+                        <span class="user-email">{{ current_user.email }}</span>
+                        <i data-lucide="chevron-down" style="width: 14px; height: 14px; margin-left: 4px; vertical-align: middle;"></i>
+                    </summary>
+
+                    <div class="user-dropdown">
+                        <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+                    </div>
+                </details>
+            {% endif %}
+        </div>
+
+    </div>
+</header>
+
+<script>
+    (function() {
+        const sidebarState = localStorage.getItem('sidebar-state') || 'expanded';
+        if (sidebarState === 'collapsed') {
+            document.documentElement.classList.add('sidebar-collapsed-pref');
+        }
+    })();
+</script>
+
+<div class="{% if current_user.is_authenticated %}app-layout{% else %}auth-layout{% endif %}">
+    {% if current_user.is_authenticated %}
+        <aside class="sidebar" id="app-sidebar">
+            <!-- Sidebar Group: Dashboard -->
+            <div class="sidebar-group">
+                <button type="button" class="sidebar-group-header" onclick="toggleSidebarGroup('group-dashboard')">
+                    <i data-lucide="layout-dashboard" class="sidebar-group-icon"></i>
+                    <span class="group-title-text">Dashboard</span>
+                    <i data-lucide="chevron-down" class="sidebar-group-arrow"></i>
+                </button>
+                <ul class="sidebar-menu" id="group-dashboard">
+                    <li>
+                        <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                            <i data-lucide="home" class="sidebar-icon"></i>
+                            <span>Overview</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Sidebar Group: Scan -->
+            <div class="sidebar-group">
+                <button type="button" class="sidebar-group-header" onclick="toggleSidebarGroup('group-scan')">
+                    <i data-lucide="activity" class="sidebar-group-icon"></i>
+                    <span class="group-title-text">Scan</span>
+                    <i data-lucide="chevron-down" class="sidebar-group-arrow"></i>
+                </button>
+                <ul class="sidebar-menu" id="group-scan">
+                    <li>
+                        <a href="{{ url_for('scan') }}" class="sidebar-link {% if request.endpoint == 'scan' %}active{% endif %}">
+                            <i data-lucide="search" class="sidebar-icon"></i>
+                            <span>New Scan</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('history') }}" class="sidebar-link {% if request.endpoint == 'history' and request.args.get('tab') not in ['scans', 'users', 'honeypot', 'anomalies'] %}active{% endif %}">
+                            <i data-lucide="history" class="sidebar-icon"></i>
+                            <span>Scan History</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('schedules') }}" class="sidebar-link {% if request.endpoint in ['schedules', 'new_schedule'] %}active{% endif %}">
+                            <i data-lucide="calendar" class="sidebar-icon"></i>
+                            <span>Schedules</span>
+                        </a>
+                    </li>
+                    {% if current_user.is_admin %}
+                    <li>
+                        <a href="{{ url_for('admin_panel', tab='scans') }}" class="sidebar-link {% if request.endpoint == 'admin_panel' and request.args.get('tab') == 'scans' %}active{% endif %}">
+                            <i data-lucide="clipboard-list" class="sidebar-icon"></i>
+                            <span>Scan Audits</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('admin_panel', tab='anomalies') }}" class="sidebar-link {% if request.endpoint == 'admin_panel' and request.args.get('tab') == 'anomalies' %}active{% endif %}">
+                            <i data-lucide="shield-alert" class="sidebar-icon"></i>
+                            <span>Security Anomalies</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('admin_assets') }}" class="sidebar-link {% if request.endpoint in ['admin_assets', 'admin_new_asset', 'admin_edit_asset'] %}active{% endif %}">
+                            <i data-lucide="database" class="sidebar-icon"></i>
+                            <span>Asset Inventory</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('asset_map') }}" class="sidebar-link {% if request.endpoint == 'asset_map' %}active{% endif %}">
+                            <i data-lucide="network" class="sidebar-icon"></i>
+                            <span>Asset Map</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Sidebar Group: Honeypot -->
+            <div class="sidebar-group">
+                <button type="button" class="sidebar-group-header" onclick="toggleSidebarGroup('group-honeypot')">
+                    <i data-lucide="shield" class="sidebar-group-icon"></i>
+                    <span class="group-title-text">Honeypot</span>
+                    <i data-lucide="chevron-down" class="sidebar-group-arrow"></i>
+                </button>
+                <ul class="sidebar-menu" id="group-honeypot">
+                    <li>
+                        <a href="{{ url_for('settings', tab='honeypot') }}" class="sidebar-link {% if request.endpoint == 'settings' and request.args.get('tab') == 'honeypot' %}active{% endif %}">
+                            <i data-lucide="sliders" class="sidebar-icon"></i>
+                            <span>Honeypot Settings</span>
+                        </a>
+                    </li>
+                    {% if current_user.is_admin %}
+                    <li>
+                        <a href="{{ url_for('admin_panel', tab='honeypot') }}" class="sidebar-link {% if request.endpoint == 'admin_panel' and request.args.get('tab') == 'honeypot' %}active{% endif %}">
+                            <i data-lucide="file-text" class="sidebar-icon"></i>
+                            <span>Honeypot Logs</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Sidebar Group: System -->
+            <div class="sidebar-group">
+                <button type="button" class="sidebar-group-header" onclick="toggleSidebarGroup('group-system')">
+                    <i data-lucide="settings" class="sidebar-group-icon"></i>
+                    <span class="group-title-text">System</span>
+                    <i data-lucide="chevron-down" class="sidebar-group-arrow"></i>
+                </button>
+                <ul class="sidebar-menu" id="group-system">
+                    <li>
+                        <a href="{{ url_for('settings', tab='smtp') }}" class="sidebar-link {% if request.endpoint == 'settings' and request.args.get('tab') in ['smtp', None] %}active{% endif %}">
+                            <i data-lucide="mail" class="sidebar-icon"></i>
+                            <span>SMTP Settings</span>
+                        </a>
+                    </li>
+                    {% if current_user.is_admin %}
+                    <li>
+                        <a href="{{ url_for('admin_panel', tab='users') }}" class="sidebar-link {% if request.endpoint == 'admin_panel' and request.args.get('tab') == 'users' %}active{% endif %}">
+                            <i data-lucide="users" class="sidebar-icon"></i>
+                            <span>User Accounts</span>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </aside>
+    {% endif %}
+    
+    <main class="{% if current_user.is_authenticated %}main-content{% else %}auth-content{% endif %}">
+        {% if current_user.is_authenticated %}
+            {% if request.endpoint not in ["login", "register"] %}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="flash-wrapper">
+                            {% for category, message in messages %}
+                                <div class="flash-message {{ category }}">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            {% endif %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="https://unpkg.com/lucide@latest"></script>
+<script>
+    // Accordion Dropdown functionality
+    function toggleSidebarGroup(groupId, forceState) {
+        const groupList = document.getElementById(groupId);
+        if (!groupList) return;
+        const header = groupList.previousElementSibling;
+        const arrow = header.querySelector('.sidebar-group-arrow');
+        
+        let willExpand = false;
+        if (forceState !== undefined) {
+            willExpand = forceState;
+        } else {
+            willExpand = !groupList.classList.contains('expanded');
+        }
+        
+        if (willExpand) {
+            groupList.classList.add('expanded');
+            header.classList.add('expanded');
+            localStorage.setItem('sidebar-group-' + groupId, 'open');
+        } else {
+            groupList.classList.remove('expanded');
+            header.classList.remove('expanded');
+            localStorage.setItem('sidebar-group-' + groupId, 'closed');
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const checkbox = document.getElementById("theme-checkbox");
+        if (checkbox) {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+            checkbox.checked = currentTheme === "dark";
+
+            checkbox.addEventListener("change", () => {
+                const newTheme = checkbox.checked ? "dark" : "light";
+                document.documentElement.setAttribute("data-theme", newTheme);
+                localStorage.setItem("theme", newTheme);
+            });
+        }
+
+        // Apply pre-saved sidebar state
+        const sidebar = document.getElementById("app-sidebar");
+        const toggleBtn = document.getElementById("sidebar-toggle-btn");
+        const layout = document.querySelector(".app-layout");
+
+        if (sidebar && toggleBtn && layout) {
+            // Apply preferences initially
+            if (document.documentElement.classList.contains("sidebar-collapsed-pref")) {
+                sidebar.classList.add("collapsed");
+                layout.classList.add("sidebar-collapsed");
+            }
+
+            toggleBtn.addEventListener("click", () => {
+                sidebar.classList.toggle("collapsed");
+                layout.classList.toggle("sidebar-collapsed");
+                const isCollapsed = sidebar.classList.contains("collapsed");
+                localStorage.setItem("sidebar-state", isCollapsed ? "collapsed" : "expanded");
+                document.documentElement.classList.toggle("sidebar-collapsed-pref", isCollapsed);
+            });
+        }
+
+        // Auto-expand group if it contains an active link on page load
+        const groups = ['group-dashboard', 'group-scan', 'group-honeypot', 'group-system'];
+        groups.forEach(groupId => {
+            const groupList = document.getElementById(groupId);
+            if (!groupList) return;
+            const hasActive = groupList.querySelector('.active');
+            const savedState = localStorage.getItem('sidebar-group-' + groupId);
+            
+            if (hasActive) {
+                toggleSidebarGroup(groupId, true);
+            } else if (savedState === 'open') {
+                toggleSidebarGroup(groupId, true);
+            } else {
+                toggleSidebarGroup(groupId, false);
+            }
+        });
+        
+        // Initialize Lucide Icons
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // --- Generic Table Column Sorting ---
+        function makeTablesSortable() {
+            const tables = document.querySelectorAll("table");
+            tables.forEach(table => {
+                let headers = table.querySelectorAll("th");
+                if (headers.length === 0) {
+                    const firstRow = table.querySelector("tr");
+                    if (firstRow) {
+                        headers = firstRow.querySelectorAll("td");
+                    }
+                }
+                
+                headers.forEach((th, index) => {
+                    const txt = th.textContent.trim().toLowerCase();
+                    
+                    const hasInput = th.querySelector("input[type='checkbox']");
+                    const isAction = txt === "action" || txt === "actions" || txt === "";
+                    
+                    if (hasInput || isAction) {
+                        return;
+                    }
+                    
+                    th.classList.add("sortable-header");
+                    
+                    let indicator = th.querySelector(".sort-indicator");
+                    if (!indicator) {
+                        indicator = document.createElement("span");
+                        indicator.className = "sort-indicator";
+                        indicator.textContent = "↕";
+                        th.appendChild(indicator);
+                    }
+                    
+                    th.addEventListener("click", () => {
+                        const currentDir = th.getAttribute("data-sort-dir") || "none";
+                        let nextDir = "asc";
+                        if (currentDir === "asc") nextDir = "desc";
+                        else if (currentDir === "desc") nextDir = "asc";
+                        
+                        headers.forEach(h => {
+                            h.removeAttribute("data-sort-dir");
+                            h.classList.remove("sort-active");
+                            const ind = h.querySelector(".sort-indicator");
+                            if (ind) ind.textContent = "↕";
+                        });
+                        
+                        th.setAttribute("data-sort-dir", nextDir);
+                        th.classList.add("sort-active");
+                        indicator.textContent = nextDir === "asc" ? "▲" : "▼";
+                        
+                        sortTableRows(table, index, nextDir === "asc");
+                    });
+                });
+            });
+        }
+        
+        function sortTableRows(table, columnIndex, asc) {
+            let container = table.querySelector("tbody");
+            let hasTbody = true;
+            if (!container) {
+                container = table;
+                hasTbody = false;
+            }
+            
+            const rows = Array.from(container.querySelectorAll("tr"));
+            const dataRows = rows.filter(row => {
+                if (row.querySelector("th")) return false;
+                if (!hasTbody && rows.indexOf(row) === 0) return false;
+                return true;
+            });
+            
+            dataRows.sort((rowA, rowB) => {
+                const cellA = rowA.cells[columnIndex];
+                const cellB = rowB.cells[columnIndex];
+                
+                const valA = cellA ? cellA.textContent.trim() : "";
+                const valB = cellB ? cellB.textContent.trim() : "";
+                
+                return compareValues(valA, valB, asc);
+            });
+            
+            dataRows.forEach(row => container.appendChild(row));
+        }
+        
+        function compareValues(valA, valB, asc) {
+            if (valA === valB) return 0;
+            if (valA === "" || valA === "-") return asc ? 1 : -1;
+            if (valB === "" || valB === "-") return asc ? -1 : 1;
+            
+            const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+            const isIpA = ipRegex.test(valA);
+            const isIpB = ipRegex.test(valB);
+            
+            if (isIpA && isIpB) {
+                const numA = ipToNumber(valA);
+                const numB = ipToNumber(valB);
+                return asc ? numA - numB : numB - numA;
+            }
+            
+            const isNumA = !isNaN(parseFloat(valA)) && isFinite(valA);
+            const isNumB = !isNaN(parseFloat(valB)) && isFinite(valB);
+            
+            if (isNumA && isNumB) {
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+                return asc ? numA - numB : numB - numA;
+            }
+            
+            const dateA = Date.parse(valA.replace(/-/g, "/"));
+            const dateB = Date.parse(valB.replace(/-/g, "/"));
+            
+            if (!isNaN(dateA) && !isNaN(dateB)) {
+                return asc ? dateA - dateB : dateB - dateA;
+            }
+            
+            return asc ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' }) : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+        }
+        
+        function ipToNumber(ip) {
+            return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+        }
+
+        makeTablesSortable();
+    });
+</script>
+
+</body>
+</html>

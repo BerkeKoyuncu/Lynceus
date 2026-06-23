@@ -1,0 +1,5 @@
+#BFB28B  /* muted sand */
+#DCD1B8  /* warm beige */
+#6E7D58  /* olive green */
+#B7C49A  /* sage green */
+#3A3F2F  /* dark forest */

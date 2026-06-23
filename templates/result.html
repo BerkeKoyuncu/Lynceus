@@ -1,0 +1,1538 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+
+{% if scan_result.status == "pending" or scan_result.status == "running" %}
+    <meta http-equiv="refresh" content="3">
+{% endif %}
+
+<h2>Scan Result</h2>
+
+<table>
+    <tr>
+        <th>Input IP Address</th>
+        <td>{{ scan_result.input_ip }}</td>
+    </tr>
+
+    <tr>
+        <th>Subnet Mask</th>
+        <td>{{ scan_result.subnet_mask }}</td>
+    </tr>
+
+    <tr>
+        <th>Calculated Network</th>
+        <td>{{ scan_result.network_cidr }}</td>
+    </tr>
+
+    <tr>
+        <th>First Usable Host</th>
+        <td>{{ scan_result.first_host }}</td>
+    </tr>
+
+    <tr>
+        <th>Last Usable Host</th>
+        <td>{{ scan_result.last_host }}</td>
+    </tr>
+
+    <tr>
+        <th>Scan Type</th>
+        <td>{{ scan_result.scan_type|scan_name }}</td>
+    </tr>
+
+    {% if scan_result.scan_type != "ping_sweep" %}
+    <tr>
+        <th>Scanned Ports</th>
+        <td>
+            {% if scan_result.ports %}
+                {{ scan_result.ports|replace(',', ', ') }}
+            {% else %}
+                <span class="text-muted">Default Ports</span>
+            {% endif %}
+        </td>
+    </tr>
+    {% endif %}
+
+    <tr>
+        <th>Status</th>
+        <td>
+            {% if scan_result.status == "completed" %}
+                <span class="badge success-badge">Completed</span>
+            {% elif scan_result.status == "running" %}
+                <span class="badge running-badge">Running</span>
+            {% elif scan_result.status == "pending" %}
+                <span class="badge pending-badge">Pending</span>
+            {% elif scan_result.status == "failed" %}
+                <span class="badge error-badge">Failed</span>
+            {% else %}
+                {{ scan_result.status }}
+            {% endif %}
+        </td>
+    </tr>
+
+    <tr>
+        <th>Created At</th>
+        <td>{{ scan_result.created_at|localtime }}</td>
+    </tr>
+</table>
+
+<hr>
+
+{% if scan_result.status == "pending" %}
+    <p>Scan is waiting to start...</p>
+
+{% elif scan_result.status == "running" %}
+    <p>Scan is in progress, please wait...</p>
+
+{% elif scan_result.status == "completed" or scan_result.status == "failed" %}
+
+    {% if parsed_result %}
+        <h3>Executed Command</h3>
+        <pre>{{ parsed_result.command }}</pre>
+
+        {% if parsed_result.hosts %}
+            <h3>Discovered Hosts and Open Ports</h3>
+
+            <!-- Search and Filter Panel -->
+            <div class="filter-panel">
+                <div class="filter-grid">
+                    <div class="filter-field">
+                        <label for="filter-ip">IP Address</label>
+                        <input type="text" id="filter-ip" placeholder="e.g. 192.168.1.1" oninput="filterResults()">
+                    </div>
+                    <div class="filter-field">
+                        <label for="filter-port">Port</label>
+                        <input type="text" id="filter-port" placeholder="e.g. 80, 443" oninput="filterResults()">
+                    </div>
+                    <div class="filter-field">
+                        <label for="filter-proto">Protocol</label>
+                        <select id="filter-proto" onchange="filterResults()">
+                            <option value="">All</option>
+                            <option value="tcp">TCP</option>
+                            <option value="udp">UDP</option>
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <label for="filter-state">State</label>
+                        <select id="filter-state" onchange="filterResults()">
+                            <option value="">All</option>
+                            <option value="open">Open</option>
+                            <option value="closed">Closed</option>
+                            <option value="filtered">Filtered</option>
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <label for="filter-service">Service</label>
+                        <input type="text" id="filter-service" placeholder="e.g. http, ssh" oninput="filterResults()">
+                    </div>
+                    <div class="filter-field">
+                        <label for="filter-version">Version</label>
+                        <input type="text" id="filter-version" placeholder="e.g. Apache, 2.4" oninput="filterResults()">
+                    </div>
+                </div>
+                <div class="filter-footer">
+                    <div class="filter-checkbox-wrap">
+                        <div class="filter-group-checkbox">
+                            <label>
+                                <input 
+                                    type="checkbox" 
+                                    id="open-ports-only" 
+                                    onchange="filterResults()"
+                                >
+                                Show only hosts with open ports
+                            </label>
+                        </div>
+                    </div>
+                    <button type="button" class="cve-btn" onclick="resetFilters()">Clear Filters</button>
+                </div>
+            </div>
+
+            <div class="tabs-container">
+                <div class="tabs-header">
+                    <button type="button" class="tab-btn active" onclick="switchTab('dashboard-tab', this)"><i data-lucide="layout-dashboard"></i> Dashboard</button>
+                    <button type="button" class="tab-btn" onclick="switchTab('table-tab', this)"><i data-lucide="table"></i> Table View</button>
+                    <button type="button" class="tab-btn" onclick="switchTab('topology-tab', this)"><i data-lucide="network"></i> Network Map</button>
+                </div>
+                <div class="tabs-content">
+                    <div id="dashboard-tab" class="tab-pane active">
+                        <div class="dashboard-container">
+                            <div class="dashboard-summary">
+                                <div class="stat-card">
+                                    <span class="stat-card-title">Total Detected IPs</span>
+                                    <span class="stat-card-value" id="stat-total-ips">0</span>
+                                    <span class="stat-card-subtitle">IP addresses in list</span>
+                                </div>
+                                <div class="stat-card">
+                                    <span class="stat-card-title">Active Hosts</span>
+                                    <span class="stat-card-value" id="stat-active-hosts">0</span>
+                                    <span class="stat-card-subtitle" id="stat-active-ratio">0% of total</span>
+                                </div>
+                                <div class="stat-card">
+                                    <span class="stat-card-title">Total Open Ports</span>
+                                    <span class="stat-card-value" id="stat-open-ports">0</span>
+                                    <span class="stat-card-subtitle" id="stat-avg-ports">0.0 per active host</span>
+                                </div>
+                                <div class="stat-card">
+                                    <span class="stat-card-title">Vulnerabilities Checked</span>
+                                    <span class="stat-card-value" id="stat-services-detected">0</span>
+                                    <span class="stat-card-subtitle">Versioned services</span>
+                                </div>
+                            </div>
+                            <div class="chart-grid">
+                                <div class="chart-card">
+                                    <h5 class="chart-card-title">Host Status Summary</h5>
+                                    <div class="chart-wrapper">
+                                        <canvas id="chart-host-status"></canvas>
+                                    </div>
+                                </div>
+                                <div class="chart-card">
+                                    <h5 class="chart-card-title">Most Common Open Services</h5>
+                                    <div class="chart-wrapper">
+                                        <canvas id="chart-common-services"></canvas>
+                                    </div>
+                                </div>
+                                <div class="chart-card">
+                                    <h5 class="chart-card-title">Open Ports Count by Host</h5>
+                                    <div class="chart-wrapper">
+                                        <canvas id="chart-ports-by-host"></canvas>
+                                    </div>
+                                </div>
+                                <div class="chart-card">
+                                    <h5 class="chart-card-title">Protocol Distribution</h5>
+                                    <div class="chart-wrapper">
+                                        <canvas id="chart-protocols"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="table-tab" class="tab-pane">
+                        <div class="hosts-container">
+                        {% for host in parsed_result.hosts %}
+                            {% set host_index = loop.index0 %}
+                            <div class="host-section" data-ip="{{ host.address }}" data-has-ports="{% if host.ports %}true{% else %}false{% endif %}">
+                                <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                    <h4 style="margin: 0;">
+                                        Host: <span class="host-ip">{{ host.address }}</span>
+                                        {% if host.hostname %}
+                                            <span class="host-name">/ {{ host.hostname }}</span>
+                                        {% endif %}
+                                        <span class="badge success-badge">{{ host.status|capitalize }}</span>
+                                    </h4>
+                                    {% if host.mac_address %}
+                                    <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
+                                        <strong>MAC:</strong> {{ host.mac_address }}
+                                        {% if host.mac_vendor %}
+                                            <span class="host-vendor">({{ host.mac_vendor }})</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+
+                                {% if host.mac_anomaly %}
+                                    <div style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; margin-bottom: 10px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                                        {% if host.mac_anomaly.type == 'mac_spoofing' %}
+                                            <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
+                                        {% elif host.mac_anomaly.type == 'ip_hijack' %}
+                                            <i data-lucide="alert-circle"></i> IP Hijack Warning:
+                                        {% else %}
+                                            <i data-lucide="shield-alert"></i> Rogue Device Alert:
+                                        {% endif %}
+                                        <span style="font-weight: normal; margin-left: 5px;">{{ host.mac_anomaly.description }}</span>
+                                    </div>
+                                {% endif %}
+
+                                {% if host.ports %}
+                                    <table class="ports-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Port</th>
+                                                <th>Protocol</th>
+                                                <th>State</th>
+                                                <th>Service</th>
+                                                <th>Version</th>
+                                                <th>Security</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for port in host.ports %}
+                                            {% set port_index = loop.index0 %}
+                                            <tr class="port-row" data-port="{{ port.port }}" data-protocol="{{ port.protocol }}" data-state="{{ port.state }}" data-service="{{ port.service }}" data-version="{{ port.version }}">
+                                                <td>{{ port.port }}</td>
+                                                <td>{{ port.protocol }}</td>
+                                                <td>{{ port.state }}</td>
+                                                <td>
+                                                    <strong>{{ port.service }}</strong>
+                                                    {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
+                                                        <div style="margin-top: 4px;">
+                                                            <span class="badge error-badge" style="font-size: 11px; font-weight: bold;">
+                                                                <i data-lucide="alert-triangle"></i> {{ port.credential_audit.message }}
+                                                            </span>
+                                                        </div>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ port.version }}</td>
+                                                <td>
+                                                    {% if port.version and port.version != "-" %}
+                                                        <button 
+                                                            type="button" 
+                                                            class="cve-btn"
+                                                            onclick="toggleCVEs('{{ host_index }}-{{ port_index }}', '{{ port.version }}')"
+                                                        >
+                                                            <i data-lucide="search" style="width: 12px; height: 12px; margin-right: 2px;"></i> CVEs
+                                                        </button>
+                                                    {% else %}
+                                                        <span class="text-muted">No version</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            <tr id="cve-row-{{ host_index }}-{{ port_index }}" class="cve-details-row" style="display: none;">
+                                                <td colspan="6">
+                                                    <div class="cve-container">
+                                                        <div class="cve-loading">Searching vulnerability database...</div>
+                                                        <div class="cve-results" style="display: none;"></div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                {% else %}
+                                    <p class="no-ports-msg">No open ports found for this host.</p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                        </div>
+                    </div>
+                    <div id="topology-tab" class="tab-pane">
+                        <div id="map-fullscreen-container" class="map-fullscreen-container">
+                            <div class="map-controls">
+                                <label>
+                                    <input type="checkbox" id="map-show-ports" checked onchange="updateTopology()">
+                                    Show Ports in Nodes
+                                </label>
+                                <label>
+                                    <input type="checkbox" id="map-enable-physics" checked onchange="togglePhysics(this.checked)">
+                                    Enable Physics
+                                </label>
+                                <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="resetMapCamera()">Center Map</button>
+                                <button type="button" id="map-fullscreen-btn" class="cve-btn" style="padding: 4px 10px; margin-left: auto;" onclick="toggleMapFullscreen()">Fullscreen Mode</button>
+                            </div>
+                            <div class="topology-wrapper">
+                                <div id="topology-map" style="height: 550px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);"></div>
+                                <div id="node-details-panel" class="node-details-panel" style="display: none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <p>No hosts found.</p>
+        {% endif %}
+
+        {% if parsed_result.output %}
+            <h3>Additional Output</h3>
+            <pre>{{ parsed_result.output }}</pre>
+        {% endif %}
+    {% endif %}
+
+{% endif %}
+
+{% if scan_result.status == "completed" or scan_result.status == "failed" %}
+    <div class="page-actions">
+        <a href="{{ url_for('print_report', scan_id=scan_result.id) }}" target="_blank" class="button" style="font-weight: bold; background: var(--olive); color: white; border: 0;">Print Executive Report</a>
+        <a href="{{ url_for('export_result_csv', scan_id=scan_result.id) }}" class="button btn-secondary">Export CSV</a>
+        <a href="{{ url_for('export_result_json', scan_id=scan_result.id) }}" class="button btn-secondary">Export JSON</a>
+        <a href="{{ url_for('export_result_txt', scan_id=scan_result.id) }}" class="button btn-secondary">Export TXT</a>
+    </div>
+{% endif %}
+
+<script id="network-hosts-data" type="application/json">
+    {{ parsed_result.hosts | tojson | safe if parsed_result and parsed_result.hosts else '[]' }}
+</script>
+<script id="network-subnet-cidr" type="text/plain">{{ scan_result.network_cidr if scan_result else '' }}</script>
+
+<script>
+    function toggleCVEs(id, query) {
+        const row = document.getElementById("cve-row-" + id);
+        if (!row) return;
+
+        if (row.style.display === "table-row") {
+            row.style.display = "none";
+            return;
+        }
+
+        // Close all other open CVE rows to keep the UI clean
+        document.querySelectorAll(".cve-details-row").forEach(r => {
+            if (r.id !== "cve-row-" + id) {
+                r.style.display = "none";
+            }
+        });
+
+        // Show the row
+        row.style.display = "table-row";
+
+        const loadingDiv = row.querySelector(".cve-loading");
+        const resultsDiv = row.querySelector(".cve-results");
+
+        // If we've already fetched results, just show them
+        if (resultsDiv.dataset.fetched === "true") {
+            return;
+        }
+
+        loadingDiv.style.display = "block";
+        resultsDiv.style.display = "none";
+
+        // Call the backend API
+        fetch("/api/cves?query=" + encodeURIComponent(query))
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("HTTP error " + response.status);
+                }
+                return response.json();
+            })
+            .then(data => {
+                loadingDiv.style.display = "none";
+                resultsDiv.style.display = "block";
+                resultsDiv.dataset.fetched = "true";
+
+                if (!data || data.length === 0) {
+                    resultsDiv.innerHTML = "<p class='no-cves'>No known vulnerabilities found for this version.</p>";
+                    return;
+                }
+
+                let html = "<div class='cve-cards'>";
+                data.forEach(cve => {
+                    // Determine CVSS class based on score
+                    let severityClass = "sev-low";
+                    let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
+                    
+                    if (cve.cvss >= 9.0) {
+                        severityClass = "sev-critical";
+                    } else if (cve.cvss >= 7.0) {
+                        severityClass = "sev-high";
+                    } else if (cve.cvss >= 4.0) {
+                        severityClass = "sev-medium";
+                    } else if (cve.cvss === null) {
+                        severityClass = "sev-unknown";
+                    }
+
+                    html += `
+                        <div class="cve-card">
+                            <div class="cve-card-header">
+                                <a href="https://nvd.nist.gov/vuln/detail/${cve.id}" target="_blank" class="cve-id-link">${cve.id}</a>
+                                <span class="cve-badge ${severityClass}">CVSS ${scoreText}</span>
+                            </div>
+                            <p class="cve-summary">${cve.summary}</p>
+                        </div>
+                    `;
+                });
+                html += "</div>";
+                resultsDiv.innerHTML = html;
+            })
+            .catch(err => {
+                loadingDiv.style.display = "none";
+                resultsDiv.style.display = "block";
+                resultsDiv.innerHTML = "<p class='cve-error'>Failed to load vulnerabilities: " + err.message + "</p>";
+            });
+    }
+
+    // Subnet and Host data for interactive map
+    const networkHostsData = JSON.parse(document.getElementById("network-hosts-data").textContent || "[]");
+    const networkSubnetCidr = document.getElementById("network-subnet-cidr").textContent;
+
+    let network = null;
+    let nodesDataSet = null;
+    let edgesDataSet = null;
+
+    // Dashboard chart instances
+    let chartHostStatus = null;
+    let chartCommonServices = null;
+    let chartPortsByHost = null;
+    let chartProtocols = null;
+
+    function switchTab(tabId, btn) {
+        btn.parentNode.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        
+        const contentContainer = btn.parentNode.parentNode.querySelector(".tabs-content");
+        contentContainer.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+        
+        const targetPane = document.getElementById(tabId);
+        if (targetPane) {
+            targetPane.classList.add("active");
+            
+            if (tabId === "topology-tab") {
+                if (!network) {
+                    initTopologyMap();
+                } else {
+                    setTimeout(() => {
+                        network.fit();
+                    }, 50); // Small timeout to ensure DOM layout is updated
+                }
+            } else if (tabId === "dashboard-tab") {
+                // Ensure charts resize/render correctly when tab is switched
+                setTimeout(() => {
+                    if (chartHostStatus) chartHostStatus.resize();
+                    if (chartCommonServices) chartCommonServices.resize();
+                    if (chartPortsByHost) chartPortsByHost.resize();
+                    if (chartProtocols) chartProtocols.resize();
+                }, 50);
+            }
+        }
+    }
+
+    function initTopologyMap() {
+        const container = document.getElementById("topology-map");
+        if (!container) return;
+
+        nodesDataSet = new vis.DataSet();
+        edgesDataSet = new vis.DataSet();
+
+        const data = {
+            nodes: nodesDataSet,
+            edges: edgesDataSet
+        };
+
+        const options = {
+            physics: {
+                enabled: document.getElementById("map-enable-physics").checked,
+                solver: "barnesHut",
+                barnesHut: {
+                    gravitationalConstant: -12000,
+                    centralGravity: 0.1,
+                    springLength: 260,
+                    springConstant: 0.015,
+                    damping: 0.7,
+                    avoidOverlap: 1.0
+                },
+                stabilization: {
+                    enabled: true,
+                    iterations: 1500,
+                    updateInterval: 50
+                }
+            },
+            interaction: {
+                hover: true,
+                tooltipDelay: 150,
+                selectable: true
+            },
+            nodes: {
+                font: {
+                    face: "Inter, Segoe UI, sans-serif"
+                }
+            }
+        };
+
+        network = new vis.Network(container, data, options);
+
+        network.on("selectNode", function (params) {
+            if (params.nodes.length > 0) {
+                showNodeDetails(params.nodes[0]);
+            }
+        });
+
+        network.on("deselectNode", function () {
+            hideNodeDetails();
+        });
+
+        updateTopology();
+        
+        // Fit camera after initial stabilization
+        network.once("stabilizationIterationsDone", function () {
+            network.fit();
+        });
+    }
+
+    function togglePhysics(enabled) {
+        if (network) {
+            network.setOptions({ physics: { enabled: enabled } });
+        }
+    }
+
+    function resetMapCamera() {
+        if (network) {
+            network.fit({
+                animation: {
+                    duration: 800,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+        }
+    }
+
+    function hideNodeDetails() {
+        const panel = document.getElementById("node-details-panel");
+        if (panel) {
+            panel.style.display = "none";
+        }
+    }
+
+    function showNodeDetails(nodeId) {
+        const panel = document.getElementById("node-details-panel");
+        if (!panel) return;
+
+        if (nodeId === "subnet") {
+            panel.innerHTML = `
+                <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+                <h4 class="node-details-title">Subnet Information</h4>
+                <div class="node-details-item"><strong>Network:</strong> ${networkSubnetCidr}</div>
+                <div class="node-details-item"><strong>Type:</strong> Target Subnet</div>
+            `;
+            panel.style.display = "block";
+            return;
+        }
+
+        if (nodeId.startsWith("host_")) {
+            const ip = nodeId.replace("host_", "");
+            const hostObj = networkHostsData.find(h => h.address === ip);
+            if (!hostObj) return;
+
+            let portsListHtml = "";
+            if (hostObj.ports && hostObj.ports.length > 0) {
+                portsListHtml = `
+                    <div class="node-details-item" style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                        <strong>Open Ports:</strong>
+                        <ul style="margin: 6px 0 0 0; padding-left: 18px; font-size: 12px;">
+                            ${hostObj.ports.map(p => `<li>${p.port}/${p.protocol} (${p.service})</li>`).join("")}
+                        </ul>
+                    </div>
+                `;
+            } else {
+                portsListHtml = `<div class="node-details-item" style="color: var(--text-muted); font-style: italic;">No open ports found</div>`;
+            }
+
+            let macHtml = "";
+            if (hostObj.mac_address) {
+                macHtml = `<div class="node-details-item"><strong>MAC Address:</strong> ${hostObj.mac_address}</div>`;
+                if (hostObj.mac_vendor) {
+                    macHtml += `<div class="node-details-item"><strong>Vendor:</strong> ${hostObj.mac_vendor}</div>`;
+                }
+            }
+
+            let anomalyHtml = "";
+            if (hostObj.mac_anomaly) {
+                const anom = hostObj.mac_anomaly;
+                const anomTitle = {
+                    "mac_spoofing": '<i data-lucide="alert-triangle" class="icon-inline"></i> MAC Spoofing Alert',
+                    "ip_hijack": '<i data-lucide="alert-circle" class="icon-inline"></i> IP Hijack Warning',
+                    "rogue_device": '<i data-lucide="shield-alert" class="icon-inline"></i> Rogue/Unknown Device Alert'
+                }[anom.type] || '<i data-lucide="alert-triangle" class="icon-inline"></i> Security Anomaly Detected';
+                
+                anomalyHtml = `
+                    <div style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-text); border-radius: var(--radius-sm); padding: 12px; margin: 12.5px 0; font-size: 13px; font-weight: normal;">
+                        <strong style="display: block; margin-bottom: 4px; font-weight: bold;">${anomTitle}</strong>
+                        ${anom.description}
+                    </div>
+                `;
+            }
+
+            panel.innerHTML = `
+                <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+                <h4 class="node-details-title">Host Details</h4>
+                ${anomalyHtml}
+                <div class="node-details-item"><strong>IP Address:</strong> ${hostObj.address}</div>
+                ${hostObj.hostname ? `<div class="node-details-item"><strong>Hostname:</strong> ${hostObj.hostname}</div>` : ""}
+                ${macHtml}
+                <div class="node-details-item"><strong>Status:</strong> <span class="badge success-badge">${hostObj.status}</span></div>
+                ${portsListHtml}
+            `;
+            panel.style.display = "block";
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            return;
+        }
+
+        if (nodeId.startsWith("port_")) {
+            const parts = nodeId.split("_");
+            const ip = parts[1];
+            const portNum = parts[2];
+
+            const hostObj = networkHostsData.find(h => h.address === ip);
+            if (!hostObj) return;
+
+            const portObj = hostObj.ports.find(p => p.port.toString() === portNum);
+            if (!portObj) return;
+
+            let cveButtonHtml = "";
+            let cveContainerHtml = "";
+
+            if (portObj.version && portObj.version !== "-") {
+                cveButtonHtml = `
+                    <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                        <button type="button" class="cve-btn" style="width: 100%;" onclick="loadMapNodeCVEs('${ip}', '${portNum}', '${portObj.version}')">
+                            <i data-lucide="search" style="width: 12.5px; height: 12.5px; margin-right: 2.5px; vertical-align: middle;"></i> Search CVEs
+                        </button>
+                    </div>
+                `;
+                cveContainerHtml = `
+                    <div id="map-cve-container-${ip}-${portNum}" class="cve-container" style="display:none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
+                        <div class="cve-loading">Searching vulnerability database...</div>
+                        <div class="cve-results" style="display: none; max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                `;
+            }
+
+            let auditHtml = "";
+            if (portObj.credential_audit && portObj.credential_audit.status === "vulnerable") {
+                auditHtml = `
+                    <div class="node-details-item" style="margin-top: 8px;">
+                        <span class="badge error-badge" style="display: inline-block; font-size: 11px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px;">
+                            <i data-lucide="alert-triangle" style="width: 11px; height: 11px;"></i> ${portObj.credential_audit.message}
+                        </span>
+                    </div>
+                `;
+            }
+
+            panel.innerHTML = `
+                <button class="node-details-close" onclick="hideNodeDetails()">×</button>
+                <h4 class="node-details-title">Port Details</h4>
+                <div class="node-details-item"><strong>Host IP:</strong> ${ip}</div>
+                <div class="node-details-item"><strong>Port:</strong> ${portObj.port}/${portObj.protocol}</div>
+                <div class="node-details-item"><strong>State:</strong> <span class="badge success-badge">${portObj.state}</span></div>
+                <div class="node-details-item"><strong>Service:</strong> ${portObj.service}</div>
+                <div class="node-details-item"><strong>Version:</strong> ${portObj.version || "-"}</div>
+                ${auditHtml}
+                ${cveButtonHtml}
+                ${cveContainerHtml}
+            `;
+            panel.style.display = "block";
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            return;
+        }
+    }
+
+    function loadMapNodeCVEs(ip, port, query) {
+        const container = document.getElementById(`map-cve-container-${ip}-${port}`);
+        if (!container) return;
+
+        const loadingDiv = container.querySelector(".cve-loading");
+        const MathResultsDiv = container.querySelector(".cve-results");
+
+        container.style.display = "block";
+        loadingDiv.style.display = "block";
+        MathResultsDiv.style.display = "none";
+
+        if (MathResultsDiv.dataset.fetched === "true") {
+            loadingDiv.style.display = "none";
+            MathResultsDiv.style.display = "block";
+            return;
+        }
+
+        fetch("/api/cves?query=" + encodeURIComponent(query))
+            .then(response => {
+                if (!response.ok) throw new Error("HTTP error " + response.status);
+                return response.json();
+            })
+            .then(data => {
+                loadingDiv.style.display = "none";
+                MathResultsDiv.style.display = "block";
+                MathResultsDiv.dataset.fetched = "true";
+
+                if (!data || data.length === 0) {
+                    MathResultsDiv.innerHTML = "<p class='no-cves' style='font-size: 11px;'>No known vulnerabilities found.</p>";
+                    return;
+                }
+
+                let html = "<div class='cve-cards' style='grid-template-columns: 1fr; gap: 8px;'>";
+                data.forEach(cve => {
+                    let severityClass = "sev-low";
+                    let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
+                    
+                    if (cve.cvss >= 9.0) severityClass = "sev-critical";
+                    else if (cve.cvss >= 7.0) severityClass = "sev-high";
+                    else if (cve.cvss >= 4.0) severityClass = "sev-medium";
+                    else if (cve.cvss === null) severityClass = "sev-unknown";
+
+                    html += `
+                        <div class="cve-card" style="padding: 8px; border-radius: 6px;">
+                            <div class="cve-card-header" style="margin-bottom: 4px;">
+                                <a href="https://nvd.nist.gov/vuln/detail/${cve.id}" target="_blank" class="cve-id-link" style="font-size: 12px;">${cve.id}</a>
+                                <span class="cve-badge ${severityClass}" style="font-size: 9px; padding: 2px 6px;">CVSS ${scoreText}</span>
+                            </div>
+                            <p class="cve-summary" style="font-size: 11px; line-height: 1.4;">${cve.summary}</p>
+                        </div>
+                    `;
+                });
+                html += "</div>";
+                MathResultsDiv.innerHTML = html;
+            })
+            .catch(err => {
+                loadingDiv.style.display = "none";
+                MathResultsDiv.style.display = "block";
+                MathResultsDiv.innerHTML = "<p class='cve-error' style='font-size: 11px;'>Failed: " + err.message + "</p>";
+            });
+    }
+
+    function updateTopology() {
+        if (!network || !nodesDataSet || !edgesDataSet) return;
+
+        const selectedNodes = network.getSelectedNodes();
+        const previousSelection = selectedNodes.length > 0 ? selectedNodes[0] : null;
+
+        const showPortsInLabels = document.getElementById("map-show-ports").checked;
+        const hostSections = document.querySelectorAll(".host-section");
+
+        const newNodes = [];
+        const newEdges = [];
+
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const themeColors = {
+            hostBg: isDark ? "#2D3325" : "#6E7D58", // --surface-soft / --olive (both are dark backgrounds)
+            hostSelectedBg: "#B7C49A", // --sage
+            hostBorder: isDark ? "#A0A494" : "#3A3F2F", // --text-muted / --forest
+            ipText: isDark ? "#F5F1E8" : "#202417", // --text (drawn outside on map bg)
+            hostNameText: isDark ? "#A0A494" : "#6D715F", // --text-muted (drawn outside on map bg)
+            portBg: "#FFFDF8", // always white circle for high contrast inside the host circle
+            portText: "#202417", // always dark text inside the white circle
+            portMutedText: "#6D715F", // always muted dark text inside the white circle
+            edgeColor: isDark ? "#B7C49A" : "#6E7D58", // sage in dark mode, olive in light mode
+            edgeHighlight: isDark ? "#FFFDF8" : "#3A3F2F", // white in dark mode, forest in light mode
+            subnetBg: isDark ? "#24291D" : "#3A3F2F", // --surface / --forest (both are dark backgrounds)
+            subnetText: isDark ? "#F5F1E8" : "#FFFDF8" // --text / --surface
+        };
+
+        let hasVisibleHosts = false;
+        hostSections.forEach(section => {
+            if (section.style.display !== "none") {
+                hasVisibleHosts = true;
+            }
+        });
+
+        if (hasVisibleHosts) {
+            newNodes.push({
+                id: "subnet",
+                label: networkSubnetCidr,
+                title: "Scanned Subnet: " + networkSubnetCidr,
+                shape: "box",
+                margin: 10,
+                shapeProperties: {
+                    borderRadius: 6
+                },
+                color: {
+                    background: themeColors.subnetBg,
+                    border: themeColors.hostBorder,
+                    highlight: {
+                        background: themeColors.hostSelectedBg,
+                        border: themeColors.hostBorder
+                    }
+                },
+                font: {
+                    color: themeColors.subnetText,
+                    weight: "bold",
+                    size: 13
+                }
+            });
+        }
+
+        const hostCtxRenderer = function ({ ctx, id, x, y, state, style, label }) {
+            return {
+                drawNode: function () {
+                    const node = nodesDataSet ? nodesDataSet.get(id) : null;
+                    const ipText = node ? (node.ip || "") : id.replace("host_", "");
+                    const hostname = node ? (node.hostname || "") : "";
+                    const hostPorts = node ? (node.portsList || []) : [];
+                    const hostStatusType = node ? (node.hostStatusType || "secure") : "secure";
+
+                    const isSelected = state.selected;
+                    const hasPorts = hostPorts.length > 0;
+                    
+                    // Read checkbox state directly to avoid closure issues during redraws
+                    const showPortsCheckbox = document.getElementById("map-show-ports");
+                    const showPorts = showPortsCheckbox ? showPortsCheckbox.checked : false;
+                    
+                    const drawPorts = showPorts && hasPorts;
+                    const r = drawPorts ? 52 : 36;
+
+                    // Fetch active theme colors dynamically on every draw call!
+                    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+                    
+                    let bgCol = isDark ? "#2D3325" : "#6E7D58";
+                    let borderCol = isDark ? "#A0A494" : "#3A3F2F";
+                    let fillCol = isSelected ? "#B7C49A" : bgCol;
+                    
+                    if (!isSelected) {
+                        if (hostStatusType === "critical") {
+                            bgCol = isDark ? "#4C241E" : "#E9C9BE";
+                            borderCol = "#7A2E1E";
+                            fillCol = bgCol;
+                        } else if (hostStatusType === "vulnerable") {
+                            bgCol = isDark ? "#483A20" : "#EFE3BC";
+                            borderCol = "#745A1D";
+                            fillCol = bgCol;
+                        }
+                    } else {
+                        if (hostStatusType === "critical") {
+                            borderCol = "#7A2E1E";
+                            fillCol = isDark ? "#63352F" : "#F5D6D0";
+                        } else if (hostStatusType === "vulnerable") {
+                            borderCol = "#745A1D";
+                            fillCol = isDark ? "#57482D" : "#F5ECD2";
+                        } else {
+                            fillCol = "#B7C49A";
+                        }
+                    }
+
+                    const themeColors = {
+                        hostBg: fillCol,
+                        hostBorder: borderCol,
+                        ipText: isDark ? "#F5F1E8" : "#202417",
+                        hostNameText: isDark ? "#A0A494" : "#6D715F",
+                        portBg: "#FFFDF8",
+                        portText: "#202417",
+                        portMutedText: "#6D715F",
+                    };
+
+                    // 1. Draw Host Circle (Base)
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, 2 * Math.PI);
+                    ctx.fillStyle = themeColors.hostBg;
+                    ctx.fill();
+
+                    // Border
+                    ctx.strokeStyle = themeColors.hostBorder;
+                    ctx.lineWidth = isSelected ? 3 : 1.5;
+                    ctx.stroke();
+
+                    // 2. Draw Host IP and Hostname OUTSIDE and BELOW the Circle
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "top";
+
+                    const textY = y + r + 8; // 8px below circle boundary
+
+                    ctx.font = "bold 11px Inter, Segoe UI, sans-serif";
+                    ctx.fillStyle = themeColors.ipText;
+                    ctx.fillText(ipText, x, textY);
+
+                    if (hostname) {
+                        ctx.font = "italic 9px Inter, Segoe UI, sans-serif";
+                        ctx.fillStyle = themeColors.hostNameText;
+                        ctx.fillText("(" + hostname + ")", x, textY + 14);
+                    }
+
+                    // 3. Draw Port Circles inside the Host Circle in a Ring/Circular pattern
+                    ctx.textBaseline = "middle";
+                    if (drawPorts) {
+                        const portCount = hostPorts.length;
+                        
+                        if (portCount === 1) {
+                            // Draw a single port circle at the center
+                            const px = x;
+                            const py = y;
+                            const portRadius = 14;
+                            const portObj = hostPorts[0];
+                            const serviceName = portObj.service ? portObj.service.substring(0, 6) : "";
+
+                            ctx.beginPath();
+                            ctx.arc(px, py, portRadius, 0, 2 * Math.PI);
+                            ctx.fillStyle = themeColors.portBg;
+                            ctx.fill();
+                            ctx.strokeStyle = themeColors.hostBorder;
+                            ctx.lineWidth = 1;
+                            ctx.stroke();
+
+                            // Port Number
+                            ctx.font = "bold 8px Inter, Segoe UI, sans-serif";
+                            ctx.fillStyle = themeColors.portText;
+                            ctx.fillText(portObj.port, px, py - 4);
+
+                            // Service Name
+                            ctx.font = "normal 6px Inter, Segoe UI, sans-serif";
+                            ctx.fillStyle = themeColors.portMutedText;
+                            ctx.fillText(serviceName, px, py + 4);
+                        } else {
+                            // Draw multiple port circles in a ring pattern
+                            const maxRing = 5;
+                            const drawCount = Math.min(portCount, maxRing);
+                            const ringRadius = 24;
+                            const portRadius = 11;
+
+                            for (let i = 0; i < drawCount; i++) {
+                                // Spread symmetrically around the center
+                                const angle = (2 * Math.PI * i) / drawCount - Math.PI / 2;
+                                const px = x + ringRadius * Math.cos(angle);
+                                const py = y + ringRadius * Math.sin(angle);
+                                
+                                const portObj = hostPorts[i];
+                                const serviceName = portObj.service ? portObj.service.substring(0, 6) : "";
+
+                                ctx.beginPath();
+                                ctx.arc(px, py, portRadius, 0, 2 * Math.PI);
+                                ctx.fillStyle = themeColors.portBg;
+                                ctx.fill();
+                                ctx.strokeStyle = themeColors.hostBorder;
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+
+                                // Port Number
+                                ctx.font = "bold 7px Inter, Segoe UI, sans-serif";
+                                ctx.fillStyle = themeColors.portText;
+                                ctx.fillText(portObj.port, px, py - 3);
+
+                                // Service Name
+                                ctx.font = "normal 5px Inter, Segoe UI, sans-serif";
+                                ctx.fillStyle = themeColors.portMutedText;
+                                ctx.fillText(serviceName, px, py + 4);
+                            }
+
+                            // If there are more than 5 ports, draw a "+X" indicator at the center
+                            if (portCount > maxRing) {
+                                const px = x;
+                                const py = y;
+                                const portRadius = 11;
+
+                                ctx.beginPath();
+                                ctx.arc(px, py, portRadius, 0, 2 * Math.PI);
+                                ctx.fillStyle = "#BFB28B"; // --sand
+                                ctx.fill();
+                                ctx.strokeStyle = themeColors.hostBorder;
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+
+                                ctx.font = "bold 8px Inter, Segoe UI, sans-serif";
+                                ctx.fillStyle = themeColors.portText;
+                                ctx.fillText("+" + (portCount - 5), px, py);
+                            }
+                        }
+                    } else if (showPorts) {
+                        // If showPorts is checked but host has no ports, display "No Ports" inside center
+                        ctx.font = "9px Inter, Segoe UI, sans-serif";
+                        ctx.fillStyle = "rgba(255, 253, 248, 0.85)";
+                        ctx.fillText("No open ports", x, y);
+                    }
+                }
+            };
+        };
+
+        hostSections.forEach(section => {
+            if (section.style.display === "none") {
+                return;
+            }
+
+            const ip = section.dataset.ip;
+            const hostnameSpan = section.querySelector(".host-name");
+            const hostname = hostnameSpan ? hostnameSpan.textContent.replace("/", "").trim() : "";
+
+            const portRows = section.querySelectorAll(".port-row");
+            let visiblePorts = [];
+            portRows.forEach(row => {
+                if (row.style.display !== "none") {
+                    visiblePorts.push({
+                        port: row.dataset.port,
+                        service: row.dataset.service
+                    });
+                }
+            });
+
+            const tooltipHtml = `
+                <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
+                    <strong>Host:</strong> ${ip}<br>
+                    ${hostname ? `<strong>Name:</strong> ${hostname}<br>` : ""}
+                    <strong>Ports:</strong> ${visiblePorts.length} visible / ${portRows.length} total
+                </div>
+            `;
+
+            const hostObj = networkHostsData.find(h => h.address === ip);
+            let hostStatusType = "secure";
+            if (hostObj) {
+                if (hostObj.mac_anomaly) {
+                    hostStatusType = "critical";
+                } else if (hostObj.ports && hostObj.ports.some(p => p.credential_audit && p.credential_audit.status === 'vulnerable')) {
+                    hostStatusType = "vulnerable";
+                }
+            }
+
+            const hostNodeId = "host_" + ip;
+            const drawPorts = showPortsInLabels && visiblePorts.length > 0;
+
+            newNodes.push({
+                id: hostNodeId,
+                label: ip,
+                ip: ip,
+                hostname: hostname,
+                portsList: visiblePorts,
+                hostStatusType: hostStatusType,
+                title: tooltipHtml,
+                shape: "custom",
+                ctxRenderer: hostCtxRenderer,
+                size: drawPorts ? 60 : 42
+            });
+
+            newEdges.push({
+                id: "edge_subnet_" + ip,
+                from: "subnet",
+                to: hostNodeId,
+                color: {
+                    color: themeColors.edgeColor,
+                    highlight: themeColors.edgeHighlight
+                },
+                width: 2
+            });
+        });
+
+        const currentNodes = nodesDataSet.get();
+        const currentEdges = edgesDataSet.get();
+
+        const currentNodesIds = currentNodes.map(n => n.id);
+        const newNodesIds = newNodes.map(n => n.id);
+
+        const nodesToRemove = currentNodesIds.filter(id => !newNodesIds.includes(id));
+        const nodesToUpdate = newNodes;
+
+        const currentEdgesIds = currentEdges.map(e => e.id);
+        const newEdgesIds = newEdges.map(e => e.id);
+
+        const edgesToRemove = currentEdgesIds.filter(id => !newEdgesIds.includes(id));
+        const edgesToUpdate = newEdges;
+
+        nodesDataSet.remove(nodesToRemove);
+        nodesDataSet.update(nodesToUpdate);
+
+        edgesDataSet.remove(edgesToRemove);
+        edgesDataSet.update(edgesToUpdate);
+
+        if (previousSelection && newNodesIds.includes(previousSelection)) {
+            network.selectNodes([previousSelection]);
+            showNodeDetails(previousSelection);
+        } else {
+            hideNodeDetails();
+        }
+
+        if (network) {
+            network.redraw();
+        }
+    }
+
+    function filterResults() {
+        const ipQuery = document.getElementById("filter-ip").value.toLowerCase().trim();
+        const portQuery = document.getElementById("filter-port").value.toLowerCase().trim();
+        const protoQuery = document.getElementById("filter-proto").value.toLowerCase();
+        const stateQuery = document.getElementById("filter-state").value.toLowerCase();
+        const serviceQuery = document.getElementById("filter-service").value.toLowerCase().trim();
+        const versionQuery = document.getElementById("filter-version").value.toLowerCase().trim();
+        const onlyOpenPorts = document.getElementById("open-ports-only").checked;
+
+        const hostSections = document.querySelectorAll(".host-section");
+
+        hostSections.forEach(section => {
+            const ip = section.dataset.ip.toLowerCase();
+            const hasPorts = section.dataset.hasPorts === "true";
+            
+            if (onlyOpenPorts && !hasPorts) {
+                section.style.display = "none";
+                return;
+            }
+
+            if (ipQuery !== "" && !ip.includes(ipQuery)) {
+                section.style.display = "none";
+                return;
+            }
+
+            const portRows = section.querySelectorAll(".port-row");
+            const cveRows = section.querySelectorAll(".cve-details-row");
+            
+            if (portRows.length === 0) {
+                if (portQuery !== "" || protoQuery !== "" || stateQuery !== "" || serviceQuery !== "" || versionQuery !== "") {
+                    section.style.display = "none";
+                } else {
+                    section.style.display = "block";
+                }
+                return;
+            }
+
+            let visibleRowsCount = 0;
+
+            portRows.forEach((row, idx) => {
+                const port = row.dataset.port.toLowerCase();
+                const protocol = (row.dataset.protocol || "").toLowerCase();
+                const state = (row.dataset.state || "").toLowerCase();
+                const service = row.dataset.service.toLowerCase();
+                const version = row.dataset.version.toLowerCase();
+                const cveRow = cveRows[idx];
+
+                const portMatches = portQuery === "" || port.includes(portQuery);
+                const protoMatches = protoQuery === "" || protocol === protoQuery;
+                const stateMatches = stateQuery === "" || state === stateQuery;
+                const serviceMatches = serviceQuery === "" || service.includes(serviceQuery);
+                const versionMatches = versionQuery === "" || version.includes(versionQuery);
+
+                if (portMatches && protoMatches && stateMatches && serviceMatches && versionMatches) {
+                    row.style.display = "table-row";
+                    visibleRowsCount++;
+                } else {
+                    row.style.display = "none";
+                    if (cveRow) cveRow.style.display = "none";
+                }
+            });
+
+            if (visibleRowsCount > 0) {
+                section.style.display = "block";
+            } else {
+                section.style.display = "none";
+            }
+        });
+
+        // Sync with network topology map if it exists
+        updateTopology();
+        updateDashboard();
+    }
+
+    function resetFilters() {
+        document.getElementById("filter-ip").value = "";
+        document.getElementById("filter-port").value = "";
+        document.getElementById("filter-proto").value = "";
+        document.getElementById("filter-state").value = "";
+        document.getElementById("filter-service").value = "";
+        document.getElementById("filter-version").value = "";
+        document.getElementById("open-ports-only").checked = false;
+        filterResults();
+    }
+
+    function toggleMapFullscreen() {
+        const container = document.getElementById("map-fullscreen-container");
+        if (!container) return;
+
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().catch(err => {
+                console.error("Error enabling fullscreen:", err);
+                container.classList.add("fullscreen");
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    // Handle fullscreen transition dynamically (standardized across browsers)
+    document.addEventListener("fullscreenchange", () => {
+        const container = document.getElementById("map-fullscreen-container");
+        const btn = document.getElementById("map-fullscreen-btn");
+        if (!container) return;
+
+        const isFullscreen = document.fullscreenElement === container;
+        
+        if (isFullscreen) {
+            container.classList.add("fullscreen");
+            if (btn) btn.innerHTML = "Exit Fullscreen";
+        } else {
+            container.classList.remove("fullscreen");
+            if (btn) btn.innerHTML = "Fullscreen Mode";
+        }
+
+        if (network) {
+            setTimeout(() => {
+                network.setSize("100%", "100%");
+                network.redraw();
+                network.fit();
+            }, 150);
+        }
+    });
+
+    // ==========================================
+    // PHASE 5: DASHBOARD & GRAPHICAL STATISTICS
+    // ==========================================
+
+    function updateDashboard() {
+        const hostSections = document.querySelectorAll(".host-section");
+        
+        let totalHostsCount = 0;
+        let activeHostsCount = 0;
+        let totalOpenPorts = 0;
+        let versionedServicesCount = 0;
+        
+        const serviceCounts = {};
+        const protocolCounts = { tcp: 0, udp: 0 };
+        const portsByHost = [];
+        
+        hostSections.forEach(section => {
+            if (section.style.display === "none") return;
+            
+            totalHostsCount++;
+            const ip = section.dataset.ip;
+            
+            // Check status from the badge class or text
+            const badge = section.querySelector(".badge");
+            const status = badge ? badge.textContent.toLowerCase().trim() : "unknown";
+            
+            // In nmap, up/completed/running/active mean active host
+            if (status === "up" || status === "completed" || status === "running" || status === "active" || status === "online") {
+                activeHostsCount++;
+            }
+            
+            const portRows = section.querySelectorAll(".port-row");
+            let visiblePortsCount = 0;
+            
+            portRows.forEach(row => {
+                if (row.style.display === "none") return;
+                
+                visiblePortsCount++;
+                totalOpenPorts++;
+                
+                const service = (row.dataset.service || "unknown").toLowerCase().trim();
+                const protocol = (row.dataset.protocol || "tcp").toLowerCase().trim();
+                const version = (row.dataset.version || "").trim();
+                
+                if (service && service !== "-") {
+                    serviceCounts[service] = (serviceCounts[service] || 0) + 1;
+                }
+                if (protocol) {
+                    protocolCounts[protocol] = (protocolCounts[protocol] || 0) + 1;
+                }
+                if (version && version !== "-") {
+                    versionedServicesCount++;
+                }
+            });
+            
+            if (visiblePortsCount > 0) {
+                portsByHost.push({ ip: ip, count: visiblePortsCount });
+            }
+        });
+        
+        // Sort hosts by port count descending (top 10 exposed)
+        portsByHost.sort((a, b) => b.count - a.count);
+        const topPortsByHost = portsByHost.slice(0, 10);
+        
+        // Sort services by frequency (top 10)
+        const sortedServices = Object.entries(serviceCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+            
+        const serviceLabels = sortedServices.map(item => item[0]);
+        const serviceData = sortedServices.map(item => item[1]);
+        
+        // Update summary text cards
+        document.getElementById("stat-total-ips").textContent = totalHostsCount;
+        document.getElementById("stat-active-hosts").textContent = activeHostsCount;
+        
+        const activeRatio = totalHostsCount > 0 ? Math.round((activeHostsCount / totalHostsCount) * 100) : 0;
+        document.getElementById("stat-active-ratio").textContent = activeRatio + "% of total detected";
+        
+        document.getElementById("stat-open-ports").textContent = totalOpenPorts;
+        const avgPorts = activeHostsCount > 0 ? (totalOpenPorts / activeHostsCount).toFixed(1) : "0.0";
+        document.getElementById("stat-avg-ports").textContent = avgPorts + " per active host";
+        
+        document.getElementById("stat-services-detected").textContent = versionedServicesCount;
+        
+        // Render or Update the charts
+        renderHostStatusChart(activeHostsCount, totalHostsCount - activeHostsCount);
+        renderCommonServicesChart(serviceLabels, serviceData);
+        renderPortsByHostChart(topPortsByHost.map(h => h.ip), topPortsByHost.map(h => h.count));
+        renderProtocolsChart(protocolCounts.tcp, protocolCounts.udp);
+    }
+
+    function getChartThemeColors() {
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        return {
+            text: isDark ? "#F5F1E8" : "#202417",
+            textMuted: isDark ? "#A0A494" : "#6D715F",
+            grid: isDark ? "rgba(255, 253, 248, 0.1)" : "rgba(58, 63, 47, 0.08)",
+            border: isDark ? "#24291D" : "#FFFDF8" // --surface
+        };
+    }
+
+    function renderHostStatusChart(active, inactive) {
+        const canvas = document.getElementById("chart-host-status");
+        if (!canvas) return;
+        
+        if (chartHostStatus) {
+            chartHostStatus.destroy();
+        }
+        
+        const hasData = active > 0 || inactive > 0;
+        const data = hasData ? [active, inactive] : [0, 1];
+        const labels = hasData ? ["Active (Up)", "Offline (Down)"] : ["No Data", "No Data"];
+        const colors = hasData ? ["#B7C49A", "#6D715F"] : ["#F0E8D8", "#F0E8D8"];
+        const themeColors = getChartThemeColors();
+        
+        chartHostStatus = new Chart(canvas, {
+            type: "doughnut",
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 1,
+                    borderColor: themeColors.border
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {
+                            color: themeColors.text,
+                            font: { family: "Inter, Segoe UI, sans-serif", weight: "bold", size: 11 }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderCommonServicesChart(labels, data) {
+        const canvas = document.getElementById("chart-common-services");
+        if (!canvas) return;
+        
+        if (chartCommonServices) {
+            chartCommonServices.destroy();
+        }
+        
+        const displayLabels = labels.length === 0 ? ["No active services"] : labels;
+        const displayData = data.length === 0 ? [0] : data;
+        const themeColors = getChartThemeColors();
+        
+        chartCommonServices = new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: displayLabels,
+                datasets: [{
+                    label: "Open Ports Count",
+                    data: displayData,
+                    backgroundColor: "#6E7D58", // --olive
+                    borderRadius: 5,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: "y", // horizontal bar chart
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: themeColors.textMuted,
+                            precision: 0
+                        },
+                        grid: { color: themeColors.grid }
+                    },
+                    y: {
+                        ticks: {
+                            color: themeColors.text,
+                            font: { weight: "bold", size: 11 }
+                        },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderPortsByHostChart(labels, data) {
+        const canvas = document.getElementById("chart-ports-by-host");
+        if (!canvas) return;
+        
+        if (chartPortsByHost) {
+            chartPortsByHost.destroy();
+        }
+        
+        const displayLabels = labels.length === 0 ? ["No open ports"] : labels;
+        const displayData = data.length === 0 ? [0] : data;
+        const themeColors = getChartThemeColors();
+        
+        chartPortsByHost = new Chart(canvas, {
+            type: "bar",
+            data: {
+                labels: displayLabels,
+                datasets: [{
+                    label: "Open Ports",
+                    data: displayData,
+                    backgroundColor: "#BFB28B", // --sand
+                    borderRadius: 5,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: themeColors.text,
+                            font: { weight: "bold", size: 10 }
+                        },
+                        grid: { display: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: themeColors.textMuted,
+                            precision: 0
+                        },
+                        grid: { color: themeColors.grid }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderProtocolsChart(tcp, udp) {
+        const canvas = document.getElementById("chart-protocols");
+        if (!canvas) return;
+        
+        if (chartProtocols) {
+            chartProtocols.destroy();
+        }
+        
+        const hasData = tcp > 0 || udp > 0;
+        const data = hasData ? [tcp, udp] : [0, 0];
+        const colors = ["#3A3F2F", "#B7C49A"]; // --forest, --sage
+        const themeColors = getChartThemeColors();
+        
+        chartProtocols = new Chart(canvas, {
+            type: "pie",
+            data: {
+                labels: ["TCP", "UDP"],
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 1,
+                    borderColor: themeColors.border
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {
+                            color: themeColors.text,
+                            font: { family: "Inter, Segoe UI, sans-serif", weight: "bold", size: 11 }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Observe data-theme changes on <html> to update charts & network map dynamically
+    if (window.MutationObserver) {
+        const themeObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === "data-theme") {
+                    updateDashboard();
+                    updateTopology();
+                }
+            });
+        });
+        themeObserver.observe(document.documentElement, { attributes: true });
+    }
+
+    // Initialize Dashboard statistics and charts
+    updateDashboard();
+</script>
+
+{% endblock %}

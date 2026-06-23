@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Access Denied - Portojo Security</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root {
+            --bg: #fbfbf9;
+            --surface: #ffffff;
+            --text: #202417;
+            --text-muted: #6d715f;
+            --border: #e2e4da;
+            --danger: #e53e3e;
+            --danger-bg: #fff5f5;
+            --shadow: rgba(58, 63, 47, 0.08);
+            --radius: 12px;
+        }
+
+        [data-theme="dark"] {
+            --bg: #1a1c15;
+            --surface: #24291d;
+            --text: #f5f1e8;
+            --text-muted: #a0a494;
+            --border: #3a3f2f;
+            --danger: #fc8181;
+            --danger-bg: #2d1f1f;
+            --shadow: rgba(0, 0, 0, 0.2);
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .card {
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 4px 20px var(--shadow);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .shield-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: var(--danger-bg);
+            color: var(--danger);
+            margin-bottom: 25px;
+        }
+
+        .shield-icon svg {
+            width: 44px;
+            height: 44px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0 0 10px 0;
+            letter-spacing: -0.5px;
+            font-weight: 700;
+        }
+
+        p {
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+            margin: 0 0 25px 0;
+        }
+
+        .details {
+            background-color: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 30px;
+            text-align: left;
+            font-size: 13.5px;
+        }
+
+        .details-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .details-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .details-label {
+            font-weight: bold;
+            color: var(--text-muted);
+        }
+
+        .details-value {
+            font-weight: bold;
+            color: var(--text);
+        }
+
+        .badge {
+            background-color: var(--danger-bg);
+            color: var(--danger);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .footer-note {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 0;
+        }
+    </style>
+    <script>
+        (function() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+</head>
+<body>
+    <div class="card">
+        <div class="shield-icon">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+        </div>
+        
+        <h1>Access Denied</h1>
+        <p>
+            Your access to this application has been restricted in accordance with system security policies.
+            Requests originating from your device have been classified as suspicious or malicious.
+        </p>
+
+        <div class="details">
+            <div class="details-row">
+                <span class="details-label">Blocked IP:</span>
+                <span class="details-value">{{ ip_address }}</span>
+            </div>
+            <div class="details-row">
+                <span class="details-label">Status:</span>
+                <span class="badge">Auto Blocked</span>
+            </div>
+            {% if block and block.reason %}
+            <div class="details-row">
+                <span class="details-label">Reason:</span>
+                <span class="details-value" style="font-family: inherit; font-size: 12.5px;">{{ block.reason }}</span>
+            </div>
+            {% endif %}
+            <div class="details-row">
+                <span class="details-label">Date:</span>
+                <span class="details-value" style="font-family: inherit;">{{ block.created_at.strftime('%Y-%m-%d %H:%M:%S') if block else '' }}</span>
+            </div>
+        </div>
+
+        <p class="footer-note">
+            If you believe this is an error, please contact your system administrator.
+        </p>
+    </div>
+</body>
+</html>

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if has_active_scans %}
+    <meta http-equiv="refresh" content="3">
+{% endif %}
+
+<h2>Scan History (Total: {{ scan_results|length }})</h2>
+
+{% if scan_results %}
+
+<div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+    <button type="button" id="btn-compare-scans" class="button" style="display: none;" onclick="compareSelectedScans()">
+        <i data-lucide="git-compare"></i> Compare Selected (0/2)
+    </button>
+</div>
+
+<table>
+    <tr>
+        <th style="width: 40px; text-align: center;"></th>
+        <th>Date</th>
+        <th>Input IP</th>
+        <th>Network</th>
+        <th>Scan Type</th>
+        <th>Status</th>
+        <th>Action</th>
+    </tr>
+
+    {% for scan in scan_results %}
+    <tr>
+        <td style="text-align: center; vertical-align: middle;">
+            <input 
+                type="checkbox" 
+                class="scan-compare-chk" 
+                value="{{ scan.id }}" 
+                style="width: 18px; height: 18px; cursor: pointer; margin: 0;"
+                {% if scan.status != 'completed' %}disabled title="Only completed scans can be compared"{% endif %}
+            >
+        </td>
+        <td>{{ scan.created_at|localtime }}</td>
+        <td>{{ scan.input_ip }}</td>
+        <td>{{ scan.network_cidr }}</td>
+        <td>{{ scan.scan_type|scan_name }}</td>
+        <td>
+            {% if scan.status == "completed" %}
+                <span class="badge success-badge">Completed</span>
+            {% elif scan.status == "running" %}
+                <span class="badge running-badge">Running</span>
+            {% elif scan.status == "pending" %}
+                <span class="badge pending-badge">Pending</span>
+            {% elif scan.status == "failed" %}
+                <span class="badge error-badge">Failed</span>
+            {% else %}
+                {{ scan.status }}
+            {% endif %}
+        </td>
+        <td>
+            <a href="{{ url_for('result', scan_id=scan.id) }}" class="button" style="padding: 6px 12px; font-size: 13px; text-decoration: none;">View Result</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<script>
+function updateCompareButton() {
+    const checkboxes = document.querySelectorAll(".scan-compare-chk:checked");
+    const btn = document.getElementById("btn-compare-scans");
+    if (!btn) return;
+    
+    btn.innerHTML = `<i data-lucide="git-compare"></i> Compare Selected (${checkboxes.length}/2)`;
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+    
+    if (checkboxes.length === 2) {
+        btn.style.display = "inline-flex";
+        btn.style.opacity = "1";
+        btn.disabled = false;
+        btn.style.cursor = "pointer";
+    } else {
+        if (checkboxes.length > 0) {
+            btn.style.display = "inline-flex";
+            btn.style.opacity = "0.5";
+            btn.disabled = true;
+            btn.style.cursor = "not-allowed";
+        } else {
+            btn.style.display = "none";
+        }
+    }
+}
+
+function compareSelectedScans() {
+    const checkboxes = document.querySelectorAll(".scan-compare-chk:checked");
+    if (checkboxes.length !== 2) {
+        alert("Please select exactly 2 scans to compare.");
+        return;
+    }
+    const idA = checkboxes[0].value;
+    const idB = checkboxes[1].value;
+    window.location.href = `/scans/compare?scan_a=${idA}&scan_b=${idB}`;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".scan-compare-chk").forEach(chk => {
+        chk.addEventListener("change", () => {
+            const checked = document.querySelectorAll(".scan-compare-chk:checked");
+            if (checked.length > 2) {
+                chk.checked = false;
+                alert("You can compare a maximum of 2 scans.");
+                return;
+            }
+            updateCompareButton();
+        });
+    });
+});
+</script>
+
+{% else %}
+
+<p>No scan history found.</p>
+
+{% endif %}
+
+
+{% endblock %}

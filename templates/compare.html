@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="compare-header-row">
+    <h2>Scan Comparison</h2>
+    <div class="page-actions" style="margin-top: 0;">
+        <a href="{{ url_for('history') }}" class="button btn-secondary" style="margin: 0;"><i data-lucide="arrow-left"></i> Back to History</a>
+    </div>
+</div>
+
+{% if not targets_match %}
+    <div class="alert-box warning-alert">
+        <strong><i data-lucide="alert-circle" class="icon-inline"></i> Warning:</strong> You are comparing scans with different targets (Scan A: {{ scan_a.network_cidr }} vs Scan B: {{ scan_b.network_cidr }}). Some differences may be due to different targets.
+    </div>
+{% endif %}
+
+<!-- Comparison Overview Grid -->
+<div class="compare-overview">
+    <!-- Scan A Card -->
+    <div class="compare-scan-card scan-card-a">
+        <div class="card-tag tag-a">Scan A (Reference)</div>
+        <h4 style="margin: 0 0 10px 0; font-size: 18px; color: var(--forest);">{{ scan_a.network_cidr }}</h4>
+        <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Date:</strong> {{ scan_a.created_at|localtime }}</div>
+        <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Type:</strong> {{ scan_a.scan_type|scan_name }}</div>
+        {% if scan_a.ports %}
+            <div class="meta-item" style="font-size: 13px; color: var(--text-muted);"><strong>Ports:</strong> {{ scan_a.ports|replace(',', ', ') }}</div>
+        {% endif %}
+    </div>
+    
+    <!-- Versus Divider -->
+    <div class="compare-vs">VS</div>
+    
+    <!-- Scan B Card -->
+    <div class="compare-scan-card scan-card-b">
+        <div class="card-tag tag-b">Scan B (Current)</div>
+        <h4 style="margin: 0 0 10px 0; font-size: 18px; color: var(--forest);">{{ scan_b.network_cidr }}</h4>
+        <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Date:</strong> {{ scan_b.created_at|localtime }}</div>
+        <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Type:</strong> {{ scan_b.scan_type|scan_name }}</div>
+        {% if scan_b.ports %}
+            <div class="meta-item" style="font-size: 13px; color: var(--text-muted);"><strong>Ports:</strong> {{ scan_b.ports|replace(',', ', ') }}</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Change Metrics Summary -->
+<div class="dashboard-summary" style="margin-top: 24px; margin-bottom: 24px;">
+    <div class="stat-card">
+        <span class="stat-card-title">New Hosts</span>
+        <span class="stat-card-value text-success">+{{ added_hosts|length }}</span>
+        <span class="stat-card-subtitle">Discovered in Scan B</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-card-title">Offline Hosts</span>
+        <span class="stat-card-value text-error">-{{ removed_hosts|length }}</span>
+        <span class="stat-card-subtitle">Missing in Scan B</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-card-title">Newly Opened Ports</span>
+        {% if total_added_ports > 0 %}
+            <span class="stat-card-value text-error">+{{ total_added_ports }}</span>
+        {% else %}
+            <span class="stat-card-value">+{{ total_added_ports }}</span>
+        {% endif %}
+        <span class="stat-card-subtitle">Potential security risk</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-card-title">Closed Ports</span>
+        <span class="stat-card-value text-muted">-{{ total_removed_ports }}</span>
+        <span class="stat-card-subtitle">No longer responding</span>
+    </div>
+</div>
+
+<!-- Security Alert Box -->
+{% if total_added_ports > 0 %}
+    <div class="alert-box error-alert" style="margin-bottom: 30px; display: flex; gap: 16px; align-items: flex-start; padding: 18px; border-radius: var(--radius-md); background: var(--error-bg); border: 1px solid rgba(122, 46, 30, 0.15); color: var(--error-text);">
+        <div class="alert-icon" style="display: flex; align-items: center; padding-top: 2px;"><i data-lucide="bell-ring" class="text-error" style="width: 24px; height: 24px;"></i></div>
+        <div class="alert-content" style="flex: 1;">
+            <h4 style="margin: 0 0 6px 0; color: var(--error-text); font-weight: 800;">Security Alert: New Open Ports Detected</h4>
+            <p style="margin: 0; color: var(--error-text); font-size: 14px; line-height: 1.5;">
+                Scan B discovered <strong>{{ total_added_ports }} new open ports</strong> that were not present or open in Scan A. Please audit these ports to ensure they are authorized.
+            </p>
+        </div>
+    </div>
+{% endif %}
+
+<!-- Added Hosts Section -->
+{% if added_hosts %}
+    <h3 class="section-title text-success"><i data-lucide="plus-circle" class="icon-inline text-success"></i> Newly Discovered Hosts ({{ added_hosts|length }})</h3>
+    <div class="hosts-container">
+        {% for host in added_hosts %}
+            <div class="host-section diff-added-card">
+                <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <h4 style="margin: 0;">
+                        Host: <span class="host-ip">{{ host.address }}</span>
+                        {% if host.hostname %}
+                            <span class="host-name">/ {{ host.hostname }}</span>
+                        {% endif %}
+                        <span class="badge success-badge">New Host Discovered</span>
+                    </h4>
+                    {% if host.mac_address %}
+                    <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
+                        <strong>MAC:</strong> {{ host.mac_address }}
+                        {% if host.mac_vendor %}
+                            <span class="host-vendor">({{ host.mac_vendor }})</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% if host.ports %}
+                    <table class="ports-table">
+                        <thead>
+                            <tr>
+                                <th>Port</th>
+                                <th>Protocol</th>
+                                <th>State</th>
+                                <th>Service</th>
+                                <th>Version</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for port in host.ports %}
+                            <tr class="port-row-added">
+                                <td><strong>{{ port.port }}</strong></td>
+                                <td>{{ port.protocol }}</td>
+                                <td><span class="badge success-badge">{{ port.state }}</span></td>
+                                <td><strong>{{ port.service }}</strong></td>
+                                <td>{{ port.version }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="no-ports-msg">No open ports found on this host.</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<!-- Removed Hosts Section -->
+{% if removed_hosts %}
+    <h3 class="section-title text-error"><i data-lucide="minus-circle" class="icon-inline text-error"></i> Hosts Went Offline ({{ removed_hosts|length }})</h3>
+    <div class="hosts-container">
+        {% for host in removed_hosts %}
+            <div class="host-section diff-removed-card">
+                <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <h4 style="margin: 0;">
+                        Host: <span class="host-ip text-line-through">{{ host.address }}</span>
+                        {% if host.hostname %}
+                            <span class="host-name text-line-through">/ {{ host.hostname }}</span>
+                        {% endif %}
+                        <span class="badge error-badge">Host Offline</span>
+                    </h4>
+                    {% if host.mac_address %}
+                    <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
+                        <strong>MAC:</strong> <span class="text-line-through">{{ host.mac_address }}</span>
+                        {% if host.mac_vendor %}
+                            <span class="host-vendor">({{ host.mac_vendor }})</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% if host.ports %}
+                    <p class="meta-item text-muted">Previously open ports before going offline:</p>
+                    <table class="ports-table">
+                        <thead>
+                            <tr>
+                                <th>Port</th>
+                                <th>Protocol</th>
+                                <th>Service</th>
+                                <th>Version</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for port in host.ports %}
+                            <tr class="port-row-removed">
+                                <td>{{ port.port }}</td>
+                                <td>{{ port.protocol }}</td>
+                                <td>{{ port.service }}</td>
+                                <td>{{ port.version }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="no-ports-msg">No ports were open before going offline.</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<!-- Modified Hosts Section -->
+{% if modified_hosts %}
+    <h3 class="section-title text-warning"><i data-lucide="alert-circle" class="icon-inline text-warning"></i> Modified Hosts ({{ modified_hosts|length }})</h3>
+    <div class="hosts-container">
+        {% for host in modified_hosts %}
+            <div class="host-section diff-modified-card">
+                <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <h4 style="margin: 0;">
+                        Host: <span class="host-ip">{{ host.address }}</span>
+                        {% if host.hostname %}
+                            <span class="host-name">/ {{ host.hostname }}</span>
+                        {% endif %}
+                        <span class="badge running-badge">Changes Detected</span>
+                    </h4>
+                    {% if host.mac_address %}
+                    <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
+                        <strong>MAC:</strong> {{ host.mac_address }}
+                        {% if host.mac_vendor %}
+                            <span class="host-vendor">({{ host.mac_vendor }})</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <table class="ports-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 140px;">Status</th>
+                            <th>Port</th>
+                            <th>Protocol</th>
+                            <th>Service</th>
+                            <th>Version Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Added Ports -->
+                        {% for port in host.added_ports %}
+                        <tr class="port-row-added">
+                            <td><span class="badge success-badge">+ Opened</span></td>
+                            <td><strong>{{ port.port }}</strong></td>
+                            <td>{{ port.protocol }}</td>
+                            <td><strong>{{ port.service }}</strong></td>
+                            <td>{{ port.version }}</td>
+                        </tr>
+                        {% endfor %}
+                        
+                        <!-- Removed Ports -->
+                        {% for port in host.removed_ports %}
+                        <tr class="port-row-removed">
+                            <td><span class="badge error-badge">- Closed</span></td>
+                            <td class="text-line-through">{{ port.port }}</td>
+                            <td>{{ port.protocol }}</td>
+                            <td class="text-line-through">{{ port.service }}</td>
+                            <td class="text-line-through">{{ port.version }}</td>
+                        </tr>
+                        {% endfor %}
+                        
+                        <!-- Changed Ports -->
+                        {% for port in host.changed_ports %}
+                        <tr class="port-row-changed">
+                            <td><span class="badge running-badge"><i data-lucide="settings"></i> Service Changed</span></td>
+                            <td><strong>{{ port.port }}</strong></td>
+                            <td>{{ port.protocol }}</td>
+                            <td>
+                                {% if port.service_a != port.service_b %}
+                                    <span class="text-opacity-60">{{ port.service_a }}</span> → <strong>{{ port.service_b }}</strong>
+                                {% else %}
+                                    <strong>{{ port.service_b }}</strong>
+                                {% endif %}
+                            </td>
+                            <td class="version-details-text">
+                                {% if port.state_a != port.state_b %}
+                                    State: <span class="text-opacity-60">{{ port.state_a }}</span> → <strong>{{ port.state_b }}</strong><br>
+                                {% endif %}
+                                {% if port.version_a != port.version_b %}
+                                    Version: <span class="text-opacity-60">{{ port.version_a }}</span> → <strong>{{ port.version_b }}</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<!-- Unchanged Hosts Section -->
+{% if unchanged_hosts %}
+    <details class="unchanged-hosts-details">
+        <summary>
+            <i data-lucide="shield-check" class="icon-inline"></i> Unchanged Hosts ({{ unchanged_hosts|length }}) - Click to Expand
+        </summary>
+        <div style="padding-top: 14px;">
+            <table class="ports-table">
+                <thead>
+                    <tr>
+                        <th>Host IP</th>
+                        <th>Hostname</th>
+                        <th>Status</th>
+                        <th>Open Ports Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for host in unchanged_hosts %}
+                    <tr>
+                        <td><strong>{{ host.address }}</strong></td>
+                        <td>{{ host.hostname or "-" }}</td>
+                        <td><span class="badge success-badge">{{ host.status|capitalize }}</span></td>
+                        <td>{{ host.ports|length }} ports</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </details>
+{% endif %}
+
+{% endblock %}

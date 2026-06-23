@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+    <div>
+        <h2>Scan Schedules (Total: {{ schedules|length }})</h2>
+        <p>Manage and track recurring scanning schedules.</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <button type="submit" form="bulk-delete-schedules-form" id="bulk-delete-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected schedules?')">
+            <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Delete Selected
+        </button>
+        <a href="{{ url_for('new_schedule') }}" class="button">Create New Schedule</a>
+    </div>
+</div>
+
+{% if schedules %}
+
+<form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="max-width: none; width: 100%;">
+<table>
+    <tr>
+        <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-schedules" aria-label="Select all schedules"></th>
+        <th>Schedule Name</th>
+        <th>Target Network</th>
+        <th>Scan Type</th>
+        <th>Ports</th>
+        <th>Frequency</th>
+        <th>Status</th>
+        <th>Last Run</th>
+        <th>Next Run</th>
+        <th>Action</th>
+    </tr>
+
+    {% for schedule in schedules %}
+    <tr>
+        <td style="text-align: center; width: 40px; vertical-align: middle;">
+            <input type="checkbox" class="schedule-checkbox" name="schedule_ids" value="{{ schedule.id }}" aria-label="Select schedule">
+        </td>
+        <td><strong>{{ schedule.name }}</strong></td>
+        <td>{{ schedule.network_cidr }}</td>
+        <td>{{ schedule.scan_type|scan_name }}</td>
+        <td>{{ schedule.ports|replace(',', ', ') if schedule.ports else "Default" }}</td>
+        <td><span style="text-transform: capitalize;">{{ schedule.frequency }}</span></td>
+        <td>
+            {% if schedule.is_active %}
+                <span class="badge success-badge">Active</span>
+            {% else %}
+                <span class="badge pending-badge">Paused</span>
+            {% endif %}
+        </td>
+        <td>{{ schedule.last_run|localtime if schedule.last_run else "Never" }}</td>
+        <td>{{ schedule.next_run|localtime }}</td>
+        <td>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <form action="{{ url_for('toggle_schedule', schedule_id=schedule.id) }}" method="POST" style="display:inline; margin:0;">
+                    <button type="submit" class="cve-btn" style="margin: 0 !important; padding: 4px 8px; font-size: 11px;">
+                        {% if schedule.is_active %}Pause{% else %}Resume{% endif %}
+                    </button>
+                </form>
+                <form action="{{ url_for('delete_schedule', schedule_id=schedule.id) }}" method="POST" style="display:inline; margin:0;" onsubmit="return confirm('Are you sure you want to delete this schedule?');">
+                    <button type="submit" class="cve-btn" style="margin: 0 !important; padding: 4px 8px; font-size: 11px; background: var(--error-bg); color: var(--error-text);">
+                        Delete
+                    </button>
+                </form>
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+</form>
+
+{% else %}
+
+<p>No active scan schedules found. You can set up scans to run on a recurring schedule.</p>
+
+{% endif %}
+
+<div class="page-actions" style="margin-top: 24px;">
+    <a href="{{ url_for('new_schedule') }}" class="button">Create New Schedule</a>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const selectAllCheckbox = document.getElementById("select-all-schedules");
+        const scheduleCheckboxes = document.querySelectorAll(".schedule-checkbox");
+        const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
+
+        function updateBulkDeleteButton() {
+            const checkedCount = document.querySelectorAll(".schedule-checkbox:checked").length;
+            if (checkedCount > 0) {
+                bulkDeleteBtn.style.display = "inline-flex";
+                bulkDeleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+            } else {
+                bulkDeleteBtn.style.display = "none";
+            }
+        }
+
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener("change", () => {
+                scheduleCheckboxes.forEach(cb => {
+                    cb.checked = selectAllCheckbox.checked;
+                });
+                updateBulkDeleteButton();
+            });
+        }
+
+        scheduleCheckboxes.forEach(cb => {
+            cb.addEventListener("change", () => {
+                if (!cb.checked) {
+                    selectAllCheckbox.checked = false;
+                } else {
+                    const allChecked = Array.from(scheduleCheckboxes).every(c => c.checked);
+                    selectAllCheckbox.checked = allChecked;
+                }
+                updateBulkDeleteButton();
+            });
+        });
+    });
+</script>
+
+{% endblock %}

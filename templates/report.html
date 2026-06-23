@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PortOjo Scan Report - #{{ scan_result.id }}</title>
+    <style>
+        /* PDF/Print Styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #202417;
+            background: #ffffff;
+            margin: 0;
+            padding: 30px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .header {
+            border-bottom: 2px solid #6E7D58;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            color: #3A3F2F;
+            letter-spacing: -0.5px;
+        }
+        .header span {
+            color: #6D715F;
+            font-size: 12px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+            background: #F5F1E8;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(58, 63, 47, 0.1);
+        }
+        .meta-item {
+            margin-bottom: 5px;
+        }
+        .meta-item strong {
+            color: #3A3F2F;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            border: 1px solid rgba(58, 63, 47, 0.12);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            background: #FFFDF8;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: #6E7D58;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 11px;
+            color: #6D715F;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        h2 {
+            color: #3A3F2F;
+            border-bottom: 1px solid rgba(58, 63, 47, 0.15);
+            padding-bottom: 5px;
+            margin-top: 30px;
+        }
+        .host-section {
+            margin-bottom: 30px;
+            page-break-inside: avoid;
+            background: #FFFDF8;
+            border: 1px solid rgba(58, 63, 47, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .host-header {
+            font-size: 18px;
+            font-weight: bold;
+            color: #3A3F2F;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+        th {
+            background: #F0E8D8;
+            color: #3A3F2F;
+            font-weight: bold;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 2px solid rgba(58, 63, 47, 0.15);
+        }
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(58, 63, 47, 0.08);
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+        .badge-success { background: #DCE8D1; color: #2F5D32; }
+        .badge-danger { background: #E9C9BE; color: #7A2E1E; }
+        .raw-output {
+            background: #202417;
+            color: #F5F1E8;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .no-print-btn {
+            background: #6E7D58;
+            color: white;
+            padding: 10px 20px;
+            border: 0;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                padding: 0;
+            }
+            .raw-output {
+                max-height: none;
+                overflow: visible;
+                background: #f9f9f9;
+                color: #333;
+                border: 1px solid #ccc;
+            }
+        }
+        
+        /* Lucide Icons Integration */
+        .lucide {
+            width: 16px;
+            height: 16px;
+            vertical-align: middle;
+            display: inline-block;
+            stroke-width: 2px;
+        }
+        .icon-inline {
+            margin-right: 6px;
+            position: relative;
+            top: -1px;
+        }
+        .badge .lucide {
+            width: 12px;
+            height: 12px;
+            margin-right: 4px;
+            position: relative;
+            top: -1px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="no-print" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <button onclick="window.print()" class="no-print-btn">Print / Save as PDF</button>
+        <button onclick="window.close()" class="no-print-btn" style="background: #6D715F;">Close Window</button>
+    </div>
+
+    <div class="header">
+        <div>
+            <h1>PortOjo Security Report</h1>
+            <p style="margin: 5px 0 0 0; color: #6D715F; font-size: 14px;">Network Audit & Open Port Summary</p>
+        </div>
+        <div style="text-align: right;">
+            <strong>Scan ID:</strong> #{{ scan_result.id }}<br>
+            <span>Generated: {{ scan_result.created_at|localtime }}</span>
+        </div>
+    </div>
+
+    <div class="meta-grid">
+        <div class="meta-item"><strong>Target CIDR:</strong> {{ scan_result.network_cidr }}</div>
+        <div class="meta-item"><strong>Scan Type:</strong> {{ scan_result.scan_type|scan_name }}</div>
+        <div class="meta-item"><strong>IP Scope:</strong> {{ scan_result.input_ip }} / {{ scan_result.subnet_mask }}</div>
+        <div class="meta-item"><strong>User:</strong> {{ scan_result.user.email }}</div>
+        <div class="meta-item"><strong>Ports Scanned:</strong> {{ scan_result.ports|replace(',', ', ') if scan_result.ports else 'Default (Nmap Standard)' }}</div>
+        <div class="meta-item"><strong>Status:</strong> {{ scan_result.status.upper() }}</div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ parsed_result.hosts|length if parsed_result else 0 }}</div>
+            <div class="stat-label">Hosts Found</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% set ns = namespace(up_count=0) %}
+                {% if parsed_result and parsed_result.hosts %}
+                    {% for h in parsed_result.hosts %}
+                        {% if h.status == 'up' %}
+                            {% set ns.up_count = ns.up_count + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+                {{ ns.up_count }}
+            </div>
+            <div class="stat-label">Online Hosts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% set ns = namespace(port_count=0) %}
+                {% if parsed_result and parsed_result.hosts %}
+                    {% for h in parsed_result.hosts %}
+                        {% set ns.port_count = ns.port_count + (h.ports|length if h.ports else 0) %}
+                    {% endfor %}
+                {% endif %}
+                {{ ns.port_count }}
+            </div>
+            <div class="stat-label">Open Ports</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% set ns = namespace(ver_count=0) %}
+                {% if parsed_result and parsed_result.hosts %}
+                    {% for h in parsed_result.hosts %}
+                        {% if h.ports %}
+                            {% for p in h.ports %}
+                                {% if p.version %}
+                                    {% set ns.ver_count = ns.ver_count + 1 %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+                {{ ns.ver_count }}
+            </div>
+            <div class="stat-label">Versioned Services</div>
+        </div>
+    </div>
+
+    {% set ns_anom = namespace(anom_count=0) %}
+    {% if parsed_result and parsed_result.hosts %}
+        {% for h in parsed_result.hosts %}
+            {% if h.mac_anomaly %}
+                {% set ns_anom.anom_count = ns_anom.anom_count + 1 %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
+    {% if ns_anom.anom_count > 0 %}
+        <div style="background-color: #E9C9BE; border-left: 5px solid #7A2E1E; padding: 15px; margin-bottom: 30px; border-radius: 6px; color: #7A2E1E; display: flex; gap: 10px; align-items: flex-start;">
+            <div style="padding-top: 2px;"><i data-lucide="shield-alert" class="text-error" style="width: 20px; height: 20px;"></i></div>
+            <div>
+                <strong style="font-size: 16px; display: block; margin-bottom: 4px;">SECURITY ALERTS DETECTED: {{ ns_anom.anom_count }} Network Anomalies Found</strong>
+                <p style="margin: 0; font-size: 13px;">The scan has identified potential security risks (MAC spoofing, rogue devices, or IP hijacks). Please review the details below immediately.</p>
+            </div>
+        </div>
+    {% endif %}
+
+    <h2>Audit Details</h2>
+    
+    {% if parsed_result and parsed_result.hosts %}
+        {% for host in parsed_result.hosts %}
+            <div class="host-section">
+                <div class="host-header" style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                    <div>
+                        <span><i data-lucide="laptop" class="icon-inline"></i> Host: {{ host.address }} {% if host.hostname %}({{ host.hostname }}){% endif %}</span>
+                        <span class="badge {% if host.status == 'up' %}badge-success{% else %}badge-danger{% endif %}">
+                            {{ host.status.upper() }}
+                        </span>
+                    </div>
+                    {% if host.mac_address %}
+                    <div style="font-size: 12px; font-weight: normal; color: #6D715F;">
+                        <strong>MAC:</strong> {{ host.mac_address }}
+                        {% if host.mac_vendor %}
+                            <span>({{ host.mac_vendor }})</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if host.mac_anomaly %}
+                    <div style="background-color: #E9C9BE; color: #7A2E1E; border: 1px solid rgba(122, 46, 30, 0.2); border-radius: 6px; padding: 12px; margin-top: 10px; margin-bottom: 15px; font-size: 13px; font-weight: bold; page-break-inside: avoid; display: flex; align-items: center; gap: 8px;">
+                        {% if host.mac_anomaly.type == 'mac_spoofing' %}
+                            <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
+                        {% elif host.mac_anomaly.type == 'ip_hijack' %}
+                            <i data-lucide="alert-circle"></i> IP Hijack Warning:
+                        {% else %}
+                            <i data-lucide="shield-alert"></i> Rogue Device Alert:
+                        {% endif %}
+                        <span style="font-weight: normal; margin-left: 5px;">{{ host.mac_anomaly.description }}</span>
+                    </div>
+                {% endif %}
+                
+                {% if host.ports %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Port</th>
+                                <th>Protocol</th>
+                                <th>State</th>
+                                <th>Service</th>
+                                <th>Version</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for port in host.ports %}
+                                <tr>
+                                    <td><strong>{{ port.port }}</strong></td>
+                                    <td>{{ port.protocol|upper }}</td>
+                                    <td>{{ port.state|upper }}</td>
+                                    <td>
+                                        {{ port.service }}
+                                        {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
+                                            <div style="margin-top: 4px;">
+                                                <span class="badge badge-danger">
+                                                    <i data-lucide="alert-triangle"></i> {{ port.credential_audit.message }}
+                                                </span>
+                                            </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ port.version if port.version else '-' }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p style="margin: 0; color: #6D715F;">No open ports discovered on this host.</p>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No hosts active or discovered during scan.</p>
+    {% endif %}
+
+    <h2>Raw Audit Command & Log</h2>
+    <div style="margin-bottom: 20px;">
+        <strong>Executed Command:</strong> <code style="background: #F0E8D8; padding: 3px 6px; border-radius: 4px; font-size: 13px;">{{ parsed_result.command if parsed_result else 'N/A' }}</code>
+    </div>
+    <div class="raw-output">{% if parsed_result and parsed_result.output %}{{ parsed_result.output }}{% else %}No raw output log available.{% endif %}</div>
+
+    <div style="margin-top: 50px; text-align: center; font-size: 11px; color: #6D715F; border-top: 1px solid rgba(58, 63, 47, 0.15); padding-top: 15px;">
+        This security document is generated automatically by PortOjo Network Scanner. Keep this document confidential.
+    </div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        // Auto trigger print dialogue on page load
+        window.addEventListener('load', () => {
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+            setTimeout(() => {
+                window.print();
+            }, 500);
+        });
+    </script>
+</body>
+</html>

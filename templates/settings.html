@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if tab == 'honeypot' %}
+    <h2>Honeypot Settings</h2>
+    <p>
+        Configure the Web Honeypot to detect, log, and block malicious scans hitting decoy directory paths.
+    </p>
+
+    <div class="settings-container" style="margin-top: 25px;">
+        <div class="settings-form-wrapper" style="width: 100%;">
+            <form method="POST" action="{{ url_for('settings', tab='honeypot') }}">
+                <input type="hidden" name="form_type" value="honeypot">
+                
+                <div class="checkbox-group" style="margin-top: 15px; display: flex; align-items: center; gap: 10px;">
+                    <input 
+                        type="checkbox" 
+                        id="honeypot_active" 
+                        name="honeypot_active" 
+                        value="y" 
+                        {% if not setting or setting.honeypot_active %}checked{% endif %}
+                        style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
+                    >
+                    <label for="honeypot_active" style="margin: 0; cursor: pointer; font-size: 14.5px; font-weight: normal; color: var(--text);">
+                        Enable Web Honeypot (Detect and log decoy URL paths)
+                    </label>
+                </div>
+
+                <div class="checkbox-group" style="margin-top: 15px; display: flex; align-items: center; gap: 10px;">
+                    <input 
+                        type="checkbox" 
+                        id="honeypot_auto_block" 
+                        name="honeypot_auto_block" 
+                        value="y" 
+                        {% if not setting or setting.honeypot_auto_block %}checked{% endif %}
+                        style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
+                    >
+                    <label for="honeypot_auto_block" style="margin: 0; cursor: pointer; font-size: 14.5px; font-weight: normal; color: var(--text);">
+                        Automatically block client IPs that trigger a honeypot hit
+                    </label>
+                </div>
+
+                <div class="checkbox-group" style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+                    <input 
+                        type="checkbox" 
+                        id="honeypot_email_alert" 
+                        name="honeypot_email_alert" 
+                        value="y" 
+                        {% if not setting or setting.honeypot_email_alert %}checked{% endif %}
+                        style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
+                    >
+                    <label for="honeypot_email_alert" style="margin: 0; cursor: pointer; font-size: 14.5px; font-weight: normal; color: var(--text);">
+                        Send email alert immediately upon honeypot intrusion
+                    </label>
+                </div>
+
+                <button type="submit" class="button" style="margin-top: 25px;">Save Settings</button>
+            </form>
+        </div>
+    </div>
+{% else %}
+    <h2>System & Email Settings</h2>
+    <p>
+        Configure SMTP server credentials and email notification parameters to receive automated scans and real-time open port alerts.
+    </p>
+
+    <div class="settings-container" style="margin-top: 25px;">
+        <div class="settings-form-wrapper" style="width: 100%;">
+            <form method="POST" action="{{ url_for('settings', tab='smtp') }}">
+                <input type="hidden" name="form_type" value="smtp">
+
+                <label for="smtp_server">SMTP Server</label>
+                <input 
+                    type="text" 
+                    id="smtp_server" 
+                    name="smtp_server" 
+                    placeholder="e.g. smtp.gmail.com" 
+                    value="{{ setting.smtp_server if setting else 'smtp.gmail.com' }}"
+                    required
+                >
+
+                <label for="smtp_port">SMTP Port</label>
+                <input 
+                    type="number" 
+                    id="smtp_port" 
+                    name="smtp_port" 
+                    placeholder="e.g. 587 or 465" 
+                    value="{{ setting.smtp_port if setting else 587 }}"
+                    required
+                >
+
+                <label for="smtp_username">SMTP Username / Email</label>
+                <input 
+                    type="text" 
+                    id="smtp_username" 
+                    name="smtp_username" 
+                    placeholder="e.g. your_email@gmail.com" 
+                    value="{{ setting.smtp_username if setting and setting.smtp_username else '' }}"
+                >
+
+                <label for="smtp_password">SMTP Password</label>
+                <input 
+                    type="password" 
+                    id="smtp_password" 
+                    name="smtp_password" 
+                    placeholder="{% if setting and setting.smtp_password %}•••••••••••• (Leave blank to keep current){% else %}Your SMTP password{% endif %}"
+                >
+
+                <label for="smtp_sender">Sender Address (From)</label>
+                <input 
+                    type="email" 
+                    id="smtp_sender" 
+                    name="smtp_sender" 
+                    placeholder="e.g. alerts@yourdomain.com" 
+                    value="{{ setting.smtp_sender if setting and setting.smtp_sender else '' }}"
+                    required
+                >
+
+                <label for="alert_recipient">Alert Recipient (To)</label>
+                <input 
+                    type="email" 
+                    id="alert_recipient" 
+                    name="alert_recipient" 
+                    placeholder="e.g. admin@yourdomain.com" 
+                    value="{{ setting.alert_recipient if setting and setting.alert_recipient else '' }}"
+                    required
+                >
+
+                <div class="checkbox-group" style="margin-top: 20px; display: flex; align-items: center; gap: 10px;">
+                    <input 
+                        type="checkbox" 
+                        id="alert_on_new_ports_only" 
+                        name="alert_on_new_ports_only" 
+                        value="y" 
+                        {% if not setting or setting.alert_on_new_ports_only %}checked{% endif %}
+                        style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
+                    >
+                    <label for="alert_on_new_ports_only" style="margin: 0; cursor: pointer; font-size: 14.5px; font-weight: normal; color: var(--text);">
+                        Send alerts only when new open ports are discovered (Recommended)
+                    </label>
+                </div>
+
+                <button type="submit" class="button" style="margin-top: 25px;">Save Settings</button>
+            </form>
+        </div>
+
+        {% if setting and setting.smtp_server and setting.smtp_sender and setting.alert_recipient %}
+            <div id="connection-diagnostics-sidebar" class="settings-sidebar" style="margin-top: 35px; border-top: 1px solid var(--border); padding-top: 25px; width: 100%;">
+                <h3>Connection Diagnostics</h3>
+                <p>Verify SMTP connection by sending a diagnostic test email to <strong>{{ setting.alert_recipient }}</strong>.</p>
+                
+                <form method="POST" action="{{ url_for('test_email') }}" style="margin-top: 15px;">
+                    <button type="submit" class="button btn-secondary">
+                        Send Test Email
+                    </button>
+                </form>
+            </div>
+        {% endif %}
+    </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div style="margin-bottom: 25px;">
+    <h2>{% if asset %}Edit Asset{% else %}Add New Asset{% endif %}</h2>
+    <p>{% if asset %}Modify details for registered asset {{ asset.ip_address }}{% else %}Manually register a new device to the Asset Inventory{% endif %}</p>
+</div>
+
+<div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 30px; max-width: 700px; box-shadow: var(--shadow);">
+    <form method="POST" action="{% if asset %}{{ url_for('admin_edit_asset', asset_id=asset.id) }}{% else %}{{ url_for('admin_new_asset') }}{% endif %}" style="max-width: none; margin-top: 0;">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Column 1 -->
+            <div>
+                <label for="name">Asset Name</label>
+                <input type="text" id="name" name="name" value="{{ asset.name if asset else '' }}" placeholder="e.g. Finance Database Server">
+                
+                <label for="ip_address">IP Address <span style="color: var(--error-text);">*</span></label>
+                <input type="text" id="ip_address" name="ip_address" value="{{ asset.ip_address if asset else '' }}" required placeholder="e.g. 192.168.1.10">
+                
+                <label for="mac_address">MAC Address</label>
+                <input type="text" id="mac_address" name="mac_address" value="{{ asset.mac_address if asset else '' }}" placeholder="e.g. 00:11:22:33:44:55">
+                
+                <label for="mac_vendor">MAC Vendor</label>
+                <input type="text" id="mac_vendor" name="mac_vendor" value="{{ asset.mac_vendor if asset else '' }}" placeholder="e.g. Cisco Systems, Intel, Apple">
+
+                <label for="serial_number">Serial Number (S/N)</label>
+                <input type="text" id="serial_number" name="serial_number" value="{{ asset.serial_number if asset else '' }}" placeholder="e.g. CN-0XYZ123">
+
+                <label for="owner">Owner / Custodian</label>
+                <input type="text" id="owner" name="owner" value="{{ asset.owner if asset else '' }}" placeholder="e.g. IT Department / Admin John">
+            </div>
+
+            <!-- Column 2 -->
+            <div>
+                <label for="device_type">Device Type</label>
+                <select id="device_type" name="device_type">
+                    <option value="Unknown" {% if asset and asset.device_type == 'Unknown' %}selected{% endif %}>Unknown</option>
+                    <option value="Server" {% if asset and asset.device_type == 'Server' %}selected{% endif %}>Server</option>
+                    <option value="Workstation" {% if asset and asset.device_type == 'Workstation' %}selected{% endif %}>Workstation</option>
+                    <option value="Router" {% if asset and asset.device_type == 'Router' %}selected{% endif %}>Router</option>
+                    <option value="Switch" {% if asset and asset.device_type == 'Switch' %}selected{% endif %}>Switch</option>
+                    <option value="Firewall" {% if asset and asset.device_type == 'Firewall' %}selected{% endif %}>Firewall</option>
+                    <option value="Printer" {% if asset and asset.device_type == 'Printer' %}selected{% endif %}>Printer</option>
+                    <option value="IoT" {% if asset and asset.device_type == 'IoT' %}selected{% endif %}>IoT</option>
+                    <option value="Mobile" {% if asset and asset.device_type == 'Mobile' %}selected{% endif %}>Mobile</option>
+                </select>
+
+                <label for="operating_system">Operating System</label>
+                <input type="text" id="operating_system" name="operating_system" value="{{ asset.operating_system if asset else '' }}" placeholder="e.g. Ubuntu 22.04 LTS, Windows Server 2022">
+
+                <label for="criticality">Criticality Level</label>
+                <select id="criticality" name="criticality">
+                    <option value="Low" {% if asset and asset.criticality == 'Low' %}selected{% endif %}>Low</option>
+                    <option value="Medium" {% if not asset or asset.criticality == 'Medium' %}selected{% endif %}>Medium</option>
+                    <option value="High" {% if asset and asset.criticality == 'High' %}selected{% endif %}>High</option>
+                    <option value="Critical" {% if asset and asset.criticality == 'Critical' %}selected{% endif %}>Critical</option>
+                </select>
+
+                <label for="ip_assignment_type">IP Assignment Type</label>
+                <select id="ip_assignment_type" name="ip_assignment_type">
+                    <option value="DHCP" {% if not asset or asset.ip_assignment_type == 'DHCP' %}selected{% endif %}>DHCP</option>
+                    <option value="Static" {% if asset and asset.ip_assignment_type == 'Static' %}selected{% endif %}>Static</option>
+                </select>
+
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location" value="{{ asset.location if asset else '' }}" placeholder="e.g. Data Center A, Rack 04">
+            </div>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <label for="notes">Notes & Documentation</label>
+            <textarea id="notes" name="notes" rows="4" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 12px; font-family: inherit; font-size: 15px; outline: none; transition: border-color 0.18s ease;" placeholder="Enter system details, port explanations or other network specifications...">{{ asset.notes if asset else '' }}</textarea>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 30px; justify-content: flex-end;">
+            <a href="{{ url_for('admin_assets') }}" class="button" style="background: var(--surface-soft); color: var(--forest); border: 1px solid var(--border);">Cancel</a>
+            <button type="submit" class="button">{% if asset %}Save Changes{% else %}Register Asset{% endif %}</button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

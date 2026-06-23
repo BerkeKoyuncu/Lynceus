@@ -1,0 +1,462 @@
+=== admin.html ===
+  Admin Control Panel
+  Manage system security audits, user accounts, and system access policies.
+  📋 Scan Audits
+  👥 User Accounts
+  🛡️ Honeypot Activity
+  🛡️ MAC Audits & Rogue Devices
+  Date
+  User
+  Input IP
+  Network Scope
+  Type
+  Status
+  Actions
+  Completed
+  Running
+  Pending
+  Failed
+  View
+  Delete
+  No scan results found.
+  Joined Date
+  Email Address
+  Role
+  Actions
+  Administrator
+  Standard User
+  Delete User
+  Current Account
+  No user accounts found.
+  Total Attacks
+  Blocked IPs
+  🚫 Blocked IP Addresses
+  Blocked Date
+  IP Address
+  Reason
+  Action
+  Unblock
+  No IPs are currently blocked by the honeypot.
+  📝 Honeypot Intrusion Logs
+  Clear All Logs
+  Date
+  IP Address
+  Decoy Path
+  User Agent & Payload
+  Show Request Headers
+  No honeypot logs found.
+  ⚠️ Security Anomalies
+  Date
+  IP Address
+  MAC Address
+  Anomaly Type
+  Description
+  Status
+  Actions
+  MAC Spoofing
+  IP Hijack
+  Rogue Device
+  Resolved
+  Unresolved
+  Delete
+  No security anomalies detected on the network.
+  🖥️ Known Devices on Subnet
+  Last Seen
+  IP Address
+  MAC Address
+  Vendor
+  Hostname
+  Trust Status
+  Actions
+  Trusted
+  Untrusted
+  Delete
+  No known devices recorded in the database yet.
+  Start a New Scan
+=== base.html ===
+  PortOjo
+  P
+  PortOjo
+  Network Scanner
+  New Scan
+  Scan History
+  Schedules
+  Admin Panel
+  ☾
+  ▾
+  Settings
+  Logout
+=== blocked.html ===
+  Access Denied - Portojo Security
+  Access Denied
+  Your access to this application has been restricted in accordance with system security policies.
+            Requests originating from your device have been classified as suspicious or malicious.
+  Blocked IP:
+  Status:
+  Auto Blocked
+  Reason:
+  Date:
+  If you believe this is an error, please contact your system administrator.
+=== compare.html ===
+  Scan Comparison
+  ← Back to History
+  ⚠️ Warning:
+  You are comparing scans with different targets (Scan A:
+  vs Scan B:
+  ). Some differences may be due to different targets.
+  Scan A (Reference)
+  Date:
+  Type:
+  Ports:
+  VS
+  Scan B (Current)
+  Date:
+  Type:
+  Ports:
+  New Hosts
+  +{{ added_hosts|length }}
+  Discovered in Scan B
+  Offline Hosts
+  -{{ removed_hosts|length }}
+  Missing in Scan B
+  Newly Opened Ports
+  +{{ total_added_ports }}
+  +{{ total_added_ports }}
+  Potential security risk
+  Closed Ports
+  -{{ total_removed_ports }}
+  No longer responding
+  🚨
+  Security Alert: New Open Ports Detected
+  Scan B discovered
+  that were not present or open in Scan A. Please audit these ports to ensure they are authorized.
+  🟢 Newly Discovered Hosts ({{ added_hosts|length }})
+  Host:
+  / {{ host.hostname }}
+  New Host Discovered
+  MAC:
+  ({{ host.mac_vendor }})
+  Port
+  Protocol
+  State
+  Service
+  Version
+  No open ports found on this host.
+  🔴 Hosts Went Offline ({{ removed_hosts|length }})
+  Host:
+  / {{ host.hostname }}
+  Host Offline
+  MAC:
+  ({{ host.mac_vendor }})
+  Previously open ports before going offline:
+  Port
+  Protocol
+  Service
+  Version
+  No ports were open before going offline.
+  🟡 Modified Hosts ({{ modified_hosts|length }})
+  Host:
+  / {{ host.hostname }}
+  Changes Detected
+  MAC:
+  ({{ host.mac_vendor }})
+  Status
+  Port
+  Protocol
+  Service
+  Version Details
+  + Opened
+  - Closed
+  ⚙️ Service Changed
+  →
+  →
+  →
+  🔍 Unchanged Hosts ({{ unchanged_hosts|length }}) - Click to Expand
+  Host IP
+  Hostname
+  Status
+  Open Ports Count
+=== history.html ===
+  Scan History
+  📊 Compare Selected (0/2)
+  Date
+  Input IP
+  Network
+  Scan Type
+  Status
+  Action
+  [ATTR:title] Only completed scans can be compared
+  Completed
+  Running
+  Pending
+  Failed
+  View Result
+  No scan history found.
+  Start a New Scan
+=== login.html ===
+  Login
+  Email
+  Password
+  👁
+  Login
+  Don't have an account?
+  Register
+=== register.html ===
+  Register
+  Email
+  Password
+  👁
+  Confirm Password
+  👁
+  Register
+  Already have an account?
+  Login
+=== report.html ===
+  PortOjo Scan Report - #{{ scan_result.id }}
+  Print / Save as PDF
+  Close Window
+  PortOjo Security Report
+  Network Audit & Open Port Summary
+  Scan ID:
+  #{{ scan_result.id }}
+  Generated: {{ scan_result.created_at|localtime }}
+  Target CIDR:
+  Scan Type:
+  IP Scope:
+  User:
+  Ports Scanned:
+  Status:
+  Hosts Found
+  Online Hosts
+  Open Ports
+  Versioned Services
+  ⚠️ SECURITY ALERTS DETECTED: {{ ns_anom.anom_count }} Network Anomalies Found
+  The scan has identified potential security risks (MAC spoofing, rogue devices, or IP hijacks). Please review the details below immediately.
+  Audit Details
+  🖥️ Host: {{ host.address }} {% if host.hostname %}({{ host.hostname }}){% endif %}
+  MAC:
+  ({{ host.mac_vendor }})
+  Port
+  Protocol
+  State
+  Service
+  Version
+  ⚠️ {{ port.credential_audit.message }}
+  No open ports discovered on this host.
+  No hosts active or discovered during scan.
+  Raw Audit Command & Log
+  Executed Command:
+  This security document is generated automatically by PortOjo Network Scanner. Keep this document confidential.
+=== result.html ===
+  Scan Result
+  Input IP Address
+  Subnet Mask
+  Calculated Network
+  First Usable Host
+  Last Usable Host
+  Scan Type
+  Scanned Ports
+  Default Ports
+  Status
+  Completed
+  Running
+  Pending
+  Failed
+  Created At
+  Scan is waiting to start...
+  Scan is in progress, please wait...
+  Executed Command
+  Discovered Hosts and Open Ports
+  IP Address
+  [ATTR:placeholder] e.g. 192.168.1.1
+  Port
+  [ATTR:placeholder] e.g. 80, 443
+  Protocol
+  All
+  [ATTR:value] tcp
+  TCP
+  [ATTR:value] udp
+  UDP
+  State
+  All
+  [ATTR:value] open
+  Open
+  [ATTR:value] closed
+  Closed
+  [ATTR:value] filtered
+  Filtered
+  Service
+  [ATTR:placeholder] e.g. http, ssh
+  Version
+  [ATTR:placeholder] e.g. Apache, 2.4
+  Show only hosts with open ports
+  Clear Filters
+  📊 Dashboard
+  📋 Table View
+  🕸️ Network Map
+  Total Detected IPs
+  0
+  IP addresses in list
+  Active Hosts
+  0
+  0% of total
+  Total Open Ports
+  0
+  0.0 per active host
+  Vulnerabilities Checked
+  0
+  Versioned services
+  Host Status Summary
+  Most Common Open Services
+  Open Ports Count by Host
+  Protocol Distribution
+  Host:
+  / {{ host.hostname }}
+  MAC:
+  ({{ host.mac_vendor }})
+  Port
+  Protocol
+  State
+  Service
+  Version
+  Security
+  ⚠️ {{ port.credential_audit.message }}
+  🔍 CVEs
+  No version
+  Searching vulnerability database...
+  No open ports found for this host.
+  Show Ports in Nodes
+  Enable Physics
+  Center Map
+  Fullscreen Mode
+  No hosts found.
+  Additional Output
+  Print Executive Report
+  Export CSV
+  Export JSON
+  Export TXT
+=== scan.html ===
+  New Network Scan
+  Enter an IP address and subnet mask. PortOjo will calculate the network range automatically.
+  For safety, PortOjo allows scans only on private, loopback, or link-local networks.
+    Select a scan type below to view its specific target size limits and required privileges.
+  IP Address
+  [ATTR:placeholder] x.x.x.x
+  Subnet Mask
+  [ATTR:placeholder] x.x.x.x
+  Scan Type
+  Select scan type
+  [ATTR:value] fast
+  Fast Port Scan (TCP)
+  [ATTR:value] service_version
+  Service & Version Scan (TCP)
+  [ATTR:value] ping_sweep
+  Host Discovery (Ping Sweep)
+  [ATTR:value] syn
+  TCP SYN Scan (Half-Open)
+  [ATTR:value] connect
+  TCP Connect Scan (Full Handshake)
+  [ATTR:value] udp
+  UDP Port Scan
+  [ATTR:value] aggressive
+  Aggressive Scan
+  [ATTR:value] vuln
+  Vulnerability Scan (NSE)
+  Nmap Command:
+  IP Limit:
+  IPs
+  Required Privileges:
+  Custom Ports (Optional)
+  [ATTR:placeholder] e.g. 22,80,443 or 1-1000 (leave empty for default ports)
+  [ATTR:value] y
+  Perform Weak Credential Audit (FTP, Redis, HTTP Basic Auth)
+  Start Scan
+=== schedule_form.html ===
+  Create Scan Schedule
+  Configure a network scan to execute automatically on a recurring schedule.
+  Schedule Name
+  [ATTR:placeholder] e.g. Weekly Subnet Audit
+  Frequency
+  [ATTR:value] hourly
+  Hourly (Every Hour)
+  [ATTR:value] daily
+  Daily (Every Day)
+  [ATTR:value] weekly
+  Weekly (Every Week)
+  [ATTR:value] monthly
+  Monthly (Every Month)
+  IP Address
+  [ATTR:placeholder] x.x.x.x
+  Subnet Mask
+  [ATTR:placeholder] x.x.x.x
+  Scan Type
+  Select scan type
+  [ATTR:value] fast
+  Fast Port Scan (TCP)
+  [ATTR:value] service_version
+  Service & Version Scan (TCP)
+  [ATTR:value] ping_sweep
+  Host Discovery (Ping Sweep)
+  [ATTR:value] syn
+  TCP SYN Scan (Half-Open)
+  [ATTR:value] connect
+  TCP Connect Scan (Full Handshake)
+  [ATTR:value] udp
+  UDP Port Scan
+  [ATTR:value] aggressive
+  Aggressive Scan
+  [ATTR:value] vuln
+  Vulnerability Scan (NSE)
+  Nmap Command:
+  IP Limit:
+  IPs
+  Required Privileges:
+  Custom Ports (Optional)
+  [ATTR:placeholder] e.g. 22,80,443 or 1-1000 (leave empty for default ports)
+  Create Schedule
+=== schedules.html ===
+  Scan Schedules
+  Schedule Name
+  Target Network
+  Scan Type
+  Ports
+  Frequency
+  Status
+  Last Run
+  Next Run
+  Action
+  Active
+  Paused
+  Delete
+  No active scan schedules found. You can set up scans to run on a recurring schedule.
+  Create New Schedule
+  View History
+=== settings.html ===
+  System & Email Settings
+  Configure SMTP server credentials and email notification parameters to receive automated scans and real-time open port alerts.
+  SMTP Server
+  [ATTR:placeholder] e.g. smtp.gmail.com
+  SMTP Port
+  [ATTR:placeholder] e.g. 587 or 465
+  SMTP Username / Email
+  [ATTR:placeholder] e.g. your_email@gmail.com
+  SMTP Password
+  [ATTR:placeholder] {% if setting and setting.smtp_password %}•••••••••••• (Leave blank to keep current){% else %}Your SMTP password{% endif %}
+  Sender Address (From)
+  [ATTR:placeholder] e.g. alerts@yourdomain.com
+  Alert Recipient (To)
+  [ATTR:placeholder] e.g. admin@yourdomain.com
+  [ATTR:value] y
+  Send alerts only when new open ports are discovered (Recommended)
+  🛡️ Honeypot & Deception Settings
+  [ATTR:value] y
+  Enable Web Honeypot (Detect and log decoy URL paths)
+  [ATTR:value] y
+  Automatically block client IPs that trigger a honeypot hit
+  [ATTR:value] y
+  Send email alert immediately upon honeypot intrusion
+  Save Settings
+  Connection Diagnostics
+  Verify SMTP connection by sending a diagnostic test email to
+  .
+  Send Test Email
