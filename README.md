@@ -1,35 +1,372 @@
-# Portojo
+# PortOjo
 
-Portojo is a web-based network scanning application that uses Nmap to detect active hosts, open ports, and running services within a given IP range.
+PortOjo is a Flask-based network security scanning web application that uses Nmap to discover active hosts, open ports, running services, and potential security issues inside authorized local networks.
+
+The application provides user-based scan management, scan history, scheduled scans, exportable reports, SMTP alerts, honeypot monitoring, brute-force protection, asset inventory, and network anomaly detection.
+
+> **Important:** PortOjo is intended for educational, defensive, and authorized network assessment purposes only. Do not scan networks that you do not own or do not have permission to test.
+
+---
 
 ## Features
 
-- User registration and login
-- Password visibility toggle
-- IP and subnet-based network calculation
-- Fast and detailed Nmap scans
-- Scan result page with live status
-- Scan history for users
-- Admin access to all scan results
-- Honeypot detection
-- MAC spoofing detection
+### Authentication and User Management
 
-## Technologies
+- User registration with email address
+- Secure password hashing
+- Login and logout system
+- Generic login error message for better security
+- Password visibility toggle on login/register forms
+- Admin role with access to global scan and security records
+
+### Network Scanning
+
+- IP address and subnet mask input
+- Automatic network/CIDR calculation
+- Private, loopback, and link-local scan target validation
+- Background scan execution
+- Live scan status tracking: `pending`, `running`, `completed`, `failed`
+- Optional custom port range input
+- Multiple Nmap scan profiles:
+
+| Scan Type | Nmap Flags | Description |
+|---|---|---|
+| Fast Port Scan | `-F` | Fast scan of commonly used TCP ports |
+| Service & Version Scan | `-sV -T4` | Detects services and version information |
+| Host Discovery | `-sn` | Discovers online hosts without port scanning |
+| TCP SYN Scan | `-sS` | Half-open TCP scan; falls back to TCP Connect if privileges are missing |
+| TCP Connect Scan | `-sT` | Full TCP connection scan |
+| UDP Scan | `-sU --top-ports 100` | Scans common UDP ports |
+| Aggressive Scan | `-A -T4` | Enables OS detection, version detection, script scanning, and traceroute |
+| Vulnerability Scan | `-sV -T4 --script vuln` | Runs Nmap vulnerability detection scripts |
+
+### Result Analysis
+
+- Structured parsing of Nmap XML output
+- Host list with IP address, hostname, MAC address, vendor, and status
+- Open port table with protocol, state, service, and version
+- Search and filtering by IP, port, protocol, state, service, and version
+- Dashboard-style scan result statistics
+- Network topology map visualization
+- CVE lookup for detected service/version information
+- Printable executive scan report
+
+### Export Options
+
+Scan results can be exported as:
+
+- CSV
+- JSON
+- TXT
+- Printable report / PDF through browser print
+
+### Scan History and Comparison
+
+- Each user can view their own previous scans
+- Admin users can view all scan results
+- Completed scans can be compared
+- Comparison view highlights:
+  - Added hosts
+  - Removed hosts
+  - Added ports
+  - Removed ports
+  - Changed services, versions, or states
+
+### Scheduled Scans
+
+- Users can create recurring scan schedules
+- Supported frequencies:
+  - Hourly
+  - Daily
+  - Weekly
+  - Monthly
+- Schedules can be paused, activated, deleted, or bulk-deleted
+- Scheduled scans run in the background
+
+### Email Notifications
+
+- SMTP configuration from the settings page
+- Test email support
+- Optional email notifications when new open ports are detected
+- Security alert emails for:
+  - New open ports
+  - New active hosts
+  - MAC anomalies
+  - Honeypot hits
+  - Brute-force login attempts
+
+### Honeypot and Blocking
+
+- Built-in decoy endpoint monitoring
+- Suspicious paths include common administrative and sensitive file paths such as:
+  - `/wp-admin`
+  - `/wp-login.php`
+  - `/phpmyadmin`
+  - `/.env`
+  - `/.git`
+  - `/backup.zip`
+- Honeypot event logging
+- Optional automatic IP blocking
+- Admin interface for viewing logs and unblocking IP addresses
+
+### Brute-Force Protection
+
+- Tracks failed login attempts by IP address
+- Automatically blocks an IP address after repeated failed login attempts
+- Sends an alert email if SMTP settings are configured
+
+### Asset Inventory
+
+- Admin-managed asset inventory
+- Asset fields include:
+  - Name
+  - IP address
+  - MAC address
+  - MAC vendor
+  - Device type
+  - Operating system
+  - Criticality
+  - Owner
+  - Location
+  - Serial number
+  - IP assignment type
+  - Notes
+  - Trust status
+- Assets can be added, edited, deleted, trusted, untrusted, and bulk-deleted
+- Newly discovered devices can be automatically registered as untrusted assets
+
+### Security Anomaly Detection
+
+PortOjo can detect and record:
+
+- Rogue devices
+- MAC spoofing indicators
+- IP hijack / lease migration indicators
+
+Admin users can resolve, reopen, delete, and bulk-manage anomaly records.
+
+### Weak Credential Audit
+
+Optional weak credential auditing is available for selected services discovered during scans.
+
+Supported checks include:
+
+- FTP
+- Redis
+- HTTP Basic Authentication
+
+---
+
+## Technologies Used
 
 - Python
 - Flask
+- Flask-Login
+- Flask-SQLAlchemy
 - SQLite
 - Nmap
 - HTML
 - CSS
 - JavaScript
+- Chart.js
+- Vis Network
+- Lucide Icons
+
+---
+
+## Project Structure
+
+```text
+PortOjo/
+├── app.py                  # Main Flask application, routes, scheduler, alerts, admin logic
+├── models.py               # SQLAlchemy database models
+├── scanner.py              # Network calculation, Nmap execution, XML parsing
+├── requirements.txt        # Python dependencies
+├── static/
+│   └── css/
+│       └── style.css       # Application styling
+├── templates/
+│   ├── base.html           # Main layout and navigation
+│   ├── login.html          # Login page
+│   ├── register.html       # Registration page
+│   ├── dashboard.html      # User/admin dashboard
+│   ├── scan.html           # New scan form
+│   ├── result.html         # Scan result page
+│   ├── history.html        # User scan history
+│   ├── compare.html        # Scan comparison page
+│   ├── schedules.html      # Scheduled scan list
+│   ├── schedule_form.html  # New schedule form
+│   ├── settings.html       # SMTP and honeypot settings
+│   ├── admin.html          # Admin panel
+│   ├── admin_assets.html   # Asset inventory
+│   ├── admin_asset_form.html
+│   ├── admin_asset_map.html
+│   ├── report.html         # Printable report
+│   ├── blocked.html        # Blocked IP page
+│   └── decoy_wp.html       # Honeypot decoy response
+└── README.md
+```
+
+---
+
+## Requirements
+
+Before running the application, install:
+
+- Python 3.10 or newer
+- Nmap
+- Npcap, required on Windows for some Nmap scan types
+
+Nmap must be available from the system `PATH`.
+
+You can verify the installation with:
+
+```bash
+nmap --version
+```
+
+---
 
 ## Installation
 
+### 1. Clone the Repository
+
 ```bash
-git clone https://github.com/kullanici-adin/portojo.git
-cd portojo
+git clone https://github.com/BerkeKoyuncu/PortOjo.git
+cd PortOjo
+```
+
+### 2. Create a Virtual Environment
+
+Windows:
+
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
+```
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### 4. Initialize the Database
+
+```bash
+python -m flask --app app init-db
+```
+
+### 5. Create an Admin User
+
+```bash
+python -m flask --app app create-admin
+```
+
+The command will ask for an admin email address and password.
+
+### 6. Run the Application
+
+```bash
 python app.py
+```
+
+By default, the application runs at:
+
+```text
+http://127.0.0.1:5000
+```
+
+When hosted on the local network, it may also be reachable through the machine's LAN IP address.
+
+---
+
+## Basic Usage
+
+1. Register or log in.
+2. Go to **New Scan**.
+3. Enter an IP address and subnet mask.
+4. Select a scan type.
+5. Optionally define custom ports.
+6. Start the scan.
+7. Wait for the scan status to become `completed`.
+8. Review discovered hosts, open ports, services, CVE information, and topology.
+9. Export the result if needed.
+10. Use **Scan History** or **Compare Scans** for later analysis.
+
+---
+
+## Scan Target Restrictions
+
+For safety, PortOjo only allows scans against:
+
+- Private networks
+- Loopback addresses
+- Link-local networks
+
+Public internet ranges are blocked by target validation.
+
+Scan size is also limited depending on the selected scan type:
+
+| Scan Type | Maximum Address Count |
+|---|---:|
+| Host Discovery | 2048 |
+| Fast Port Scan | 1024 |
+| TCP SYN Scan | 512 |
+| TCP Connect Scan | 512 |
+| Service & Version Scan | 256 |
+| UDP Scan | 64 |
+| Aggressive Scan | 64 |
+| Vulnerability Scan | 64 |
+
+---
+
+## Admin Features
+
+Admin users can access:
+
+- All scan records
+- User accounts
+- Honeypot logs
+- Blocked IP addresses
+- Security anomalies
+- Asset inventory
+- Asset map
+- Bulk deletion and bulk resolution tools
+
+---
+
+## Security Notes
+
+- Passwords are stored as hashes.
+- Login errors use a generic message to avoid user enumeration.
+- The honeypot system can automatically block suspicious IP addresses.
+- Repeated failed login attempts can trigger automatic blocking.
+- SMTP credentials are stored in the local SQLite database.
+- The default Flask secret key in `app.py` should be changed before any real deployment.
+- This project is designed for controlled lab or local network use, not exposed production deployment.
+
+---
+
+## Known Limitations
+
+- Scan execution depends on Nmap being installed correctly.
+- TCP SYN scans may require administrator/root privileges.
+- UDP, aggressive, and vulnerability scans can take longer than regular TCP scans.
+- CVE lookup requires internet access.
+- Scheduled scans run through an in-process background thread, so they depend on the Flask application staying active.
+- SQLite is suitable for development and small deployments, but not ideal for high-concurrency production use.
+
+---
+
+## License
+
+This project is developed for educational and defensive network security purposes.
