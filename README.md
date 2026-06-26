@@ -15,6 +15,7 @@ The application provides user-based scan management, scan history, scheduled sca
 - User registration with email address
 - Secure password hashing
 - Login and logout system
+- Two-Factor Authentication (2FA) with Google Authenticator support
 - Generic login error message for better security
 - Password visibility toggle on login/register forms
 - Admin role with access to global scan and security records
@@ -25,7 +26,9 @@ The application provides user-based scan management, scan history, scheduled sca
 - Automatic network/CIDR calculation
 - Private, loopback, and link-local scan target validation
 - Background scan execution
-- Live scan status tracking: `pending`, `running`, `completed`, `failed`
+- Live scan status tracking: `pending`, `running`, `completed`, `failed`, and `cancelled`
+- Real-time scan control: Ability to stop/cancel running scans or repeat completed/failed/cancelled scans directly from the result screens
+- Custom Scan Timing selectors (T0 to T5) with dynamic CLI command preview updates to customize scan speed and stealth
 - Optional custom port range input
 - Multiple Nmap scan profiles:
 
@@ -134,6 +137,8 @@ Scan results can be exported as:
   - Trust status
 - Assets can be added, edited, deleted, trusted, untrusted, and bulk-deleted
 - Newly discovered devices can be automatically registered as untrusted assets
+- Automatic device type classification heuristics supporting Server, Workstation, Router/Switch, Firewall, Printer, IP Phone, IP Camera, and Virtual Machine
+- Refined server detection checks to fallback to `Unknown` instead of aggressively guessing `Server` for hosts with open SSH/Telnet ports
 
 ### Security Anomaly Detection
 
@@ -273,7 +278,15 @@ python -m flask --app app create-admin
 
 The command will ask for an admin email address and password.
 
-### 6. Run the Application
+### 6. Clean Up Stale Scans (Optional)
+
+If the application is stopped or crashes while scans are running, those scans might get stuck in a `pending` or `running` state. You can reset them manually with:
+
+```bash
+python -m flask --app app cleanup-scans
+```
+
+### 7. Run the Application
 
 ```bash
 python app.py
@@ -348,6 +361,8 @@ Admin users can access:
 
 - Passwords are stored as hashes.
 - Login errors use a generic message to avoid user enumeration.
+- 2FA secret keys (OTP secrets) are encrypted at rest in the SQLite database using AES symmetric encryption (via Fernet).
+- Decryption keys are derived dynamically from the application's `SECRET_KEY` or `OTP_ENCRYPTION_KEY` environment variable.
 - The honeypot system can automatically block suspicious IP addresses.
 - Repeated failed login attempts can trigger automatic blocking.
 - SMTP credentials are stored in the local SQLite database.
