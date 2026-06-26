@@ -6,10 +6,19 @@
 
 
 {% if scan_result.status == "pending" or scan_result.status == "running" %}
-    <meta http-equiv="refresh" content="3">
+<meta http-equiv="refresh" content="3">
 {% endif %}
 
-<h2>Scan Result</h2>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+    <h2 style="margin: 0;">Scan Result</h2>
+    {% if scan_result.status in ["completed", "failed", "cancelled"] %}
+    <form method="POST" action="{{ url_for('repeat_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+        <button type="submit" class="button" style="background: var(--olive); color: white; display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; font-weight: 700; font-size: 14px;">
+            <i data-lucide="refresh-cw" style="width: 14px; height: 14px; margin-right: 2px;"></i> Repeat Scan
+        </button>
+    </form>
+    {% endif %}
+</div>
 
 <table>
     <tr>
@@ -47,11 +56,18 @@
         <th>Scanned Ports</th>
         <td>
             {% if scan_result.ports %}
-                {{ scan_result.ports|replace(',', ', ') }}
+            {{ scan_result.ports|replace(',', ', ') }}
             {% else %}
-                <span class="text-muted">Default Ports</span>
+            Default Ports
             {% endif %}
         </td>
+    </tr>
+    {% endif %}
+
+    {% if scan_result.exclude_targets %}
+    <tr>
+        <th>Excluded Targets</th>
+        <td>{{ scan_result.exclude_targets }}</td>
     </tr>
     {% endif %}
 
@@ -59,15 +75,17 @@
         <th>Status</th>
         <td>
             {% if scan_result.status == "completed" %}
-                <span class="badge success-badge">Completed</span>
+            <span class="badge success-badge">Completed</span>
             {% elif scan_result.status == "running" %}
-                <span class="badge running-badge">Running</span>
+            <span class="badge running-badge">Running</span>
             {% elif scan_result.status == "pending" %}
-                <span class="badge pending-badge">Pending</span>
+            <span class="badge pending-badge">Pending</span>
             {% elif scan_result.status == "failed" %}
-                <span class="badge error-badge">Failed</span>
+            <span class="badge error-badge">Failed</span>
+            {% elif scan_result.status == "cancelled" %}
+            <span class="badge error-badge" style="background: #4b5563; color: #f3f4f6;">Cancelled</span>
             {% else %}
-                {{ scan_result.status }}
+            {{ scan_result.status }}
             {% endif %}
         </td>
     </tr>
@@ -81,272 +99,299 @@
 <hr>
 
 {% if scan_result.status == "pending" %}
-    <p>Scan is waiting to start...</p>
+<div style="display: flex; align-items: center; gap: 15px; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+    <p style="margin: 0; font-weight: 500; color: var(--text);">Scan is waiting to start...</p>
+    <form method="POST" action="{{ url_for('stop_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+        <button type="submit" class="button btn-danger" style="margin: 0; padding: 8px 16px; font-size: 13px; font-weight: 700;">Stop Scan</button>
+    </form>
+</div>
 
 {% elif scan_result.status == "running" %}
-    <p>Scan is in progress, please wait...</p>
+<div style="display: flex; align-items: center; gap: 15px; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+    <p style="margin: 0; font-weight: 500; color: var(--text);">Scan is in progress, please wait...</p>
+    <form method="POST" action="{{ url_for('stop_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+        <button type="submit" class="button btn-danger" style="margin: 0; padding: 8px 16px; font-size: 13px; font-weight: 700;">Stop Scan</button>
+    </form>
+</div>
+
+{% elif scan_result.status == "cancelled" %}
+<div class="alert alert-error" style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; color: var(--text); font-weight: 500;">
+    <i data-lucide="shield-alert" style="flex-shrink: 0; color: #ef4444; width: 20px; height: 20px;"></i>
+    <div>
+        <strong>Scan Cancelled:</strong> This scan was manually stopped by the administrator and did not produce results.
+    </div>
+</div>
 
 {% elif scan_result.status == "completed" or scan_result.status == "failed" %}
 
-    {% if parsed_result %}
-        <h3>Executed Command</h3>
-        <pre>{{ parsed_result.command }}</pre>
+{% if parsed_result %}
+<h3>Executed Command</h3>
+<pre>{{ parsed_result.command }}</pre>
 
-        {% if parsed_result.hosts %}
-            <h3>Discovered Hosts and Open Ports</h3>
+{% if parsed_result.hosts %}
+<h3>Discovered Hosts and Open Ports</h3>
 
-            <!-- Search and Filter Panel -->
-            <div class="filter-panel">
-                <div class="filter-grid">
-                    <div class="filter-field">
-                        <label for="filter-ip">IP Address</label>
-                        <input type="text" id="filter-ip" placeholder="e.g. 192.168.1.1" oninput="filterResults()">
+<!-- Search and Filter Panel -->
+<div class="filter-panel">
+    <div class="filter-grid">
+        <div class="filter-field">
+            <label for="filter-ip">IP Address</label>
+            <input type="text" id="filter-ip" placeholder="e.g. 192.168.1.1" oninput="filterResults()">
+        </div>
+        <div class="filter-field">
+            <label for="filter-port">Port</label>
+            <input type="text" id="filter-port" placeholder="e.g. 80, 443" oninput="filterResults()">
+        </div>
+        <div class="filter-field">
+            <label for="filter-proto">Protocol</label>
+            <select id="filter-proto" onchange="filterResults()">
+                <option value="">All</option>
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="filter-state">State</label>
+            <select id="filter-state" onchange="filterResults()">
+                <option value="">All</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+                <option value="filtered">Filtered</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="filter-service">Service</label>
+            <input type="text" id="filter-service" placeholder="e.g. http, ssh" oninput="filterResults()">
+        </div>
+        <div class="filter-field">
+            <label for="filter-version">Version</label>
+            <input type="text" id="filter-version" placeholder="e.g. Apache, 2.4" oninput="filterResults()">
+        </div>
+    </div>
+    <div class="filter-footer">
+        <div class="filter-checkbox-wrap">
+            <div class="filter-group-checkbox">
+                <label>
+                    <input type="checkbox" id="open-ports-only" onchange="filterResults()">
+                    Show only hosts with open ports
+                </label>
+            </div>
+        </div>
+        <button type="button" class="cve-btn" onclick="resetFilters()">Clear Filters</button>
+    </div>
+</div>
+
+<div class="tabs-container">
+    <div class="tabs-header">
+        <button type="button" class="tab-btn active" onclick="switchTab('dashboard-tab', this)"><i
+                data-lucide="layout-dashboard"></i> Dashboard</button>
+        <button type="button" class="tab-btn" onclick="switchTab('table-tab', this)"><i data-lucide="table"></i> Table
+            View</button>
+        <button type="button" class="tab-btn" onclick="switchTab('topology-tab', this)"><i data-lucide="network"></i>
+            Network Map</button>
+    </div>
+    <div class="tabs-content">
+        <div id="dashboard-tab" class="tab-pane active">
+            <div class="dashboard-container">
+                <div class="dashboard-summary">
+                    <div class="stat-card">
+                        <span class="stat-card-title">Total Detected IPs</span>
+                        <span class="stat-card-value" id="stat-total-ips">0</span>
+                        <span class="stat-card-subtitle">IP addresses in list</span>
                     </div>
-                    <div class="filter-field">
-                        <label for="filter-port">Port</label>
-                        <input type="text" id="filter-port" placeholder="e.g. 80, 443" oninput="filterResults()">
+                    <div class="stat-card">
+                        <span class="stat-card-title">Active Hosts</span>
+                        <span class="stat-card-value" id="stat-active-hosts">0</span>
+                        <span class="stat-card-subtitle" id="stat-active-ratio">0% of total</span>
                     </div>
-                    <div class="filter-field">
-                        <label for="filter-proto">Protocol</label>
-                        <select id="filter-proto" onchange="filterResults()">
-                            <option value="">All</option>
-                            <option value="tcp">TCP</option>
-                            <option value="udp">UDP</option>
-                        </select>
+                    <div class="stat-card">
+                        <span class="stat-card-title">Total Open Ports</span>
+                        <span class="stat-card-value" id="stat-open-ports">0</span>
+                        <span class="stat-card-subtitle" id="stat-avg-ports">0.0 per active host</span>
                     </div>
-                    <div class="filter-field">
-                        <label for="filter-state">State</label>
-                        <select id="filter-state" onchange="filterResults()">
-                            <option value="">All</option>
-                            <option value="open">Open</option>
-                            <option value="closed">Closed</option>
-                            <option value="filtered">Filtered</option>
-                        </select>
-                    </div>
-                    <div class="filter-field">
-                        <label for="filter-service">Service</label>
-                        <input type="text" id="filter-service" placeholder="e.g. http, ssh" oninput="filterResults()">
-                    </div>
-                    <div class="filter-field">
-                        <label for="filter-version">Version</label>
-                        <input type="text" id="filter-version" placeholder="e.g. Apache, 2.4" oninput="filterResults()">
+                    <div class="stat-card">
+                        <span class="stat-card-title">Vulnerabilities Checked</span>
+                        <span class="stat-card-value" id="stat-services-detected">0</span>
+                        <span class="stat-card-subtitle">Versioned services</span>
                     </div>
                 </div>
-                <div class="filter-footer">
-                    <div class="filter-checkbox-wrap">
-                        <div class="filter-group-checkbox">
-                            <label>
-                                <input 
-                                    type="checkbox" 
-                                    id="open-ports-only" 
-                                    onchange="filterResults()"
-                                >
-                                Show only hosts with open ports
-                            </label>
+                <div class="chart-grid">
+                    <div class="chart-card">
+                        <h5 class="chart-card-title">Host Status Summary</h5>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-host-status"></canvas>
                         </div>
                     </div>
-                    <button type="button" class="cve-btn" onclick="resetFilters()">Clear Filters</button>
+                    <div class="chart-card">
+                        <h5 class="chart-card-title">Most Common Open Services</h5>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-common-services"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h5 class="chart-card-title">Open Ports Count by Host</h5>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-ports-by-host"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h5 class="chart-card-title">Protocol Distribution</h5>
+                        <div class="chart-wrapper">
+                            <canvas id="chart-protocols"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
-
-            <div class="tabs-container">
-                <div class="tabs-header">
-                    <button type="button" class="tab-btn active" onclick="switchTab('dashboard-tab', this)"><i data-lucide="layout-dashboard"></i> Dashboard</button>
-                    <button type="button" class="tab-btn" onclick="switchTab('table-tab', this)"><i data-lucide="table"></i> Table View</button>
-                    <button type="button" class="tab-btn" onclick="switchTab('topology-tab', this)"><i data-lucide="network"></i> Network Map</button>
-                </div>
-                <div class="tabs-content">
-                    <div id="dashboard-tab" class="tab-pane active">
-                        <div class="dashboard-container">
-                            <div class="dashboard-summary">
-                                <div class="stat-card">
-                                    <span class="stat-card-title">Total Detected IPs</span>
-                                    <span class="stat-card-value" id="stat-total-ips">0</span>
-                                    <span class="stat-card-subtitle">IP addresses in list</span>
-                                </div>
-                                <div class="stat-card">
-                                    <span class="stat-card-title">Active Hosts</span>
-                                    <span class="stat-card-value" id="stat-active-hosts">0</span>
-                                    <span class="stat-card-subtitle" id="stat-active-ratio">0% of total</span>
-                                </div>
-                                <div class="stat-card">
-                                    <span class="stat-card-title">Total Open Ports</span>
-                                    <span class="stat-card-value" id="stat-open-ports">0</span>
-                                    <span class="stat-card-subtitle" id="stat-avg-ports">0.0 per active host</span>
-                                </div>
-                                <div class="stat-card">
-                                    <span class="stat-card-title">Vulnerabilities Checked</span>
-                                    <span class="stat-card-value" id="stat-services-detected">0</span>
-                                    <span class="stat-card-subtitle">Versioned services</span>
-                                </div>
-                            </div>
-                            <div class="chart-grid">
-                                <div class="chart-card">
-                                    <h5 class="chart-card-title">Host Status Summary</h5>
-                                    <div class="chart-wrapper">
-                                        <canvas id="chart-host-status"></canvas>
-                                    </div>
-                                </div>
-                                <div class="chart-card">
-                                    <h5 class="chart-card-title">Most Common Open Services</h5>
-                                    <div class="chart-wrapper">
-                                        <canvas id="chart-common-services"></canvas>
-                                    </div>
-                                </div>
-                                <div class="chart-card">
-                                    <h5 class="chart-card-title">Open Ports Count by Host</h5>
-                                    <div class="chart-wrapper">
-                                        <canvas id="chart-ports-by-host"></canvas>
-                                    </div>
-                                </div>
-                                <div class="chart-card">
-                                    <h5 class="chart-card-title">Protocol Distribution</h5>
-                                    <div class="chart-wrapper">
-                                        <canvas id="chart-protocols"></canvas>
-                                    </div>
-                                </div>
-                            </div>
+        </div>
+        <div id="table-tab" class="tab-pane">
+            <div class="hosts-container">
+                {% for host in parsed_result.hosts %}
+                {% set host_index = loop.index0 %}
+                <div class="host-section" data-ip="{{ host.address }}"
+                    data-has-ports="{% if host.ports %}true{% else %}false{% endif %}">
+                    <div class="host-header"
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <h4 style="margin: 0;">
+                            Host: <span class="host-ip">{{ host.address }}</span>
+                            {% if host.hostname %}
+                            <span class="host-name">/ {{ host.hostname }}</span>
+                            {% endif %}
+                            <span class="badge success-badge">{{ host.status|capitalize }}</span>
+                        </h4>
+                        {% if host.mac_address %}
+                        <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
+                            <strong>MAC:</strong> {{ host.mac_address }}
+                            {% if host.mac_vendor %}
+                            <span class="host-vendor">({{ host.mac_vendor }})</span>
+                            {% endif %}
                         </div>
+                        {% endif %}
                     </div>
-                    <div id="table-tab" class="tab-pane">
-                        <div class="hosts-container">
-                        {% for host in parsed_result.hosts %}
-                            {% set host_index = loop.index0 %}
-                            <div class="host-section" data-ip="{{ host.address }}" data-has-ports="{% if host.ports %}true{% else %}false{% endif %}">
-                                <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                                    <h4 style="margin: 0;">
-                                        Host: <span class="host-ip">{{ host.address }}</span>
-                                        {% if host.hostname %}
-                                            <span class="host-name">/ {{ host.hostname }}</span>
-                                        {% endif %}
-                                        <span class="badge success-badge">{{ host.status|capitalize }}</span>
-                                    </h4>
-                                    {% if host.mac_address %}
-                                    <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
-                                        <strong>MAC:</strong> {{ host.mac_address }}
-                                        {% if host.mac_vendor %}
-                                            <span class="host-vendor">({{ host.mac_vendor }})</span>
-                                        {% endif %}
+
+                    {% if host.mac_anomaly %}
+                    <div
+                        style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; margin-bottom: 10px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                        {% if host.mac_anomaly.type == 'mac_spoofing' %}
+                        <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
+                        {% elif host.mac_anomaly.type == 'ip_hijack' %}
+                        <i data-lucide="alert-circle"></i> IP Hijack Warning:
+                        {% else %}
+                        <i data-lucide="shield-alert"></i> Rogue Device Alert:
+                        {% endif %}
+                        <span style="font-weight: normal; margin-left: 5px;">{{ host.mac_anomaly.description }}</span>
+                    </div>
+                    {% endif %}
+
+                    {% if host.ports %}
+                    <table class="ports-table">
+                        <thead>
+                            <tr>
+                                <th>Port</th>
+                                <th>Protocol</th>
+                                <th>State</th>
+                                <th>Service</th>
+                                <th>Version</th>
+                                <th>Security</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for port in host.ports %}
+                            {% set port_index = loop.index0 %}
+                            <tr class="port-row" data-port="{{ port.port }}" data-protocol="{{ port.protocol }}"
+                                data-state="{{ port.state }}" data-service="{{ port.service }}"
+                                data-version="{{ port.version }}">
+                                <td>{{ port.port }}</td>
+                                <td>{{ port.protocol }}</td>
+                                <td>{{ port.state }}</td>
+                                <td>
+                                    <strong>{{ port.service }}</strong>
+                                    {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
+                                    <div style="margin-top: 4px;">
+                                        <span class="badge error-badge" style="font-size: 11px; font-weight: bold;">
+                                            <i data-lucide="alert-triangle"></i> {{ port.credential_audit.message }}
+                                        </span>
                                     </div>
                                     {% endif %}
-                                </div>
-
-                                {% if host.mac_anomaly %}
-                                    <div style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; margin-bottom: 10px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                                        {% if host.mac_anomaly.type == 'mac_spoofing' %}
-                                            <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
-                                        {% elif host.mac_anomaly.type == 'ip_hijack' %}
-                                            <i data-lucide="alert-circle"></i> IP Hijack Warning:
-                                        {% else %}
-                                            <i data-lucide="shield-alert"></i> Rogue Device Alert:
-                                        {% endif %}
-                                        <span style="font-weight: normal; margin-left: 5px;">{{ host.mac_anomaly.description }}</span>
+                                </td>
+                                <td>{{ port.version }}</td>
+                                <td>
+                                    {% if port.version and port.version != "-" %}
+                                    <button type="button" class="cve-btn"
+                                        onclick="toggleCVEs('{{ host_index }}-{{ port_index }}', '{{ port.version }}')">
+                                        <i data-lucide="search"
+                                            style="width: 12px; height: 12px; margin-right: 2px;"></i> CVEs
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">No version</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr id="cve-row-{{ host_index }}-{{ port_index }}" class="cve-details-row"
+                                style="display: none;">
+                                <td colspan="6">
+                                    <div class="cve-container">
+                                        <div class="cve-loading">Searching vulnerability database...</div>
+                                        <div class="cve-results" style="display: none;"></div>
                                     </div>
-                                {% endif %}
-
-                                {% if host.ports %}
-                                    <table class="ports-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Port</th>
-                                                <th>Protocol</th>
-                                                <th>State</th>
-                                                <th>Service</th>
-                                                <th>Version</th>
-                                                <th>Security</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for port in host.ports %}
-                                            {% set port_index = loop.index0 %}
-                                            <tr class="port-row" data-port="{{ port.port }}" data-protocol="{{ port.protocol }}" data-state="{{ port.state }}" data-service="{{ port.service }}" data-version="{{ port.version }}">
-                                                <td>{{ port.port }}</td>
-                                                <td>{{ port.protocol }}</td>
-                                                <td>{{ port.state }}</td>
-                                                <td>
-                                                    <strong>{{ port.service }}</strong>
-                                                    {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
-                                                        <div style="margin-top: 4px;">
-                                                            <span class="badge error-badge" style="font-size: 11px; font-weight: bold;">
-                                                                <i data-lucide="alert-triangle"></i> {{ port.credential_audit.message }}
-                                                            </span>
-                                                        </div>
-                                                    {% endif %}
-                                                </td>
-                                                <td>{{ port.version }}</td>
-                                                <td>
-                                                    {% if port.version and port.version != "-" %}
-                                                        <button 
-                                                            type="button" 
-                                                            class="cve-btn"
-                                                            onclick="toggleCVEs('{{ host_index }}-{{ port_index }}', '{{ port.version }}')"
-                                                        >
-                                                            <i data-lucide="search" style="width: 12px; height: 12px; margin-right: 2px;"></i> CVEs
-                                                        </button>
-                                                    {% else %}
-                                                        <span class="text-muted">No version</span>
-                                                    {% endif %}
-                                                </td>
-                                            </tr>
-                                            <tr id="cve-row-{{ host_index }}-{{ port_index }}" class="cve-details-row" style="display: none;">
-                                                <td colspan="6">
-                                                    <div class="cve-container">
-                                                        <div class="cve-loading">Searching vulnerability database...</div>
-                                                        <div class="cve-results" style="display: none;"></div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                {% else %}
-                                    <p class="no-ports-msg">No open ports found for this host.</p>
-                                {% endif %}
-                            </div>
-                        {% endfor %}
-                        </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="no-ports-msg">No open ports found for this host.</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div id="topology-tab" class="tab-pane">
+            <div id="map-fullscreen-container" class="map-fullscreen-container">
+                <div class="map-controls">
+                    <label>
+                        <input type="checkbox" id="map-show-ports" checked onchange="updateTopology()">
+                        Show Ports in Nodes
+                    </label>
+                    <label>
+                        <input type="checkbox" id="map-enable-physics" checked onchange="togglePhysics(this.checked)">
+                        Enable Physics
+                    </label>
+                    <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="resetMapCamera()">Centre
+                        Map</button>
+                    <button type="button" id="map-fullscreen-btn" class="cve-btn"
+                        style="padding: 4px 10px; margin-left: auto;" onclick="toggleMapFullscreen()">Fullscreen
+                        Mode</button>
+                </div>
+                <div class="topology-wrapper">
+                    <div id="topology-map"
+                        style="height: 550px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);">
                     </div>
-                    <div id="topology-tab" class="tab-pane">
-                        <div id="map-fullscreen-container" class="map-fullscreen-container">
-                            <div class="map-controls">
-                                <label>
-                                    <input type="checkbox" id="map-show-ports" checked onchange="updateTopology()">
-                                    Show Ports in Nodes
-                                </label>
-                                <label>
-                                    <input type="checkbox" id="map-enable-physics" checked onchange="togglePhysics(this.checked)">
-                                    Enable Physics
-                                </label>
-                                <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="resetMapCamera()">Center Map</button>
-                                <button type="button" id="map-fullscreen-btn" class="cve-btn" style="padding: 4px 10px; margin-left: auto;" onclick="toggleMapFullscreen()">Fullscreen Mode</button>
-                            </div>
-                            <div class="topology-wrapper">
-                                <div id="topology-map" style="height: 550px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);"></div>
-                                <div id="node-details-panel" class="node-details-panel" style="display: none;"></div>
-                            </div>
-                        </div>
-                    </div>
+                    <div id="node-details-panel" class="node-details-panel" style="display: none;"></div>
                 </div>
             </div>
-        {% else %}
-            <p>No hosts found.</p>
-        {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<p>No hosts found.</p>
+{% endif %}
 
-        {% if parsed_result.output %}
-            <h3>Additional Output</h3>
-            <pre>{{ parsed_result.output }}</pre>
-        {% endif %}
-    {% endif %}
+{% if parsed_result.output %}
+<h3>Additional Output</h3>
+<pre>{{ parsed_result.output }}</pre>
+{% endif %}
+{% endif %}
 
 {% endif %}
 
 {% if scan_result.status == "completed" or scan_result.status == "failed" %}
-    <div class="page-actions">
-        <a href="{{ url_for('print_report', scan_id=scan_result.id) }}" target="_blank" class="button" style="font-weight: bold; background: var(--olive); color: white; border: 0;">Print Executive Report</a>
-        <a href="{{ url_for('export_result_csv', scan_id=scan_result.id) }}" class="button btn-secondary">Export CSV</a>
-        <a href="{{ url_for('export_result_json', scan_id=scan_result.id) }}" class="button btn-secondary">Export JSON</a>
-        <a href="{{ url_for('export_result_txt', scan_id=scan_result.id) }}" class="button btn-secondary">Export TXT</a>
-    </div>
+<div class="page-actions">
+    <a href="{{ url_for('print_report', scan_id=scan_result.id) }}" target="_blank" class="button"
+        style="font-weight: bold; background: var(--olive); color: white; border: 0;">Print Executive Report</a>
+    <a href="{{ url_for('export_result_csv', scan_id=scan_result.id) }}" class="button btn-secondary">Export CSV</a>
+    <a href="{{ url_for('export_result_json', scan_id=scan_result.id) }}" class="button btn-secondary">Export JSON</a>
+    <a href="{{ url_for('export_result_txt', scan_id=scan_result.id) }}" class="button btn-secondary">Export TXT</a>
+</div>
 {% endif %}
 
 <script id="network-hosts-data" type="application/json">
@@ -408,7 +453,7 @@
                     // Determine CVSS class based on score
                     let severityClass = "sev-low";
                     let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
-                    
+
                     if (cve.cvss >= 9.0) {
                         severityClass = "sev-critical";
                     } else if (cve.cvss >= 7.0) {
@@ -456,14 +501,14 @@
     function switchTab(tabId, btn) {
         btn.parentNode.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        
+
         const contentContainer = btn.parentNode.parentNode.querySelector(".tabs-content");
         contentContainer.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-        
+
         const targetPane = document.getElementById(tabId);
         if (targetPane) {
             targetPane.classList.add("active");
-            
+
             if (tabId === "topology-tab") {
                 if (!network) {
                     initTopologyMap();
@@ -539,7 +584,7 @@
         });
 
         updateTopology();
-        
+
         // Fit camera after initial stabilization
         network.once("stabilizationIterationsDone", function () {
             network.fit();
@@ -620,7 +665,7 @@
                     "ip_hijack": '<i data-lucide="alert-circle" class="icon-inline"></i> IP Hijack Warning',
                     "rogue_device": '<i data-lucide="shield-alert" class="icon-inline"></i> Rogue/Unknown Device Alert'
                 }[anom.type] || '<i data-lucide="alert-triangle" class="icon-inline"></i> Security Anomaly Detected';
-                
+
                 anomalyHtml = `
                     <div style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-text); border-radius: var(--radius-sm); padding: 12px; margin: 12.5px 0; font-size: 13px; font-weight: normal;">
                         <strong style="display: block; margin-bottom: 4px; font-weight: bold;">${anomTitle}</strong>
@@ -743,7 +788,7 @@
                 data.forEach(cve => {
                     let severityClass = "sev-low";
                     let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
-                    
+
                     if (cve.cvss >= 9.0) severityClass = "sev-critical";
                     else if (cve.cvss >= 7.0) severityClass = "sev-high";
                     else if (cve.cvss >= 4.0) severityClass = "sev-medium";
@@ -841,21 +886,21 @@
 
                     const isSelected = state.selected;
                     const hasPorts = hostPorts.length > 0;
-                    
+
                     // Read checkbox state directly to avoid closure issues during redraws
                     const showPortsCheckbox = document.getElementById("map-show-ports");
                     const showPorts = showPortsCheckbox ? showPortsCheckbox.checked : false;
-                    
+
                     const drawPorts = showPorts && hasPorts;
                     const r = drawPorts ? 52 : 36;
 
                     // Fetch active theme colors dynamically on every draw call!
                     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-                    
+
                     let bgCol = isDark ? "#2D3325" : "#6E7D58";
                     let borderCol = isDark ? "#A0A494" : "#3A3F2F";
                     let fillCol = isSelected ? "#B7C49A" : bgCol;
-                    
+
                     if (!isSelected) {
                         if (hostStatusType === "critical") {
                             bgCol = isDark ? "#4C241E" : "#E9C9BE";
@@ -919,7 +964,7 @@
                     ctx.textBaseline = "middle";
                     if (drawPorts) {
                         const portCount = hostPorts.length;
-                        
+
                         if (portCount === 1) {
                             // Draw a single port circle at the center
                             const px = x;
@@ -957,7 +1002,7 @@
                                 const angle = (2 * Math.PI * i) / drawCount - Math.PI / 2;
                                 const px = x + ringRadius * Math.cos(angle);
                                 const py = y + ringRadius * Math.sin(angle);
-                                
+
                                 const portObj = hostPorts[i];
                                 const serviceName = portObj.service ? portObj.service.substring(0, 6) : "";
 
@@ -1122,7 +1167,7 @@
         hostSections.forEach(section => {
             const ip = section.dataset.ip.toLowerCase();
             const hasPorts = section.dataset.hasPorts === "true";
-            
+
             if (onlyOpenPorts && !hasPorts) {
                 section.style.display = "none";
                 return;
@@ -1135,7 +1180,7 @@
 
             const portRows = section.querySelectorAll(".port-row");
             const cveRows = section.querySelectorAll(".cve-details-row");
-            
+
             if (portRows.length === 0) {
                 if (portQuery !== "" || protoQuery !== "" || stateQuery !== "" || serviceQuery !== "" || versionQuery !== "") {
                     section.style.display = "none";
@@ -1214,7 +1259,7 @@
         if (!container) return;
 
         const isFullscreen = document.fullscreenElement === container;
-        
+
         if (isFullscreen) {
             container.classList.add("fullscreen");
             if (btn) btn.innerHTML = "Exit Fullscreen";
@@ -1238,44 +1283,44 @@
 
     function updateDashboard() {
         const hostSections = document.querySelectorAll(".host-section");
-        
+
         let totalHostsCount = 0;
         let activeHostsCount = 0;
         let totalOpenPorts = 0;
         let versionedServicesCount = 0;
-        
+
         const serviceCounts = {};
         const protocolCounts = { tcp: 0, udp: 0 };
         const portsByHost = [];
-        
+
         hostSections.forEach(section => {
             if (section.style.display === "none") return;
-            
+
             totalHostsCount++;
             const ip = section.dataset.ip;
-            
+
             // Check status from the badge class or text
             const badge = section.querySelector(".badge");
             const status = badge ? badge.textContent.toLowerCase().trim() : "unknown";
-            
+
             // In nmap, up/completed/running/active mean active host
             if (status === "up" || status === "completed" || status === "running" || status === "active" || status === "online") {
                 activeHostsCount++;
             }
-            
+
             const portRows = section.querySelectorAll(".port-row");
             let visiblePortsCount = 0;
-            
+
             portRows.forEach(row => {
                 if (row.style.display === "none") return;
-                
+
                 visiblePortsCount++;
                 totalOpenPorts++;
-                
+
                 const service = (row.dataset.service || "unknown").toLowerCase().trim();
                 const protocol = (row.dataset.protocol || "tcp").toLowerCase().trim();
                 const version = (row.dataset.version || "").trim();
-                
+
                 if (service && service !== "-") {
                     serviceCounts[service] = (serviceCounts[service] || 0) + 1;
                 }
@@ -1286,37 +1331,37 @@
                     versionedServicesCount++;
                 }
             });
-            
+
             if (visiblePortsCount > 0) {
                 portsByHost.push({ ip: ip, count: visiblePortsCount });
             }
         });
-        
+
         // Sort hosts by port count descending (top 10 exposed)
         portsByHost.sort((a, b) => b.count - a.count);
         const topPortsByHost = portsByHost.slice(0, 10);
-        
+
         // Sort services by frequency (top 10)
         const sortedServices = Object.entries(serviceCounts)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 10);
-            
+
         const serviceLabels = sortedServices.map(item => item[0]);
         const serviceData = sortedServices.map(item => item[1]);
-        
+
         // Update summary text cards
         document.getElementById("stat-total-ips").textContent = totalHostsCount;
         document.getElementById("stat-active-hosts").textContent = activeHostsCount;
-        
+
         const activeRatio = totalHostsCount > 0 ? Math.round((activeHostsCount / totalHostsCount) * 100) : 0;
         document.getElementById("stat-active-ratio").textContent = activeRatio + "% of total detected";
-        
+
         document.getElementById("stat-open-ports").textContent = totalOpenPorts;
         const avgPorts = activeHostsCount > 0 ? (totalOpenPorts / activeHostsCount).toFixed(1) : "0.0";
         document.getElementById("stat-avg-ports").textContent = avgPorts + " per active host";
-        
+
         document.getElementById("stat-services-detected").textContent = versionedServicesCount;
-        
+
         // Render or Update the charts
         renderHostStatusChart(activeHostsCount, totalHostsCount - activeHostsCount);
         renderCommonServicesChart(serviceLabels, serviceData);
@@ -1337,17 +1382,17 @@
     function renderHostStatusChart(active, inactive) {
         const canvas = document.getElementById("chart-host-status");
         if (!canvas) return;
-        
+
         if (chartHostStatus) {
             chartHostStatus.destroy();
         }
-        
+
         const hasData = active > 0 || inactive > 0;
         const data = hasData ? [active, inactive] : [0, 1];
         const labels = hasData ? ["Active (Up)", "Offline (Down)"] : ["No Data", "No Data"];
         const colors = hasData ? ["#B7C49A", "#6D715F"] : ["#F0E8D8", "#F0E8D8"];
         const themeColors = getChartThemeColors();
-        
+
         chartHostStatus = new Chart(canvas, {
             type: "doughnut",
             data: {
@@ -1378,15 +1423,15 @@
     function renderCommonServicesChart(labels, data) {
         const canvas = document.getElementById("chart-common-services");
         if (!canvas) return;
-        
+
         if (chartCommonServices) {
             chartCommonServices.destroy();
         }
-        
+
         const displayLabels = labels.length === 0 ? ["No active services"] : labels;
         const displayData = data.length === 0 ? [0] : data;
         const themeColors = getChartThemeColors();
-        
+
         chartCommonServices = new Chart(canvas, {
             type: "bar",
             data: {
@@ -1430,15 +1475,15 @@
     function renderPortsByHostChart(labels, data) {
         const canvas = document.getElementById("chart-ports-by-host");
         if (!canvas) return;
-        
+
         if (chartPortsByHost) {
             chartPortsByHost.destroy();
         }
-        
+
         const displayLabels = labels.length === 0 ? ["No open ports"] : labels;
         const displayData = data.length === 0 ? [0] : data;
         const themeColors = getChartThemeColors();
-        
+
         chartPortsByHost = new Chart(canvas, {
             type: "bar",
             data: {
@@ -1481,16 +1526,16 @@
     function renderProtocolsChart(tcp, udp) {
         const canvas = document.getElementById("chart-protocols");
         if (!canvas) return;
-        
+
         if (chartProtocols) {
             chartProtocols.destroy();
         }
-        
+
         const hasData = tcp > 0 || udp > 0;
         const data = hasData ? [tcp, udp] : [0, 0];
         const colors = ["#3A3F2F", "#B7C49A"]; // --forest, --sage
         const themeColors = getChartThemeColors();
-        
+
         chartProtocols = new Chart(canvas, {
             type: "pie",
             data: {

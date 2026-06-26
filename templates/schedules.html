@@ -75,11 +75,6 @@
 <p>No active scan schedules found. You can set up scans to run on a recurring schedule.</p>
 
 {% endif %}
-
-<div class="page-actions" style="margin-top: 24px;">
-    <a href="{{ url_for('new_schedule') }}" class="button">Create New Schedule</a>
-</div>
-
 <script>
     document.addEventListener("DOMContentLoaded", () => {
         const selectAllCheckbox = document.getElementById("select-all-schedules");

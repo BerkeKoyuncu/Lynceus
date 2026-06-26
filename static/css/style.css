@@ -93,7 +93,7 @@ td,
 body {
     margin: 0;
     min-height: 100vh;
-    font-family: Inter, Segoe UI, Arial, sans-serif;
+    font-family: Barlow, Inter, Segoe UI, Arial, sans-serif;
     color: var(--text);
     background:
         radial-gradient(circle at top left, var(--bg-gradient-start), transparent 35%),
@@ -971,6 +971,7 @@ hr {
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-muted);
+    white-space: pre-line;
 }
 
 .desc-meta-grid {
@@ -1795,9 +1796,27 @@ hr {
 [data-theme="dark"] .map-controls,
 [data-theme="dark"] .node-details-title,
 [data-theme="dark"] .node-details-item strong,
-[data-theme="dark"] .stat-card-value,
 [data-theme="dark"] .chart-card-title {
     color: var(--text) !important;
+}
+
+[data-theme="dark"] .stat-card-value,
+[data-theme="dark"] .dashboard-card-value,
+[data-theme="dark"] .quick-action-item {
+    color: var(--text) !important;
+}
+
+[data-theme="dark"] .quick-action-item:hover {
+    color: var(--forest) !important;
+}
+
+[data-theme="dark"] .onboarding-step a.button {
+    color: var(--text) !important;
+}
+
+[data-theme="dark"] .onboarding-step a.button:hover {
+    color: var(--forest) !important;
+    background: var(--sage) !important;
 }
 
 [data-theme="dark"] .tab-btn:hover {
@@ -2300,6 +2319,14 @@ th.sort-active .sort-indicator {
     .dashboard-row {
         grid-template-columns: 1fr;
     }
+}
+
+.asset-ip {
+    color: var(--olive);
+}
+
+[data-theme="dark"] .asset-ip {
+    color: var(--sage) !important;
 }
 
 

@@ -223,7 +223,7 @@
                     {% for scan in recent_scans %}
                     <tr>
                         <td style="font-weight: bold;">#{{ scan.id }}</td>
-                        <td><code>{{ scan.network_cidr }}</code></td>
+                        <td>{{ scan.network_cidr }}</td>
                         <td>{{ scan.scan_type | scan_name }}</td>
                         <td>{{ scan.created_at | localtime }}</td>
                         <td>
@@ -231,6 +231,8 @@
                             <span class="badge success-badge">Completed</span>
                             {% elif scan.status in ['pending', 'running'] %}
                             <span class="badge running-badge">{{ scan.status | capitalize }}</span>
+                            {% elif scan.status == 'cancelled' %}
+                            <span class="badge error-badge" style="background: #4b5563; color: #f3f4f6;">Cancelled</span>
                             {% else %}
                             <span class="badge error-badge">Failed</span>
                             {% endif %}

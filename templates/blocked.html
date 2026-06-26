@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Access Denied - Portojo Security</title>
+    <title>Access Denied - PortOjo Security</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root {
@@ -136,22 +137,23 @@
         }
     </style>
     <script>
-        (function() {
+        (function () {
             const theme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
 </head>
+
 <body>
     <div class="card">
         <div class="shield-icon">
             <svg viewBox="0 0 24 24">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                <line x1="12" y1="8" x2="12" y2="12"/>
-                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
         </div>
-        
+
         <h1>Access Denied</h1>
         <p>
             Your access to this application has been restricted in accordance with system security policies.
@@ -175,7 +177,8 @@
             {% endif %}
             <div class="details-row">
                 <span class="details-label">Date:</span>
-                <span class="details-value" style="font-family: inherit;">{{ block.created_at.strftime('%Y-%m-%d %H:%M:%S') if block else '' }}</span>
+                <span class="details-value" style="font-family: inherit;">{{ block.created_at.strftime('%Y-%m-%d
+                    %H:%M:%S') if block else '' }}</span>
             </div>
         </div>
 
@@ -184,4 +187,5 @@
         </p>
     </div>
 </body>
+
 </html>

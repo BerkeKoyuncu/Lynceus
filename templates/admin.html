@@ -303,6 +303,8 @@
                             <span class="badge pending-badge">Pending</span>
                         {% elif scan.status == "failed" %}
                             <span class="badge error-badge">Failed</span>
+                        {% elif scan.status == "cancelled" %}
+                            <span class="badge error-badge" style="background: #4b5563; color: #f3f4f6;">Cancelled</span>
                         {% else %}
                             {{ scan.status }}
                         {% endif %}

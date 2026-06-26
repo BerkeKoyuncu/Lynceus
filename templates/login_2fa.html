@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="auth-panel">
+    <div style="text-align: center; margin-bottom: 24px;">
+        <img src="{{ url_for('static', filename='images/logos/portojo-logo.svg') }}" alt="PortOjo Logo"
+            style="height: 250px; max-width: 100%;">
+    </div>
+    <h2>Two-Factor Authentication</h2>
+    <p style="text-align: center; color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">
+        Please enter the 6-digit verification code from your Authenticator app to verify your identity.
+    </p>
+
+    <form method="POST">
+        <label for="otp_code">Verification Code</label>
+        <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="123456" pattern="[0-9]*" inputmode="numeric" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color);">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="auth-flash-wrapper">
+            {% for category, message in messages %}
+            <div class="flash-message {{ category }}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <button type="submit">Verify & Login</button>
+    </form>
+
+    <p class="auth-switch">
+        Want to start over?
+        <a href="{{ url_for('login') }}">Back to Login</a>
+    </p>
+</div>
+
+{% endblock %}

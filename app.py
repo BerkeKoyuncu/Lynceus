@@ -1,8 +1,9 @@
-from flask import Flask, render_template, redirect, url_for, request, flash, Response
+from flask import Flask, render_template, redirect, url_for, request, flash, Response, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime, timedelta, timezone
+import pyotp
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except ImportError:
@@ -17,7 +18,7 @@ import io
 import re
 
 
-from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset
+from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
 from scanner import calculate_network, validate_scan_target, run_nmap_scan
 
 
@@ -436,13 +437,17 @@ def check_and_send_scan_alert(scan_result):
     send_notification_email_async(setting_dict, subject, body_html)
 
 
-def audit_ftp(ip, port=21):
-    credentials = [
-        ("anonymous", "anonymous@domain.com"),
-        ("admin", "admin"),
-        ("root", "root"),
-        ("user", "password")
-    ]
+def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
+    credentials = []
+    if custom_credentials:
+        credentials.extend(custom_credentials)
+    if use_defaults:
+        credentials.extend([
+            ("anonymous", "anonymous@domain.com"),
+            ("admin", "admin"),
+            ("root", "root"),
+            ("user", "password")
+        ])
     import ftplib
     for username, password in credentials:
         try:
@@ -456,9 +461,13 @@ def audit_ftp(ip, port=21):
     return {"status": "safe", "message": "No common default credentials found"}
 
 
-def audit_redis(ip, port=6379):
+def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
     import socket
-    passwords = ["", "admin", "password", "redis", "root"]
+    passwords = []
+    if custom_passwords:
+        passwords.extend(custom_passwords)
+    if use_defaults:
+        passwords.extend(["", "admin", "password", "redis", "root"])
     for pwd in passwords:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -482,7 +491,7 @@ def audit_redis(ip, port=6379):
     return {"status": "safe", "message": "No common passwords found"}
 
 
-def audit_http_basic(ip, port=80, is_ssl=False):
+def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_defaults=True):
     import urllib.request
     import urllib.error
     import base64
@@ -499,15 +508,19 @@ def audit_http_basic(ip, port=80, is_ssl=False):
     except Exception as e:
         return {"status": "skipped", "message": f"Connection failed: {str(e)}"}
         
-    credentials = [
-        ("admin", "admin"),
-        ("admin", "password"),
-        ("admin", "1234"),
-        ("admin", "12345"),
-        ("admin", ""),
-        ("root", "root"),
-        ("root", "")
-    ]
+    credentials = []
+    if custom_credentials:
+        credentials.extend(custom_credentials)
+    if use_defaults:
+        credentials.extend([
+            ("admin", "admin"),
+            ("admin", "password"),
+            ("admin", "1234"),
+            ("admin", "12345"),
+            ("admin", ""),
+            ("root", "root"),
+            ("root", "")
+        ])
     
     for username, password in credentials:
         try:
@@ -610,11 +623,35 @@ def execute_scan(scan_id, audit_credentials=False):
         scan_result.status = "running"
         db.session.commit()
 
+        # Retrieve global exclusions from the admin settings
+        admin_user = User.query.filter_by(is_admin=True).first()
+        admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
+        
+        global_excludes = ""
+        if admin_setting and admin_setting.scan_exclusions_active and admin_setting.scan_exclude_targets:
+            global_excludes = admin_setting.scan_exclude_targets.strip()
+        scan_excludes = scan_result.exclude_targets.strip() if scan_result.exclude_targets else ""
+        
+        combined_excludes = []
+        if global_excludes:
+            combined_excludes.append(global_excludes)
+        if scan_excludes:
+            combined_excludes.append(scan_excludes)
+            
+        combined_excludes_str = ",".join(combined_excludes) if combined_excludes else None
+
         nmap_result = run_nmap_scan(
             target=scan_result.network_cidr,
             scan_type=scan_result.scan_type,
-            ports=scan_result.ports
+            ports=scan_result.ports,
+            exclude_targets=combined_excludes_str,
+            timing_template=scan_result.timing_template,
+            scan_id=scan_result.id
         )
+
+        db.session.refresh(scan_result)
+        if scan_result.status == "cancelled":
+            return
 
         hosts = nmap_result.get("hosts", [])
 
@@ -778,7 +815,27 @@ def execute_scan(scan_id, audit_credentials=False):
                         }
                         send_notification_email_async(setting_dict, subject, body_html)
         
-        if audit_credentials and nmap_result["success"]:
+        if (audit_credentials or scan_result.credential_ids) and nmap_result["success"]:
+            # Load custom credentials
+            custom_ftp = []
+            custom_redis = []
+            custom_http = []
+            
+            if scan_result.credential_ids:
+                try:
+                    cred_ids = [int(x.strip()) for x in scan_result.credential_ids.split(",") if x.strip()]
+                    if cred_ids:
+                        selected_creds = ScanCredential.query.filter(ScanCredential.id.in_(cred_ids)).all()
+                        for cred in selected_creds:
+                            if cred.protocol == "ftp" or cred.protocol == "any":
+                                custom_ftp.append((cred.username or "", cred.password or ""))
+                            if cred.protocol == "redis" or cred.protocol == "any":
+                                custom_redis.append(cred.password or "")
+                            if cred.protocol == "http_basic" or cred.protocol == "any":
+                                custom_http.append((cred.username or "", cred.password or ""))
+                except Exception as e:
+                    print(f"Error parsing custom credentials: {str(e)}")
+
             for host in hosts:
                 ip = host.get("address")
                 ports = host.get("ports", [])
@@ -789,13 +846,16 @@ def execute_scan(scan_id, audit_credentials=False):
                     
                     audit_res = None
                     if p_num == 21 or "ftp" in service:
-                        audit_res = audit_ftp(ip, p_num)
+                        if audit_credentials or custom_ftp:
+                            audit_res = audit_ftp(ip, p_num, custom_credentials=custom_ftp if custom_ftp else None, use_defaults=audit_credentials)
                     elif p_num == 6379 or "redis" in service:
-                        audit_res = audit_redis(ip, p_num)
+                        if audit_credentials or custom_redis:
+                            audit_res = audit_redis(ip, p_num, custom_passwords=custom_redis if custom_redis else None, use_defaults=audit_credentials)
                     elif protocol == "tcp" and (p_num in [80, 8080, 443, 8443] or "http" in service):
-                        is_ssl = p_num in [443, 8443] or "https" in service
-                        audit_res = audit_http_basic(ip, p_num, is_ssl)
-                        
+                        if audit_credentials or custom_http:
+                            is_ssl = p_num in [443, 8443] or "https" in service
+                            audit_res = audit_http_basic(ip, p_num, is_ssl, custom_credentials=custom_http if custom_http else None, use_defaults=audit_credentials)
+                            
                     if audit_res:
                         port_info["credential_audit"] = audit_res
 
@@ -848,6 +908,46 @@ def detect_device_type(hostname, mac_vendor, ports_list):
         return "Firewall"
     if "firewall" in vendor_lower:
         return "Firewall"
+        
+    # 1.5. VoIP / IP Phone detection
+    is_voip = False
+    if any(k in hostname_lower for k in ["phone", "voip", "sip", "yealink", "grandstream", "snom", "fanvil", "polycom", "avaya", "mitel", "poly"]):
+        is_voip = True
+    elif any(k in vendor_lower for k in ["yealink", "grandstream", "snom", "fanvil", "polycom", "avaya", "mitel", "gigaset", "poly"]):
+        is_voip = True
+    elif any(p in open_ports for p in [2000, 5060, 5061]):  # SCCP, SIP
+        is_voip = True
+    elif "alcatel" in vendor_lower or "alcatel" in hostname_lower:
+        if not any(k in hostname_lower for k in ["switch", "sw-", "sw0", "router", "gateway", "gw-"]):
+            is_voip = True
+    elif "cisco" in vendor_lower or "cisco" in hostname_lower:
+        if any(k in hostname_lower for k in ["phone", "voip", "ata", "spa"]):
+            is_voip = True
+        elif any(p in open_ports for p in [2000, 5060, 5061]):
+            is_voip = True
+
+    if is_voip:
+        return "IP Phone"
+
+    # 1.6. IP Camera detection
+    is_camera = False
+    if any(k in hostname_lower for k in ["camera", "ipc", "cctv", "webcam", "dvr", "nvr"]):
+        is_camera = True
+    elif any(k in vendor_lower for k in ["hikvision", "dahua", "foscam", "reolink", "amcrest", "hanwha"]):
+        is_camera = True
+    elif "axis" in vendor_lower and "communications" in vendor_lower:
+        is_camera = True
+    elif 554 in open_ports:  # RTSP
+        is_camera = True
+
+    if is_camera:
+        return "IP Camera"
+
+    # 1.7. Virtual Machine detection
+    if any(k in vendor_lower for k in ["vmware", "qemu", "xen", "virtualbox", "proxmox"]):
+        return "Virtual Machine"
+    if any(k in hostname_lower for k in ["-vm", "vm-", "virtual-"]):
+        return "Virtual Machine"
         
     # 2. Router / Gateway detection
     if any(k in hostname_lower for k in ["router", "gateway", "rt-", "gw-", "ubnt", "mikrotik"]):
@@ -904,7 +1004,11 @@ def detect_device_type(hostname, mac_vendor, ports_list):
         return "Workstation"
         
     if 22 in open_ports or 23 in open_ports:  # SSH, Telnet
-        return "Server"
+        if any(k in vendor_lower for k in ["dell", "hp ", "hewlett", "supermicro", "vmware", "lenovo", "ibm", "fujitsu"]):
+            return "Server"
+        if "server" in hostname_lower:
+            return "Server"
+        return "Unknown"
         
     return "Unknown"
 
@@ -926,6 +1030,224 @@ def admin_required(function):
 
     return decorated_function
 
+def migrate_db_schema():
+    """
+    Safely adds new columns to database tables if they don't exist.
+    """
+    from sqlalchemy import text
+    
+    # 1. User table migrations
+    try:
+        db.session.execute(text("SELECT otp_secret FROM user LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE user ADD COLUMN otp_secret VARCHAR(32)"))
+            db.session.commit()
+            click.echo("Database schema migrated: added otp_secret to user table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating user table: {str(e)}")
+
+    # 2. SystemSetting table migrations (scan_freeze columns)
+    try:
+        db.session.execute(text("SELECT scan_freeze_active FROM system_setting LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE system_setting ADD COLUMN scan_freeze_active BOOLEAN DEFAULT 0"))
+            db.session.execute(text("ALTER TABLE system_setting ADD COLUMN scan_freeze_start VARCHAR(5) DEFAULT '09:00'"))
+            db.session.execute(text("ALTER TABLE system_setting ADD COLUMN scan_freeze_end VARCHAR(5) DEFAULT '17:00'"))
+            db.session.commit()
+            click.echo("Database schema migrated: added scan_freeze columns to system_setting table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating system_setting table: {str(e)}")
+
+    # 3. SystemSetting table migration for scan_exclude_targets
+    try:
+        db.session.execute(text("SELECT scan_exclude_targets FROM system_setting LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE system_setting ADD COLUMN scan_exclude_targets TEXT"))
+            db.session.commit()
+            click.echo("Database schema migrated: added scan_exclude_targets to system_setting table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating scan_exclude_targets in system_setting table: {str(e)}")
+
+    # 4. ScanResult table migration for exclude_targets
+    try:
+        db.session.execute(text("SELECT exclude_targets FROM scan_result LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_result ADD COLUMN exclude_targets TEXT"))
+            db.session.commit()
+            click.echo("Database schema migrated: added exclude_targets to scan_result table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating exclude_targets in scan_result table: {str(e)}")
+
+    # 5. ScanSchedule table migration for exclude_targets
+    try:
+        db.session.execute(text("SELECT exclude_targets FROM scan_schedule LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_schedule ADD COLUMN exclude_targets TEXT"))
+            db.session.commit()
+            click.echo("Database schema migrated: added exclude_targets to scan_schedule table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating exclude_targets in scan_schedule table: {str(e)}")
+
+    # 6. SystemSetting table migration for scan_exclusions_active
+    try:
+        db.session.execute(text("SELECT scan_exclusions_active FROM system_setting LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE system_setting ADD COLUMN scan_exclusions_active BOOLEAN DEFAULT 1"))
+            db.session.commit()
+            click.echo("Database schema migrated: added scan_exclusions_active to system_setting table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating scan_exclusions_active in system_setting table: {str(e)}")
+
+    # 7. ScanCredential table migration
+    try:
+        db.session.execute(text("SELECT id FROM scan_credential LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS scan_credential (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    username VARCHAR(100),
+                    password VARCHAR(100),
+                    protocol VARCHAR(20) DEFAULT 'any',
+                    created_at DATETIME,
+                    FOREIGN KEY(user_id) REFERENCES user(id)
+                )
+            """))
+            db.session.commit()
+            click.echo("Database schema migrated: created scan_credential table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating scan_credential table: {str(e)}")
+
+    # 8. ScanResult table migration for credential_ids
+    try:
+        db.session.execute(text("SELECT credential_ids FROM scan_result LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_result ADD COLUMN credential_ids TEXT"))
+            db.session.commit()
+            click.echo("Database schema migrated: added credential_ids to scan_result table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating credential_ids in scan_result table: {str(e)}")
+
+    # 9. ScanSchedule table migration for credential_ids
+    try:
+        db.session.execute(text("SELECT credential_ids FROM scan_schedule LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_schedule ADD COLUMN credential_ids TEXT"))
+            db.session.commit()
+            click.echo("Database schema migrated: added credential_ids to scan_schedule table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating credential_ids in scan_schedule table: {str(e)}")
+
+    # 10. ScanResult table migration for timing_template
+    try:
+        db.session.execute(text("SELECT timing_template FROM scan_result LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_result ADD COLUMN timing_template VARCHAR(2) DEFAULT '4'"))
+            db.session.commit()
+            click.echo("Database schema migrated: added timing_template to scan_result table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating timing_template in scan_result table: {str(e)}")
+
+    # 11. ScanSchedule table migration for timing_template
+    try:
+        db.session.execute(text("SELECT timing_template FROM scan_schedule LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_schedule ADD COLUMN timing_template VARCHAR(2) DEFAULT '4'"))
+            db.session.commit()
+            click.echo("Database schema migrated: added timing_template to scan_schedule table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating timing_template in scan_schedule table: {str(e)}")
+
+    # 12. Migrate plaintext user 2FA secrets to encrypted format
+    try:
+        users = User.query.filter(User._otp_secret.isnot(None)).all()
+        migrated_count = 0
+        for u in users:
+            raw_secret = u._otp_secret
+            if raw_secret and not raw_secret.startswith("gAAAA"):
+                # It is a plaintext secret, so encrypt it!
+                u.otp_secret = raw_secret
+                migrated_count += 1
+        if migrated_count > 0:
+            db.session.commit()
+            click.echo(f"Database migration: Encrypted {migrated_count} plaintext user 2FA secrets.")
+    except Exception as e:
+        db.session.rollback()
+        click.echo(f"Error migrating user 2FA secrets: {str(e)}")
+
+
+
+def is_in_freeze_window(start_str, end_str):
+    """
+    Checks if the current local time falls within the freeze window.
+    Handles intervals spanning across midnight (e.g. 22:00 to 06:00).
+    """
+    try:
+        start_time = datetime.strptime(start_str.strip(), "%H:%M").time()
+        end_time = datetime.strptime(end_str.strip(), "%H:%M").time()
+        
+        # Get current local time using APP_TIMEZONE
+        now_local = datetime.now(APP_TIMEZONE).time()
+        
+        if start_time <= end_time:
+            # Same day (e.g. 09:00 - 17:00)
+            return start_time <= now_local <= end_time
+        else:
+            # Over midnight (e.g. 22:00 - 06:00)
+            return now_local >= start_time or now_local <= end_time
+    except Exception:
+        return False
+
+def is_scan_frozen():
+    """
+    Returns True if the system has a scan blackout active and
+    the current local time is inside that window.
+    """
+    try:
+        admin_user = User.query.filter_by(is_admin=True).first()
+        if not admin_user:
+            return False
+        admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first()
+        if not admin_setting or not admin_setting.scan_freeze_active:
+            return False
+        return is_in_freeze_window(admin_setting.scan_freeze_start, admin_setting.scan_freeze_end)
+    except Exception:
+        return False
+
 @app.cli.command("init-db")
 def init_db():
     """
@@ -935,22 +1257,67 @@ def init_db():
     """
 
     db.create_all()
+    migrate_db_schema()
     click.echo("Database tables created successfully.")
 
 @app.cli.command("create-admin")
 def create_admin():
     """
-    Creates the only admin user for PortOjo.
+    Creates the only admin user for PortOjo or resets their credentials/2FA.
     Run with:
         python -m flask --app app create-admin
     """
 
     db.create_all()
+    migrate_db_schema()
 
     existing_admin = User.query.filter_by(is_admin=True).first()
 
     if existing_admin:
-        click.echo("An admin user already exists. PortOjo allows only one admin account.")
+        click.echo(f"An admin user already exists: {existing_admin.email}")
+        if not click.confirm("Do you want to reset their password and 2FA OTP secret?"):
+            return
+        
+        # Security verification: require current password or app SECRET_KEY
+        auth_success = False
+        attempts = 3
+        while attempts > 0:
+            current_pass_or_key = click.prompt(
+                "Enter current Admin password OR the App SECRET_KEY to authorize reset",
+                hide_input=True
+            ).strip()
+            
+            if check_password_hash(existing_admin.password_hash, current_pass_or_key) or current_pass_or_key == app.config.get("SECRET_KEY"):
+                auth_success = True
+                break
+            else:
+                attempts -= 1
+                click.echo(f"Authorization failed. Incorrect password or secret key. {attempts} attempts remaining.")
+        
+        if not auth_success:
+            click.echo("Too many failed attempts. Aborting reset.")
+            return
+
+        password = click.prompt(
+            "New Admin password",
+            hide_input=True,
+            confirmation_prompt=True
+        )
+        
+        otp_secret = pyotp.random_base32()
+        existing_admin.password_hash = generate_password_hash(password)
+        existing_admin.otp_secret = otp_secret
+        db.session.commit()
+        
+        click.echo("==================================================")
+        click.echo("ADMIN CREDENTIALS & 2FA OTP SECRET RESET SUCCESSFUL")
+        click.echo("==================================================")
+        click.echo(f"Admin Email: {existing_admin.email}")
+        click.echo(f"Secret Key (Base32): {otp_secret}")
+        prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=existing_admin.email, issuer_name="PortOjo")
+        click.echo(f"Provisioning URI: {prov_uri}")
+        click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
+        click.echo("==================================================")
         return
 
     email = click.prompt("Admin email").strip().lower()
@@ -963,24 +1330,34 @@ def create_admin():
         confirmation_prompt=True
     )
 
+    otp_secret = pyotp.random_base32()
+
     if existing_user:
         existing_user.is_admin = True
         existing_user.password_hash = generate_password_hash(password)
+        existing_user.otp_secret = otp_secret
         db.session.commit()
 
         click.echo(f"Existing user {email} has been promoted to admin.")
-        return
+    else:
+        admin_user = User(
+            email=email,
+            password_hash=generate_password_hash(password),
+            is_admin=True,
+            otp_secret=otp_secret
+        )
+        db.session.add(admin_user)
+        db.session.commit()
+        click.echo(f"Admin user {email} created successfully.")
 
-    admin_user = User(
-        email=email,
-        password_hash=generate_password_hash(password),
-        is_admin=True
-    )
-
-    db.session.add(admin_user)
-    db.session.commit()
-
-    click.echo(f"Admin user {email} created successfully.")
+    click.echo("==================================================")
+    click.echo("2-FACTOR AUTHENTICATION (2FA) ENABLED FOR ADMIN")
+    click.echo("==================================================")
+    click.echo(f"Secret Key (Base32): {otp_secret}")
+    prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email, issuer_name="PortOjo")
+    click.echo(f"Provisioning URI: {prov_uri}")
+    click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
+    click.echo("==================================================")
 
 
 @login_manager.user_loader
@@ -1025,48 +1402,55 @@ def run_scheduler_loop():
     while True:
         try:
             with app.app_context():
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
-                due_schedules = ScanSchedule.query.filter(
-                    ScanSchedule.is_active == True,
-                    ScanSchedule.next_run <= now
-                ).all()
-                
-                for schedule in due_schedules:
-                    # 1. Create a new ScanResult record
-                    scan = ScanResult(
-                        user_id=schedule.user_id,
-                        input_ip=schedule.input_ip,
-                        subnet_mask=schedule.subnet_mask,
-                        scan_type=schedule.scan_type,
-                        ports=schedule.ports,
-                        network_cidr=schedule.network_cidr,
-                        status="pending"
-                    )
-                    db.session.add(scan)
-                    db.session.commit()
+                if is_scan_frozen():
+                    # Scan freeze active, defer scheduled scans
+                    pass
+                else:
+                    now = datetime.now(timezone.utc).replace(tzinfo=None)
+                    due_schedules = ScanSchedule.query.filter(
+                        ScanSchedule.is_active == True,
+                        ScanSchedule.next_run <= now
+                    ).all()
                     
-                    # 2. Trigger the scan execution in a separate thread
-                    threading.Thread(
-                        target=execute_scan,
-                        args=(scan.id,),
-                        daemon=True
-                    ).start()
-                    
-                    # 3. Update the schedule's last_run and next_run times
-                    schedule.last_run = now
-                    
-                    if schedule.frequency == "hourly":
-                        schedule.next_run = now + timedelta(hours=1)
-                    elif schedule.frequency == "daily":
-                        schedule.next_run = now + timedelta(days=1)
-                    elif schedule.frequency == "weekly":
-                        schedule.next_run = now + timedelta(weeks=1)
-                    elif schedule.frequency == "monthly":
-                        schedule.next_run = now + timedelta(days=30)
-                    else:
-                        schedule.next_run = now + timedelta(days=1)
+                    for schedule in due_schedules:
+                        # 1. Create a new ScanResult record
+                        scan = ScanResult(
+                            user_id=schedule.user_id,
+                            input_ip=schedule.input_ip,
+                            subnet_mask=schedule.subnet_mask,
+                            scan_type=schedule.scan_type,
+                            ports=schedule.ports,
+                            network_cidr=schedule.network_cidr,
+                            exclude_targets=schedule.exclude_targets,
+                            credential_ids=schedule.credential_ids,
+                            timing_template=schedule.timing_template,
+                            status="pending"
+                        )
+                        db.session.add(scan)
+                        db.session.commit()
                         
-                    db.session.commit()
+                        # 2. Trigger the scan execution in a separate thread
+                        threading.Thread(
+                            target=execute_scan,
+                            args=(scan.id,),
+                            daemon=True
+                        ).start()
+                        
+                        # 3. Update the schedule's last_run and next_run times
+                        schedule.last_run = now
+                        
+                        if schedule.frequency == "hourly":
+                            schedule.next_run = now + timedelta(hours=1)
+                        elif schedule.frequency == "daily":
+                            schedule.next_run = now + timedelta(days=1)
+                        elif schedule.frequency == "weekly":
+                            schedule.next_run = now + timedelta(weeks=1)
+                        elif schedule.frequency == "monthly":
+                            schedule.next_run = now + timedelta(days=30)
+                        else:
+                            schedule.next_run = now + timedelta(days=1)
+                            
+                        db.session.commit()
                     
         except Exception as e:
             import sys
@@ -1258,6 +1642,12 @@ def login():
             flash("Invalid email or password.", "error")
             return redirect(url_for("login"))
 
+        if user.otp_secret:
+            session["pre_2fa_user_id"] = user.id
+            if client_ip in FAILED_LOGIN_ATTEMPTS:
+                del FAILED_LOGIN_ATTEMPTS[client_ip]
+            return redirect(url_for("login_2fa"))
+
         login_user(user)
         if client_ip in FAILED_LOGIN_ATTEMPTS:
             del FAILED_LOGIN_ATTEMPTS[client_ip]
@@ -1265,6 +1655,37 @@ def login():
         return redirect(url_for("dashboard"))
 
     return render_template("login.html")
+
+
+@app.route("/login/2fa", methods=["GET", "POST"])
+def login_2fa():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    pre_2fa_user_id = session.get("pre_2fa_user_id")
+    if not pre_2fa_user_id:
+        flash("Please log in first.", "error")
+        return redirect(url_for("login"))
+
+    user = db.session.get(User, pre_2fa_user_id)
+    if not user or not user.otp_secret:
+        session.pop("pre_2fa_user_id", None)
+        flash("Invalid login session.", "error")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        otp_code = request.form.get("otp_code", "").strip()
+        
+        totp = pyotp.TOTP(user.otp_secret)
+        if totp.verify(otp_code):
+            login_user(user)
+            session.pop("pre_2fa_user_id", None)
+            flash("Login successful.", "success")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Invalid verification code. Please try again.", "error")
+
+    return render_template("login_2fa.html")
 
 
 @app.route("/logout")
@@ -1279,13 +1700,18 @@ def logout():
 @login_required
 def scan():
     if request.method == "POST":
+        if is_scan_frozen():
+            flash("Scan blocked due to Scan Blackout Window", "error")
+            return redirect(url_for("scan"))
+            
         ip_address = request.form.get("ip_address", "").strip()
         subnet_mask = request.form.get("subnet_mask", "").strip()
         scan_type = request.form.get("scan_type", "").strip()
         ports = request.form.get("ports", "").replace(" ", "").strip()
+        timing_template = request.form.get("timing_template", "4").strip()
 
-        if not ip_address or not subnet_mask or not scan_type:
-            flash("Please fill in all scan fields.", "error")
+        if not ip_address or not scan_type:
+            flash("Please fill in all required scan fields.", "error")
             return redirect(url_for("scan"))
 
         valid_scan_types = [
@@ -1304,10 +1730,10 @@ def scan():
                 flash("Invalid ports format. Use numbers, commas, and hyphens (e.g., 22,80,443 or 1-1000).", "error")
                 return redirect(url_for("scan"))
 
-        network_info = calculate_network(ip_address, subnet_mask)
+        network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
 
         if not network_info["success"]:
-            flash(f"Invalid IP address or subnet mask: {network_info['error']}", "error")
+            flash(f"Invalid scan target: {network_info['error']}", "error")
             return redirect(url_for("scan"))
         
         target_validation = validate_scan_target(network_info, scan_type)
@@ -1316,15 +1742,22 @@ def scan():
             flash(target_validation["error"], "error")
             return redirect(url_for("scan"))
 
+        exclude_targets = request.form.get("exclude_targets", "").strip()
+        selected_creds = request.form.getlist("credential_ids")
+        credential_ids_str = ",".join(selected_creds) if selected_creds else None
+
         scan_result = ScanResult(
             user_id=current_user.id,
             input_ip=ip_address,
-            subnet_mask=subnet_mask,
+            subnet_mask=subnet_mask if subnet_mask else "N/A",
             scan_type=scan_type,
             ports=ports if ports else None,
             network_cidr=network_info["cidr"],
             first_host=network_info["first_host"],
             last_host=network_info["last_host"],
+            exclude_targets=exclude_targets if exclude_targets else None,
+            credential_ids=credential_ids_str,
+            timing_template=timing_template,
             status="pending"
         )
 
@@ -1342,7 +1775,101 @@ def scan():
 
         return redirect(url_for("result", scan_id=scan_result.id))
 
-    return render_template("scan.html")
+    # Gather scan freeze details to display warning alert if active
+    admin_user = User.query.filter_by(is_admin=True).first()
+    admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
+    is_frozen = False
+    freeze_start = "09:00"
+    freeze_end = "17:00"
+    if admin_setting:
+        freeze_start = admin_setting.scan_freeze_start
+        freeze_end = admin_setting.scan_freeze_end
+        if admin_setting.scan_freeze_active:
+            is_frozen = is_in_freeze_window(freeze_start, freeze_end)
+
+    user_credentials = ScanCredential.query.filter_by(user_id=current_user.id).order_by(ScanCredential.name).all()
+
+    return render_template(
+        "scan.html",
+        is_frozen=is_frozen,
+        freeze_start=freeze_start,
+        freeze_end=freeze_end,
+        user_credentials=user_credentials
+    )
+
+@app.route("/scan/<int:scan_id>/stop", methods=["POST"])
+@login_required
+def stop_scan(scan_id):
+    scan_result = ScanResult.query.get_or_404(scan_id)
+    
+    if scan_result.user_id != current_user.id and not current_user.is_admin:
+        flash("You are not authorized to stop this scan.", "error")
+        return redirect(url_for("result", scan_id=scan_id))
+        
+    if scan_result.status in ["pending", "running"]:
+        scan_result.status = "cancelled"
+        db.session.commit()
+        
+        # Kill the running subprocess
+        from scanner import stop_scan_process
+        stopped = stop_scan_process(scan_id)
+        if stopped:
+            flash("Scan has been stopped successfully.", "success")
+        else:
+            flash("Scan marked as cancelled, but no active process was running.", "warning")
+            
+    return redirect(url_for("result", scan_id=scan_id))
+
+@app.route("/scan/<int:scan_id>/repeat", methods=["POST"])
+@login_required
+def repeat_scan(scan_id):
+    if is_scan_frozen():
+        flash("Scan blocked due to Scan Blackout Window", "error")
+        return redirect(url_for("result", scan_id=scan_id))
+        
+    old_scan = ScanResult.query.get_or_404(scan_id)
+    
+    if old_scan.user_id != current_user.id and not current_user.is_admin:
+        flash("You are not authorized to repeat this scan.", "error")
+        return redirect(url_for("scan"))
+        
+    network_info = calculate_network(old_scan.input_ip, old_scan.subnet_mask if old_scan.subnet_mask != "N/A" else None)
+    if not network_info["success"]:
+        flash(f"Invalid scan target: {network_info['error']}", "error")
+        return redirect(url_for("scan"))
+        
+    target_validation = validate_scan_target(network_info, old_scan.scan_type)
+    if not target_validation["success"]:
+        flash(target_validation["error"], "error")
+        return redirect(url_for("scan"))
+        
+    scan_result = ScanResult(
+        user_id=current_user.id,
+        input_ip=old_scan.input_ip,
+        subnet_mask=old_scan.subnet_mask,
+        scan_type=old_scan.scan_type,
+        ports=old_scan.ports,
+        network_cidr=old_scan.network_cidr,
+        first_host=old_scan.first_host,
+        last_host=old_scan.last_host,
+        exclude_targets=old_scan.exclude_targets,
+        credential_ids=old_scan.credential_ids,
+        timing_template=old_scan.timing_template,
+        status="pending"
+    )
+    
+    db.session.add(scan_result)
+    db.session.commit()
+    
+    scan_thread = threading.Thread(
+        target=execute_scan,
+        args=(scan_result.id, False)
+    )
+    scan_thread.daemon = True
+    scan_thread.start()
+    
+    flash("Repeated scan initiated.", "success")
+    return redirect(url_for("result", scan_id=scan_result.id))
 
 @app.route("/history")
 @login_required
@@ -1387,9 +1914,10 @@ def new_schedule():
         scan_type = request.form.get("scan_type", "").strip()
         ports = request.form.get("ports", "").replace(" ", "").strip()
         frequency = request.form.get("frequency", "").strip()
+        timing_template = request.form.get("timing_template", "4").strip()
 
-        if not name or not ip_address or not subnet_mask or not scan_type or not frequency:
-            flash("Please fill in all schedule fields.", "error")
+        if not name or not ip_address or not scan_type or not frequency:
+            flash("Please fill in all required schedule fields.", "error")
             return redirect(url_for("new_schedule"))
 
         valid_frequencies = ["hourly", "daily", "weekly", "monthly"]
@@ -1411,9 +1939,9 @@ def new_schedule():
                 flash("Invalid ports format. Use numbers, commas, and hyphens.", "error")
                 return redirect(url_for("new_schedule"))
 
-        network_info = calculate_network(ip_address, subnet_mask)
+        network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
         if not network_info["success"]:
-            flash(f"Invalid IP address or subnet mask: {network_info['error']}", "error")
+            flash(f"Invalid scan target: {network_info['error']}", "error")
             return redirect(url_for("new_schedule"))
         
         target_validation = validate_scan_target(network_info, scan_type)
@@ -1434,15 +1962,22 @@ def new_schedule():
         else:
             next_run = now + timedelta(days=1)
 
+        exclude_targets = request.form.get("exclude_targets", "").strip()
+        selected_creds = request.form.getlist("credential_ids")
+        credential_ids_str = ",".join(selected_creds) if selected_creds else None
+
         schedule = ScanSchedule(
             user_id=current_user.id,
             name=name,
             input_ip=ip_address,
-            subnet_mask=subnet_mask,
+            subnet_mask=subnet_mask if subnet_mask else "N/A",
             scan_type=scan_type,
             ports=ports if ports else None,
             network_cidr=network_info["cidr"],
             frequency=frequency,
+            exclude_targets=exclude_targets if exclude_targets else None,
+            credential_ids=credential_ids_str,
+            timing_template=timing_template,
             next_run=next_run
         )
 
@@ -1452,7 +1987,8 @@ def new_schedule():
         flash("Scan schedule created successfully.", "success")
         return redirect(url_for("schedules"))
 
-    return render_template("schedule_form.html")
+    user_credentials = ScanCredential.query.filter_by(user_id=current_user.id).order_by(ScanCredential.name).all()
+    return render_template("schedule_form.html", user_credentials=user_credentials)
 
 @app.route("/schedules/<int:schedule_id>/toggle", methods=["POST"])
 @login_required
@@ -2155,12 +2691,22 @@ def compare_scans():
 @app.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
-    setting = SystemSetting.query.filter_by(user_id=current_user.id).first()
     tab = request.args.get("tab", "smtp")
+    
+    # Enforce admin-only access for the freeze and exclusions tabs
+    if tab in ["freeze", "exclusions"] and not current_user.is_admin:
+        flash("Unauthorized access to scan control settings.", "error")
+        return redirect(url_for("settings", tab="smtp"))
+        
+    setting = SystemSetting.query.filter_by(user_id=current_user.id).first()
 
     if request.method == "POST":
         form_type = request.form.get("form_type", "smtp")
         
+        if form_type in ["freeze", "exclusions"] and not current_user.is_admin:
+            flash("Unauthorized access to scan control settings.", "error")
+            return redirect(url_for("settings", tab="smtp"))
+
         if not setting:
             setting = SystemSetting(user_id=current_user.id)
             db.session.add(setting)
@@ -2201,6 +2747,32 @@ def settings():
             
             flash("System and Email settings saved successfully.", "success")
             tab_redirect = "smtp"
+        elif form_type == "freeze":
+            scan_freeze_active = request.form.get("scan_freeze_active") == "y"
+            scan_freeze_start = request.form.get("scan_freeze_start", "09:00").strip()
+            scan_freeze_end = request.form.get("scan_freeze_end", "17:00").strip()
+            
+            # Simple HH:MM validation
+            time_pattern = re.compile(r"^\d{2}:\d{2}$")
+            if not time_pattern.match(scan_freeze_start) or not time_pattern.match(scan_freeze_end):
+                flash("Start Time and End Time must be in HH:MM format (e.g. 09:00, 22:30).", "error")
+                return redirect(url_for("settings", tab="freeze"))
+                
+            setting.scan_freeze_active = scan_freeze_active
+            setting.scan_freeze_start = scan_freeze_start
+            setting.scan_freeze_end = scan_freeze_end
+            
+            flash("Scan Blackout settings saved successfully.", "success")
+            tab_redirect = "freeze"
+        elif form_type == "exclusions":
+            scan_exclusions_active = request.form.get("scan_exclusions_active") == "y"
+            scan_exclude_targets = request.form.get("scan_exclude_targets", "").strip()
+            
+            setting.scan_exclusions_active = scan_exclusions_active
+            setting.scan_exclude_targets = scan_exclude_targets if scan_exclude_targets else None
+            
+            flash("Scan Exclusions saved successfully.", "success")
+            tab_redirect = "exclusions"
         else:
             honeypot_active = request.form.get("honeypot_active") == "y"
             honeypot_auto_block = request.form.get("honeypot_auto_block") == "y"
@@ -2216,7 +2788,48 @@ def settings():
         db.session.commit()
         return redirect(url_for("settings", tab=tab_redirect))
 
-    return render_template("settings.html", setting=setting, tab=tab)
+    credentials = []
+    if tab == "credentials":
+        credentials = ScanCredential.query.filter_by(user_id=current_user.id).order_by(ScanCredential.created_at.desc()).all()
+
+    return render_template("settings.html", setting=setting, tab=tab, credentials=credentials)
+
+@app.route("/settings/credentials/add", methods=["POST"])
+@login_required
+def add_credential():
+    name = request.form.get("name", "").strip()
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    protocol = request.form.get("protocol", "any").strip()
+
+    if not name:
+        flash("Credential name cannot be empty.", "error")
+        return redirect(url_for("settings", tab="credentials"))
+
+    credential = ScanCredential(
+        user_id=current_user.id,
+        name=name,
+        username=username if username else None,
+        password=password if password else None,
+        protocol=protocol
+    )
+    db.session.add(credential)
+    db.session.commit()
+    flash("Credential added successfully.", "success")
+    return redirect(url_for("settings", tab="credentials"))
+
+@app.route("/settings/credentials/delete/<int:credential_id>", methods=["POST"])
+@login_required
+def delete_credential(credential_id):
+    credential = ScanCredential.query.filter_by(id=credential_id, user_id=current_user.id).first()
+    if not credential:
+        flash("Credential not found.", "error")
+        return redirect(url_for("settings", tab="credentials"))
+
+    db.session.delete(credential)
+    db.session.commit()
+    flash("Credential deleted successfully.", "success")
+    return redirect(url_for("settings", tab="credentials"))
 
 @app.route("/settings/test-email", methods=["POST"])
 @login_required
@@ -2845,9 +3458,10 @@ def admin_bulk_delete_assets():
 
     return redirect(url_for("admin_assets"))
 
-if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-        cleanup_stale_scans()
+with app.app_context():
+    db.create_all()
+    migrate_db_schema()
+    cleanup_stale_scans()
 
+if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0")

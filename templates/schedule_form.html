@@ -25,20 +25,19 @@
         <option value="monthly">Monthly (Every Month)</option>
     </select>
 
-    <label>IP Address</label>
+    <label>IP Address / Custom Target Range</label>
     <input 
         type="text" 
         name="ip_address" 
-        placeholder="x.x.x.x" 
+        placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" 
         required
     >
 
-    <label>Subnet Mask</label>
+    <label>Subnet Mask (Optional)</label>
     <input 
         type="text" 
         name="subnet_mask" 
-        placeholder="x.x.x.x" 
-        required
+        placeholder="e.g. 255.255.255.0 (leave blank for single IP or custom range)" 
     >
 
     <label>Scan Type</label>
@@ -52,6 +51,16 @@
         <option value="udp">UDP Port Scan</option>
         <option value="aggressive">Aggressive Scan</option>
         <option value="vuln">Vulnerability Scan (NSE)</option>
+    </select>
+
+    <label for="timing_template">Scan Timing (Speed & Stealth)</label>
+    <select name="timing_template" id="timing_template" onchange="updateScanDescription()">
+        <option value="0">T0 (Paranoid) - Extremely slow, bypasses Intrusion Detection Systems (IDS)</option>
+        <option value="1">T1 (Sneaky) - Very slow, helpful for IDS/firewall evasion</option>
+        <option value="2">T2 (Polite) - Slows down scan to conserve target resources and bandwidth</option>
+        <option value="3">T3 (Normal) - Default speed, standard scan timing</option>
+        <option value="4" selected>T4 (Aggressive) - Fast and reliable, recommended for modern local networks</option>
+        <option value="5">T5 (Insane) - Extremely fast, higher risk of network congestion or packet loss</option>
     </select>
 
     <!-- Scan Description Card -->
@@ -85,6 +94,40 @@
         >
     </div>
 
+    <div style="margin-top: 15px; margin-bottom: 20px;">
+        <label for="exclude_targets">Exclude Targets (Optional)</label>
+        <input 
+            type="text" 
+            id="exclude_targets" 
+            name="exclude_targets" 
+            placeholder="e.g. 192.168.1.5, 192.168.1.100-120 (comma-separated IPs/ranges to skip)"
+        >
+    </div>
+
+    {% if user_credentials %}
+    <div id="credential-selection-wrapper" style="margin-top: 15px; margin-bottom: 20px;">
+        <label style="font-weight: 500; display: block; margin-bottom: 4px;">Credentials to Test (Optional)</label>
+        <span style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;">
+            Choose credentials to test against matching open ports discovered during scheduled scans.
+        </span>
+        
+        <select id="credential_select_input" onchange="addCredentialBadge()" style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+            <option value="">-- Choose credential to add --</option>
+            {% for cred in user_credentials %}
+                <option value="{{ cred.id }}" data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}" data-name="{{ cred.name }}">
+                    {{ cred.name }} ({{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }})
+                </option>
+            {% endfor %}
+        </select>
+        
+        <div id="credentials_badges_container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+            <!-- Badges will be generated dynamically -->
+        </div>
+        
+        <div id="credentials_hidden_inputs"></div>
+    </div>
+    {% endif %}
+
     <button type="submit">Create Schedule</button>
 </form>
 
@@ -92,56 +135,56 @@
     const scanInfo = {
         "fast": {
             title: "Fast Port Scan (TCP)",
-            text: "Scans the top 100 most common ports quickly. Highly efficient for a quick check of active services.",
+            text: "Scans the top 100 most common TCP ports quickly. Highly efficient for a rapid overview of active services. \n\nUse Case: Best for initial rapid inventory checks or when you need results within seconds without generating significant network traffic.",
             command: "nmap -F <target>",
             limit: 1024,
             privs: "Standard User"
         },
         "service_version": {
             title: "Service & Version Scan (TCP)",
-            text: "Scans the standard ports and probes them for service version info (e.g. Apache version, SSH daemon details). Takes slightly longer.",
+            text: "Performs a TCP port scan and probes open ports to determine the exact application name and version details (e.g. Apache version, SSH daemon details).\n\nUse Case: Recommended when assessing software versions for known vulnerabilities or conducting detailed security audits. Note: Takes longer due to service banner grabbing.",
             command: "nmap -sV -T4 <target>",
             limit: 256,
             privs: "Standard User"
         },
         "ping_sweep": {
             title: "Host Discovery (Ping Sweep)",
-            text: "Determines which hosts on the network are online. Does not perform port scanning, making it extremely fast.",
+            text: "Determines which hosts on the network are online. Does not perform port scanning, making it extremely fast.\n\nUse Case: Ideal for mapping live hosts in large subnets before running more detailed, targeted port scans.",
             command: "nmap -sn <target>",
             limit: 2048,
             privs: "Standard User"
         },
         "syn": {
             title: "TCP SYN Scan (Half-Open)",
-            text: "Performs a stealthy half-open scan by sending SYN packets and waiting for SYN-ACK response without completing the full 3-way handshake. (Falls back to TCP Connect automatically if administrator privileges are missing).",
+            text: "Performs a stealthy half-open scan by sending SYN packets and waiting for SYN-ACK responses without completing the full TCP 3-way handshake. (Falls back to TCP Connect automatically if administrator privileges are missing).\n\nUse Case: The industry standard for stealthy and reliable TCP scanning. Best for general security audits when administrative privileges are available.",
             command: "nmap -sS <target>",
             limit: 512,
             privs: "Administrator (Raw Sockets)"
         },
         "connect": {
             title: "TCP Connect Scan (Full Handshake)",
-            text: "The default scan type when SYN scan is not available. It completes the TCP three-way handshake with the target ports.",
+            text: "Completes the full TCP 3-way handshake with target ports using standard system network APIs.\n\nUse Case: Recommended when running PortOjo without administrator/root privileges, or when scanning through network proxies or application-layer firewalls.",
             command: "nmap -sT <target>",
             limit: 512,
             privs: "Standard User"
         },
         "udp": {
             title: "UDP Port Scan",
-            text: "Scans the top 100 UDP ports. UDP scans are typically much slower than TCP scans due to the nature of UDP protocol responses.",
+            text: "Scans the top 100 most common UDP ports (DNS, DHCP, SNMP, NTP, etc.).\n\nUse Case: Essential for finding exposed UDP-based services which are often overlooked but highly vulnerable. Note: Slower than TCP scans due to the nature of UDP protocol responses.",
             command: "nmap -sU --top-ports 100 <target>",
             limit: 64,
             privs: "Administrator (Raw Sockets)"
         },
         "aggressive": {
             title: "Aggressive Scan",
-            text: "Enables OS detection (-O), service version detection (-sV), default scripts (-sC), and traceroute. Very noisy and comprehensive.",
+            text: "Enables OS detection (-O), service version detection (-sV), default scripts (-sC), and traceroute in a single run.\n\nUse Case: Best when you need a deep, exhaustive analysis of a specific, critical target machine. Warning: Extremely noisy and easily flagged by firewalls or intrusion detection systems.",
             command: "nmap -A -T4 <target>",
             limit: 64,
             privs: "Administrator (Raw Sockets)"
         },
         "vuln": {
             title: "Vulnerability Scan (NSE)",
-            text: "Runs Nmap's vulnerability detection scripts against identified open ports to check for known security flaws (CVEs).",
+            text: "Runs Nmap's vulnerability detection scripts (NSE) against identified open ports to check for known security flaws, CVEs, and common misconfigurations.\n\nUse Case: Recommended for regular compliance checks, vulnerability assessments, or verifying patch status of network assets.",
             command: "nmap -sV -T4 --script vuln <target>",
             limit: 64,
             privs: "Standard User"
@@ -163,7 +206,20 @@
         const info = scanInfo[val];
         document.getElementById("desc-title").textContent = info.title;
         document.getElementById("desc-text").textContent = info.text;
-        document.getElementById("desc-command").textContent = info.command;
+
+        const timingSelect = document.getElementById("timing_template");
+        const timingVal = timingSelect ? timingSelect.value : "4";
+        
+        let cmd = info.command;
+        if (cmd.includes("-T4")) {
+            cmd = cmd.replace("-T4", `-T${timingVal}`);
+        } else if (cmd.includes("-T")) {
+            cmd = cmd.replace(/-T\d/, `-T${timingVal}`);
+        } else {
+            cmd = cmd.replace("nmap ", `nmap -T${timingVal} `);
+        }
+        document.getElementById("desc-command").textContent = cmd;
+
         document.getElementById("desc-limit").textContent = info.limit;
         
         const privsEl = document.getElementById("desc-privs");
@@ -182,7 +238,67 @@
             }
         }
 
+        const credsWrapper = document.getElementById("credential-selection-wrapper");
+        if (credsWrapper) {
+            credsWrapper.style.display = (val === "ping_sweep") ? "none" : "block";
+        }
+
         card.style.display = "block";
+    }
+
+    function addCredentialBadge() {
+        const select = document.getElementById("credential_select_input");
+        if (!select) return;
+        const val = select.value;
+        if (!val) return;
+
+        const option = select.options[select.selectedIndex];
+        const name = option.getAttribute("data-name");
+        const proto = option.getAttribute("data-protocol");
+
+        const container = document.getElementById("credentials_badges_container");
+        if (document.getElementById(`cred-badge-${val}`)) {
+            select.value = "";
+            return;
+        }
+
+        const badge = document.createElement("div");
+        badge.id = `cred-badge-${val}`;
+        badge.style = "display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; background: var(--bg-card); border: 1px solid var(--border); font-size: 13px; color: var(--text); font-weight: 500; transition: all 0.2s ease;";
+        badge.innerHTML = `
+            <span>${name} <small style="color: var(--text-muted); font-size: 11px;">(${proto})</small></span>
+            <button type="button" onclick="removeCredentialBadge('${val}')" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-left: 2px;" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">&times;</button>
+        `;
+        container.appendChild(badge);
+
+        const hiddenContainer = document.getElementById("credentials_hidden_inputs");
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "credential_ids";
+        input.value = val;
+        input.id = `cred-input-${val}`;
+        hiddenContainer.appendChild(input);
+
+        option.disabled = true;
+        select.value = "";
+    }
+
+    function removeCredentialBadge(val) {
+        const badge = document.getElementById(`cred-badge-${val}`);
+        if (badge) badge.remove();
+
+        const input = document.getElementById(`cred-input-${val}`);
+        if (input) input.remove();
+
+        const select = document.getElementById("credential_select_input");
+        if (select) {
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === val) {
+                    select.options[i].disabled = false;
+                    break;
+                }
+            }
+        }
     }
 
     document.addEventListener("DOMContentLoaded", () => {

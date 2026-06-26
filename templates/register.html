@@ -3,6 +3,10 @@
 {% block content %}
 
 <div class="auth-panel">
+    <div style="text-align: center; margin-bottom: 24px;">
+        <img src="{{ url_for('static', filename='images/logos/portojo-logo.svg') }}" alt="PortOjo Logo"
+            style="height: 250px; max-width: 100%;">
+    </div>
     <h2>Register</h2>
 
     <form method="POST">
@@ -12,12 +16,8 @@
         <label>Password</label>
         <div class="password-field">
             <input type="password" id="password" name="password" required>
-            <button 
-                type="button" 
-                class="password-toggle" 
-                onclick="togglePasswordGroup(this)"
-                aria-label="Show or hide password"
-            >
+            <button type="button" class="password-toggle" onclick="togglePasswordGroup(this)"
+                aria-label="Show or hide password">
                 <i data-lucide="eye"></i>
             </button>
         </div>
@@ -25,26 +25,22 @@
         <label>Confirm Password</label>
         <div class="password-field">
             <input type="password" id="confirm_password" name="confirm_password" required>
-            <button 
-                type="button" 
-                class="password-toggle" 
-                onclick="togglePasswordGroup(this)"
-                aria-label="Show or hide password"
-            >
+            <button type="button" class="password-toggle" onclick="togglePasswordGroup(this)"
+                aria-label="Show or hide password">
                 <i data-lucide="eye"></i>
             </button>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="auth-flash-wrapper">
-                    {% for category, message in messages %}
-                        <div class="flash-message {{ category }}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
+        {% if messages %}
+        <div class="auth-flash-wrapper">
+            {% for category, message in messages %}
+            <div class="flash-message {{ category }}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% endwith %}
 
         <button type="submit">Register</button>

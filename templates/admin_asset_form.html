@@ -43,6 +43,9 @@
                     <option value="Switch" {% if asset and asset.device_type == 'Switch' %}selected{% endif %}>Switch</option>
                     <option value="Firewall" {% if asset and asset.device_type == 'Firewall' %}selected{% endif %}>Firewall</option>
                     <option value="Printer" {% if asset and asset.device_type == 'Printer' %}selected{% endif %}>Printer</option>
+                    <option value="IP Phone" {% if asset and asset.device_type == 'IP Phone' %}selected{% endif %}>IP Phone</option>
+                    <option value="IP Camera" {% if asset and asset.device_type == 'IP Camera' %}selected{% endif %}>IP Camera</option>
+                    <option value="Virtual Machine" {% if asset and asset.device_type == 'Virtual Machine' %}selected{% endif %}>Virtual Machine</option>
                     <option value="IoT" {% if asset and asset.device_type == 'IoT' %}selected{% endif %}>IoT</option>
                     <option value="Mobile" {% if asset and asset.device_type == 'Mobile' %}selected{% endif %}>Mobile</option>
                 </select>

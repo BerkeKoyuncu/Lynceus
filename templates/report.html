@@ -207,6 +207,18 @@
         <div class="meta-item"><strong>IP Scope:</strong> {{ scan_result.input_ip }} / {{ scan_result.subnet_mask }}</div>
         <div class="meta-item"><strong>User:</strong> {{ scan_result.user.email }}</div>
         <div class="meta-item"><strong>Ports Scanned:</strong> {{ scan_result.ports|replace(',', ', ') if scan_result.ports else 'Default (Nmap Standard)' }}</div>
+        <div class="meta-item">
+            <strong>Scan Speed/Timing:</strong> 
+            T{{ scan_result.timing_template if scan_result.timing_template else '4' }} 
+            {% set timing_val = scan_result.timing_template if scan_result.timing_template else '4' %}
+            {% if timing_val == '0' %}(Paranoid)
+            {% elif timing_val == '1' %}(Sneaky)
+            {% elif timing_val == '2' %}(Polite)
+            {% elif timing_val == '3' %}(Normal)
+            {% elif timing_val == '4' %}(Aggressive)
+            {% elif timing_val == '5' %}(Insane)
+            {% endif %}
+        </div>
         <div class="meta-item"><strong>Status:</strong> {{ scan_result.status.upper() }}</div>
     </div>
 
