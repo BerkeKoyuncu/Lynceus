@@ -2693,9 +2693,9 @@ def compare_scans():
 def settings():
     tab = request.args.get("tab", "smtp")
     
-    # Enforce admin-only access for the freeze and exclusions tabs
-    if tab in ["freeze", "exclusions"] and not current_user.is_admin:
-        flash("Unauthorized access to scan control settings.", "error")
+    # Enforce admin-only access for the freeze, exclusions, and honeypot tabs
+    if tab in ["freeze", "exclusions", "honeypot"] and not current_user.is_admin:
+        flash("Unauthorized access to settings.", "error")
         return redirect(url_for("settings", tab="smtp"))
         
     setting = SystemSetting.query.filter_by(user_id=current_user.id).first()
@@ -2703,8 +2703,8 @@ def settings():
     if request.method == "POST":
         form_type = request.form.get("form_type", "smtp")
         
-        if form_type in ["freeze", "exclusions"] and not current_user.is_admin:
-            flash("Unauthorized access to scan control settings.", "error")
+        if form_type in ["freeze", "exclusions", "honeypot"] and not current_user.is_admin:
+            flash("Unauthorized access to settings.", "error")
             return redirect(url_for("settings", tab="smtp"))
 
         if not setting:
@@ -2956,6 +2956,7 @@ def admin_delete_user(user_id):
     ScanResult.query.filter_by(user_id=user.id).delete()
     ScanSchedule.query.filter_by(user_id=user.id).delete()
     SystemSetting.query.filter_by(user_id=user.id).delete()
+    ScanCredential.query.filter_by(user_id=user.id).delete()
 
     db.session.delete(user)
     db.session.commit()
@@ -3069,6 +3070,7 @@ def admin_bulk_delete_users():
         ScanResult.query.filter(ScanResult.user_id.in_(int_ids)).delete(synchronize_session=False)
         ScanSchedule.query.filter(ScanSchedule.user_id.in_(int_ids)).delete(synchronize_session=False)
         SystemSetting.query.filter(SystemSetting.user_id.in_(int_ids)).delete(synchronize_session=False)
+        ScanCredential.query.filter(ScanCredential.user_id.in_(int_ids)).delete(synchronize_session=False)
 
         deleted_count = User.query.filter(User.id.in_(int_ids)).delete(synchronize_session=False)
         db.session.commit()

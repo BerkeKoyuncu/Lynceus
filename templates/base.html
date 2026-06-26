@@ -173,6 +173,7 @@
             </div>
 
             <!-- Sidebar Group: Honeypot -->
+            {% if current_user.is_admin %}
             <div class="sidebar-group">
                 <button type="button" class="sidebar-group-header" onclick="toggleSidebarGroup('group-honeypot')">
                     <i data-lucide="shield" class="sidebar-group-icon"></i>
@@ -187,7 +188,6 @@
                             <span>Honeypot Settings</span>
                         </a>
                     </li>
-                    {% if current_user.is_admin %}
                     <li>
                         <a href="{{ url_for('admin_panel', tab='honeypot') }}"
                             class="sidebar-link {% if request.endpoint == 'admin_panel' and request.args.get('tab') == 'honeypot' %}active{% endif %}">
@@ -195,9 +195,9 @@
                             <span>Honeypot Logs</span>
                         </a>
                     </li>
-                    {% endif %}
                 </ul>
             </div>
+            {% endif %}
 
             <!-- Sidebar Group: System -->
             <div class="sidebar-group">

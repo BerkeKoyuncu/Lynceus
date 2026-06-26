@@ -295,10 +295,12 @@
                 <i data-lucide="mail" class="quick-action-icon"></i>
                 <span>SMTP Alerts Config</span>
             </a>
+            {% if current_user.is_admin %}
             <a href="{{ url_for('settings', tab='honeypot') }}" class="quick-action-item">
                 <i data-lucide="shield" class="quick-action-icon"></i>
                 <span>Honeypot Options</span>
             </a>
+            {% endif %}
         </div>
     </div>
 </div>

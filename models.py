@@ -152,10 +152,26 @@ class ScanCredential(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     name = db.Column(db.String(100), nullable=False)
-    username = db.Column(db.String(100), nullable=True)
-    password = db.Column(db.String(100), nullable=True)
+    _username = db.Column("username", db.String(255), nullable=True)
+    _password = db.Column("password", db.String(255), nullable=True)
     protocol = db.Column(db.String(20), default="any")  # 'ftp', 'redis', 'http_basic', 'any'
     created_at = db.Column(db.DateTime, default=utc_now)
+
+    @property
+    def username(self):
+        return decrypt_val(self._username)
+
+    @username.setter
+    def username(self, value):
+        self._username = encrypt_val(value)
+
+    @property
+    def password(self):
+        return decrypt_val(self._password)
+
+    @password.setter
+    def password(self, value):
+        self._password = encrypt_val(value)
 
     def __repr__(self):
         return f"<ScanCredential {self.name} - {self.protocol}>"
