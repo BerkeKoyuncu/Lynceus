@@ -16,6 +16,7 @@ import json
 import csv
 import io
 import re
+import os
 
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
@@ -24,7 +25,7 @@ from scanner import calculate_network, validate_scan_target, run_nmap_scan
 
 app = Flask(__name__)
 
-app.config["SECRET_KEY"] = "change-this-secret-key"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or "change-this-secret-key"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
