@@ -118,6 +118,12 @@ def calculate_network(ip_address, subnet_mask=None):
 
             num_ips = int(end_ip) - int(start_ip) + 1
 
+            if num_ips > 2048:
+                return {
+                    "success": False,
+                    "error": "The selected range is too large. Maximum allowed size is 2048 IP addresses."
+                }
+
             # Convert to Nmap-compatible target format
             start_octets = str(start_ip).split(".")
             end_octets = str(end_ip).split(".")

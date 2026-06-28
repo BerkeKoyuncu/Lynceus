@@ -17,10 +17,38 @@ def get_fernet_key(secret_string: str) -> bytes:
     # Base64 urlsafe encode it as required by Fernet
     return base64.urlsafe_b64encode(key_bytes)
 
+def get_secret_key():
+    """
+    Retrieves the encryption / secret key from environment or local persisted file.
+    If no key exists, generates a secure random one and saves it locally.
+    """
+    key = os.environ.get("OTP_ENCRYPTION_KEY") or os.environ.get("SECRET_KEY")
+    if key:
+        return key
+
+    secret_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), ".secret_key")
+    if os.path.exists(secret_file):
+        try:
+            with open(secret_file, "r", encoding="utf-8") as f:
+                saved_key = f.read().strip()
+                if saved_key:
+                    return saved_key
+        except Exception:
+            pass
+
+    import secrets
+    new_key = secrets.token_hex(32)
+    try:
+        with open(secret_file, "w", encoding="utf-8") as f:
+            f.write(new_key)
+    except Exception:
+        pass
+    return new_key
+
 def encrypt_val(val: str) -> str:
     if not val:
         return val
-    secret = os.environ.get("OTP_ENCRYPTION_KEY") or os.environ.get("SECRET_KEY") or "change-this-secret-key"
+    secret = get_secret_key()
     fernet = Fernet(get_fernet_key(secret))
     return fernet.encrypt(val.encode('utf-8')).decode('utf-8')
 
@@ -30,7 +58,7 @@ def decrypt_val(val: str) -> str:
     # If the value is a Fernet token (typically starts with gAAAA), decrypt it.
     if val.startswith("gAAAA"):
         try:
-            secret = os.environ.get("OTP_ENCRYPTION_KEY") or os.environ.get("SECRET_KEY") or "change-this-secret-key"
+            secret = get_secret_key()
             fernet = Fernet(get_fernet_key(secret))
             return fernet.decrypt(val.encode('utf-8')).decode('utf-8')
         except Exception:

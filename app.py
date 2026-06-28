@@ -19,13 +19,13 @@ import re
 import os
 
 
-from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
+from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential, get_secret_key
 from scanner import calculate_network, validate_scan_target, run_nmap_scan
 
 
 app = Flask(__name__)
 
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or "change-this-secret-key"
+app.config["SECRET_KEY"] = get_secret_key()
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -619,6 +619,9 @@ def execute_scan(scan_id, audit_credentials=False):
         scan_result = ScanResult.query.get(scan_id)
 
         if not scan_result:
+            return
+
+        if scan_result.status == "cancelled":
             return
 
         scan_result.status = "running"
@@ -1278,7 +1281,7 @@ def is_scan_frozen():
 @app.cli.command("init-db")
 def init_db():
     """
-    Initializes the database tables.
+    Initialises the database tables.
     Run with:
         python -m flask --app app init-db
     """
@@ -1446,7 +1449,7 @@ def run_scheduler_loop():
     Background loop that checks for schedules that need execution.
     It runs as a daemon thread and uses SQLAlchemy query context.
     """
-    # Wait for the database and app to initialize
+    # Wait for the database and app to initialise
     time.sleep(5)
     
     while True:
@@ -1754,6 +1757,24 @@ def login_2fa():
     return render_template("login_2fa.html")
 
 
+def generate_base64_qr(uri):
+    """
+    Generates a Base64 encoded SVG image for the given provisioning URI.
+    """
+    import base64
+    import io
+    import qrcode
+    import qrcode.image.svg
+    
+    factory = qrcode.image.svg.SvgImage
+    img = qrcode.make(uri, image_factory=factory)
+    
+    buffered = io.BytesIO()
+    img.save(buffered)
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    return f"data:image/svg+xml;base64,{img_str}"
+
+
 @app.route("/login/2fa-setup", methods=["GET", "POST"])
 def login_2fa_setup():
     if current_user.is_authenticated:
@@ -1776,6 +1797,8 @@ def login_2fa_setup():
     prov_uri = pyotp.totp.TOTP(setup_2fa_secret).provisioning_uri(
         name=user.email, issuer_name="PortOjo"
     )
+    
+    qr_code_base64 = generate_base64_qr(prov_uri)
 
     if request.method == "POST":
         otp_code = request.form.get("otp_code", "").strip()
@@ -1794,7 +1817,8 @@ def login_2fa_setup():
     return render_template(
         "login_2fa_setup.html",
         secret_key=setup_2fa_secret,
-        prov_uri=prov_uri
+        prov_uri=prov_uri,
+        qr_code_base64=qr_code_base64
     )
 
 

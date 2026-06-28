@@ -212,7 +212,7 @@
             if (checkedCount > 0) {
                 bulkDeleteBtn.style.display = "inline-flex";
                 bulkDeleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
-                // Re-initialize Lucide icon inside the button since HTML changed
+                // Re-initialise Lucide icon inside the button since HTML changed
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
                 }

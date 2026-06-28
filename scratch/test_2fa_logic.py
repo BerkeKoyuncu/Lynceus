@@ -114,7 +114,7 @@ class Test2FAEnforcement(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Set Up 2-Factor Authentication', response.data)
         self.assertIn(setup_secret.encode(), response.data)
-        self.assertIn(b'api.qrserver.com', response.data)
+        self.assertIn(b'data:image/svg+xml;base64,', response.data)
 
         print("--- STEP 5: Submit invalid OTP code to setup ---")
         response = self.client.post('/login/2fa-setup', data={'otp_code': '000000'}, follow_redirects=True)
@@ -262,6 +262,19 @@ class TestTargetSafetyValidation(unittest.TestCase):
         self.assertTrue(res["success"])
         val_res = validate_scan_target(res, "fast")
         self.assertFalse(val_res["success"])
+
+    def test_large_hyphenated_range_prevention(self):
+        from scanner import calculate_network
+        
+        # Extremely large cross-subnet range should fail early without memory expansion
+        res = calculate_network("10.0.0.1-10.255.255.254")
+        self.assertFalse(res["success"])
+        self.assertIn("The selected range is too large", res["error"])
+        
+        # Valid small cross-subnet range should pass
+        res2 = calculate_network("192.168.1.250-192.168.2.5")
+        self.assertTrue(res2["success"])
+        self.assertEqual(res2["total_addresses"], 12)
 
 if __name__ == '__main__':
     unittest.main()
