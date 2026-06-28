@@ -1222,6 +1222,19 @@ def migrate_db_schema():
             db.session.rollback()
             click.echo(f"Error migrating audit_credentials in scan_result table: {str(e)}")
 
+    # 14. ScanSchedule table migration for audit_credentials
+    try:
+        db.session.execute(text("SELECT audit_credentials FROM scan_schedule LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_schedule ADD COLUMN audit_credentials BOOLEAN DEFAULT 0"))
+            db.session.commit()
+            click.echo("Database schema migrated: added audit_credentials to scan_schedule table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating audit_credentials in scan_schedule table: {str(e)}")
+
 
 
 def is_in_freeze_window(start_str, end_str):
@@ -1460,6 +1473,7 @@ def run_scheduler_loop():
                             exclude_targets=schedule.exclude_targets,
                             credential_ids=schedule.credential_ids,
                             timing_template=schedule.timing_template,
+                            audit_credentials=schedule.audit_credentials,
                             status="pending"
                         )
                         db.session.add(scan)
@@ -1468,7 +1482,7 @@ def run_scheduler_loop():
                         # 2. Trigger the scan execution in a separate thread
                         threading.Thread(
                             target=execute_scan,
-                            args=(scan.id,),
+                            args=(scan.id, schedule.audit_credentials),
                             daemon=True
                         ).start()
                         
@@ -2062,6 +2076,7 @@ def new_schedule():
         exclude_targets = request.form.get("exclude_targets", "").strip()
         selected_creds = request.form.getlist("credential_ids")
         credential_ids_str = ",".join(selected_creds) if selected_creds else None
+        audit_credentials = request.form.get("audit_credentials") == "y"
 
         schedule = ScanSchedule(
             user_id=current_user.id,
@@ -2075,6 +2090,7 @@ def new_schedule():
             exclude_targets=exclude_targets if exclude_targets else None,
             credential_ids=credential_ids_str,
             timing_template=timing_template,
+            audit_credentials=audit_credentials,
             next_run=next_run
         )
 
@@ -2368,7 +2384,7 @@ def export_result_txt(scan_id):
     lines.append("=" * 60)
     lines.append("")
     lines.append(f"Scan ID: {scan_result.id}")
-    lines.append(f"Created At: {scan_result.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"Created At: {format_local_datetime(scan_result.created_at)}")
     lines.append(f"User: {scan_result.user.email}")
     lines.append(f"Input IP Address: {scan_result.input_ip}")
     lines.append(f"Subnet Mask: {scan_result.subnet_mask}")
@@ -3039,6 +3055,25 @@ def admin_toggle_user_role(user_id):
 
     role_str = "Admin" if user.is_admin else "User"
     flash(f"Role of user {user.email} updated to '{role_str}'.", "success")
+    return redirect(url_for("admin_panel", tab="users"))
+
+@app.route("/admin/user/<int:user_id>/reset-2fa", methods=["POST"])
+@login_required
+@admin_required
+def admin_reset_user_2fa(user_id):
+    if user_id == current_user.id:
+        flash("You cannot reset your own 2FA from here.", "error")
+        return redirect(url_for("admin_panel", tab="users"))
+
+    user = User.query.get_or_404(user_id)
+    if not user.is_admin:
+        flash("Resetting 2FA is only applicable to administrator accounts.", "error")
+        return redirect(url_for("admin_panel", tab="users"))
+
+    user.otp_secret = None
+    db.session.commit()
+
+    flash(f"Two-Factor Authentication (2FA) has been reset for {user.email}. They will be prompted to set it up again on their next login.", "success")
     return redirect(url_for("admin_panel", tab="users"))
 
 @app.route("/admin/user/<int:user_id>/delete", methods=["POST"])

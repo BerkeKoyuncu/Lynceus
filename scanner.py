@@ -750,6 +750,67 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             "hosts": []
         }
     
+def is_ip_allowed(ip_str):
+    """
+    Helper to check if a single IP address belongs to the allowed private/loopback/link-local scopes.
+    """
+    if not ip_str or ip_str == "N/A":
+        return True
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return False
+
+def is_target_safe(target_str):
+    """
+    Safely verifies if all IP addresses in the target string are allowed (private/loopback/link-local).
+    Iteratively parses comma-separated lists and hyphenated ranges without recursion.
+    """
+    if not target_str:
+        return False
+
+    # 1. Split comma-separated targets and process iteratively
+    sub_targets = [p.strip() for p in target_str.split(",") if p.strip()]
+    if not sub_targets:
+        return False
+
+    for target in sub_targets:
+        # 2. Check hyphenated range (e.g. 192.168.1.10-40 or 192.168.1.10-192.168.1.40)
+        if "-" in target:
+            parts = target.split("-")
+            if len(parts) != 2:
+                return False
+            start_part = parts[0].strip()
+            end_part = parts[1].strip()
+            
+            if not start_part:
+                return False
+
+            # Support octet shorthand (e.g., 192.168.1.10-40)
+            if "." not in end_part:
+                dots = start_part.split(".")
+                if len(dots) == 4:
+                    end_part = f"{dots[0]}.{dots[1]}.{dots[2]}.{end_part}"
+                else:
+                    return False
+            
+            if not is_ip_allowed(start_part) or not is_ip_allowed(end_part):
+                return False
+
+        # 3. Check CIDR notation or single IP address
+        else:
+            try:
+                network = ipaddress.ip_network(target, strict=False)
+                if network.is_multicast or network.is_unspecified or network.is_reserved:
+                    return False
+                if not (network.is_private or network.is_loopback or network.is_link_local):
+                    return False
+            except ValueError:
+                return False
+
+    return True
+
 def validate_scan_target(network_info, scan_type):
     """
     Validates whether the calculated network is safe and reasonable to scan.
@@ -789,40 +850,13 @@ def validate_scan_target(network_info, scan_type):
                 )
             }
 
-        # Check if it is a standard CIDR block first to run full checks
-        try:
-            network = ipaddress.ip_network(network_info["cidr"], strict=False)
-            if network.is_multicast:
-                return {"success": False, "error": "Multicast networks cannot be scanned."}
-            if network.is_unspecified:
-                return {"success": False, "error": "Unspecified networks cannot be scanned."}
-            if network.is_reserved:
-                return {"success": False, "error": "Reserved networks cannot be scanned."}
-            if not (network.is_private or network.is_loopback or network.is_link_local):
-                return {"success": False, "error": "Only private, loopback, or link-local networks are allowed."}
-            return {"success": True, "error": None}
-        except ValueError:
-            # If not a standard CIDR block (e.g. range 10-40 or comma-separated list),
-            # check the boundary hosts to verify they are in allowed spaces
-            def is_ip_allowed(ip_str):
-                if not ip_str or ip_str == "N/A":
-                    return True
-                try:
-                    ip = ipaddress.ip_address(ip_str)
-                    return ip.is_private or ip.is_loopback or ip.is_link_local
-                except ValueError:
-                    return False
+        if not is_target_safe(network_info.get("cidr")):
+            return {
+                "success": False,
+                "error": "Only private, loopback, or link-local networks are allowed to be scanned."
+            }
 
-            first = network_info.get("first_host")
-            last = network_info.get("last_host")
-
-            if not is_ip_allowed(first) or not is_ip_allowed(last):
-                return {
-                    "success": False,
-                    "error": "Only private, loopback, or link-local networks are allowed to be scanned."
-                }
-
-            return {"success": True, "error": None}
+        return {"success": True, "error": None}
 
     except Exception as error:
         return {

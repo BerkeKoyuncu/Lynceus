@@ -383,6 +383,7 @@ Admin users can access:
 - CVE lookup requires internet access.
 - Scheduled scans run through an in-process background thread, so they depend on the Flask application staying active.
 - SQLite is suitable for development and small deployments, but not ideal for high-concurrency production use.
+- Failed login attempts for brute-force protection are tracked in-memory to prevent write-locking DDoS vulnerabilities in SQLite. Consequently, the temporary counter resets when the application restarts (though permanently blocked IPs remain blocked as they are stored in the database).
 
 ---
 

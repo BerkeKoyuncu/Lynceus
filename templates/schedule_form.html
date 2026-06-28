@@ -104,6 +104,19 @@
         >
     </div>
 
+    <div id="credential-audit-wrapper" style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 8px;">
+        <input 
+            type="checkbox" 
+            id="audit_credentials" 
+            name="audit_credentials" 
+            value="y"
+            style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
+        >
+        <label for="audit_credentials" style="margin: 0; cursor: pointer; font-size: 14px; font-weight: normal; color: var(--text);">
+            Perform Weak Credential Audit (FTP, Redis, HTTP Basic Auth)
+        </label>
+    </div>
+
     {% if user_credentials %}
     <div id="credential-selection-wrapper" style="margin-top: 15px; margin-bottom: 20px;">
         <label style="font-weight: 500; display: block; margin-bottom: 4px;">Credentials to Test (Optional)</label>

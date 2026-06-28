@@ -111,6 +111,7 @@ class ScanSchedule(db.Model):
     exclude_targets = db.Column(db.Text, nullable=True)
     credential_ids = db.Column(db.Text, nullable=True)
     timing_template = db.Column(db.String(2), default="4", nullable=True)
+    audit_credentials = db.Column(db.Boolean, default=False, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
     def __repr__(self):

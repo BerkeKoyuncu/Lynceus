@@ -143,6 +143,46 @@ class Test2FAEnforcement(unittest.TestCase):
         # Log out
         self.client.get('/logout', follow_redirects=True)
 
+        print("--- STEP 6.5: Reset 2FA of testadmin by primary admin ---")
+        # Log in as primary admin again
+        self.client.post('/login', data={
+            'email': 'primary@example.com',
+            'password': 'adminpass'
+        }, follow_redirects=False)
+        self.client.post('/login/2fa', data={'otp_code': pyotp.TOTP(self.primary_admin.otp_secret).now()}, follow_redirects=True)
+        
+        # Reset 2FA of testadmin
+        response = self.client.post(f'/admin/user/{self.user.id}/reset-2fa', follow_redirects=True)
+        self.assertIn(b"Two-Factor Authentication (2FA) has been reset for testadmin@example.com.", response.data)
+        
+        # Verify DB state: testadmin is still admin but otp_secret is None
+        db_user = db.session.get(User, self.user.id)
+        self.assertTrue(db_user.is_admin)
+        self.assertIsNone(db_user.otp_secret)
+        print("Successfully verified: 2FA reset cleared otp_secret but retained admin role.")
+        
+        # Set up 2FA for testadmin again so subsequent steps of the test can continue
+        # Log out primary admin
+        self.client.get('/logout', follow_redirects=True)
+        
+        # Login as testadmin again - should redirect to setup
+        response = self.client.post('/login', data={
+            'email': self.email,
+            'password': self.password
+        }, follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login/2fa-setup'))
+        
+        with self.client.session_transaction() as sess:
+            new_setup_secret = sess.get('setup_2fa_secret')
+        
+        # Complete setup
+        self.client.post('/login/2fa-setup', data={'otp_code': pyotp.TOTP(new_setup_secret).now()}, follow_redirects=True)
+        db_user = db.session.get(User, self.user.id) # refresh
+        
+        # Log out
+        self.client.get('/logout', follow_redirects=True)
+
         print("--- STEP 7: Subsequent Login (Should redirect to standard 2FA verification) ---")
         response = self.client.post('/login', data={
             'email': self.email,
@@ -193,6 +233,35 @@ class Test2FAEnforcement(unittest.TestCase):
         self.assertIn(b'Login successful.', response.data)
         self.assertNotIn('2fa', response.request.path)
         print("Success! Demoted user logged in directly without 2FA.")
+
+class TestTargetSafetyValidation(unittest.TestCase):
+    def test_comma_separated_target_safety(self):
+        from scanner import calculate_network, validate_scan_target
+        
+        # 1. Private and loopback comma list - should be valid
+        res = calculate_network("192.168.1.10,127.0.0.1,192.168.1.20")
+        self.assertTrue(res["success"])
+        val_res = validate_scan_target(res, "fast")
+        self.assertTrue(val_res["success"])
+        
+        # 2. Comma list containing public IP in the middle - should be invalid
+        res = calculate_network("192.168.1.10,8.8.8.8,192.168.1.20")
+        self.assertTrue(res["success"])
+        val_res = validate_scan_target(res, "fast")
+        self.assertFalse(val_res["success"])
+        self.assertEqual(val_res["error"], "Only private, loopback, or link-local networks are allowed to be scanned.")
+        
+        # 3. Comma list containing public IP at first position - should be invalid
+        res = calculate_network("8.8.8.8,192.168.1.10")
+        self.assertTrue(res["success"])
+        val_res = validate_scan_target(res, "fast")
+        self.assertFalse(val_res["success"])
+        
+        # 4. Comma list containing public IP at last position - should be invalid
+        res = calculate_network("192.168.1.10,8.8.8.8")
+        self.assertTrue(res["success"])
+        val_res = validate_scan_target(res, "fast")
+        self.assertFalse(val_res["success"])
 
 if __name__ == '__main__':
     unittest.main()
