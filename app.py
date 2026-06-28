@@ -1023,7 +1023,7 @@ def admin_required(function):
             return redirect(url_for("login"))
 
         if not current_user.is_admin:
-            flash("You are not authorized to access this page.", "error")
+            flash("You are not authorised to access this page.", "error")
             return redirect(url_for("scan"))
 
         return function(*args, **kwargs)
@@ -1209,6 +1209,19 @@ def migrate_db_schema():
         db.session.rollback()
         click.echo(f"Error migrating user 2FA secrets: {str(e)}")
 
+    # 13. ScanResult table migration for audit_credentials
+    try:
+        db.session.execute(text("SELECT audit_credentials FROM scan_result LIMIT 1"))
+    except Exception:
+        db.session.rollback()
+        try:
+            db.session.execute(text("ALTER TABLE scan_result ADD COLUMN audit_credentials BOOLEAN DEFAULT 0"))
+            db.session.commit()
+            click.echo("Database schema migrated: added audit_credentials to scan_result table.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error migrating audit_credentials in scan_result table: {str(e)}")
+
 
 
 def is_in_freeze_window(start_str, end_str):
@@ -1260,6 +1273,27 @@ def init_db():
     migrate_db_schema()
     click.echo("Database tables created successfully.")
 
+def print_cli_qr(prov_uri):
+    """
+    Renders and prints a QR code to the CLI terminal using UTF-8 encoding.
+    """
+    import sys
+    if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+            
+    try:
+        import qrcode
+        qr = qrcode.QRCode()
+        qr.add_data(prov_uri)
+        click.echo("\nScan the QR code below with your Authenticator App:")
+        qr.print_ascii(out=sys.stdout)
+        click.echo("")
+    except Exception as e:
+        click.echo(f"Could not render terminal QR code: {str(e)}")
+
 @app.cli.command("create-admin")
 def create_admin():
     """
@@ -1283,7 +1317,7 @@ def create_admin():
         attempts = 3
         while attempts > 0:
             current_pass_or_key = click.prompt(
-                "Enter current Admin password OR the App SECRET_KEY to authorize reset",
+                "Enter current Admin password OR the App SECRET_KEY to authorise reset",
                 hide_input=True
             ).strip()
             
@@ -1292,7 +1326,7 @@ def create_admin():
                 break
             else:
                 attempts -= 1
-                click.echo(f"Authorization failed. Incorrect password or secret key. {attempts} attempts remaining.")
+                click.echo(f"Authorisation failed. Incorrect password or secret key. {attempts} attempts remaining.")
         
         if not auth_success:
             click.echo("Too many failed attempts. Aborting reset.")
@@ -1316,6 +1350,7 @@ def create_admin():
         click.echo(f"Secret Key (Base32): {otp_secret}")
         prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=existing_admin.email, issuer_name="PortOjo")
         click.echo(f"Provisioning URI: {prov_uri}")
+        print_cli_qr(prov_uri)
         click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
         click.echo("==================================================")
         return
@@ -1356,6 +1391,7 @@ def create_admin():
     click.echo(f"Secret Key (Base32): {otp_secret}")
     prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email, issuer_name="PortOjo")
     click.echo(f"Provisioning URI: {prov_uri}")
+    print_cli_qr(prov_uri)
     click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
     click.echo("==================================================")
 
@@ -1536,11 +1572,20 @@ def dashboard():
     
     # 3. Check Honeypot & SMTP status
     admin_user = User.query.filter_by(is_admin=True).first()
-    target_user_id = admin_user.id if admin_user else current_user.id
-    smtp_setting = SystemSetting.query.filter_by(user_id=target_user_id).first()
     
-    honeypot_active = smtp_setting.honeypot_active if smtp_setting else False
-    smtp_configured = True if (smtp_setting and smtp_setting.smtp_server and smtp_setting.smtp_sender and smtp_setting.alert_recipient) else False
+    # Honeypot is a global setting managed by the admin
+    honeypot_user_id = admin_user.id if admin_user else current_user.id
+    honeypot_setting = SystemSetting.query.filter_by(user_id=honeypot_user_id).first()
+    honeypot_active = honeypot_setting.honeypot_active if honeypot_setting else False
+    
+    # SMTP alerts are user-specific; standard users configure their own SMTP settings
+    user_smtp_setting = SystemSetting.query.filter_by(user_id=current_user.id).first()
+    smtp_configured = True if (
+        user_smtp_setting and 
+        user_smtp_setting.smtp_server and 
+        user_smtp_setting.smtp_sender and 
+        user_smtp_setting.alert_recipient
+    ) else False
     
     user_stats = {
         "total_scans": total_scans,
@@ -1647,6 +1692,12 @@ def login():
             if client_ip in FAILED_LOGIN_ATTEMPTS:
                 del FAILED_LOGIN_ATTEMPTS[client_ip]
             return redirect(url_for("login_2fa"))
+        elif user.is_admin:
+            session["setup_2fa_user_id"] = user.id
+            session["setup_2fa_secret"] = pyotp.random_base32()
+            if client_ip in FAILED_LOGIN_ATTEMPTS:
+                del FAILED_LOGIN_ATTEMPTS[client_ip]
+            return redirect(url_for("login_2fa_setup"))
 
         login_user(user)
         if client_ip in FAILED_LOGIN_ATTEMPTS:
@@ -1686,6 +1737,50 @@ def login_2fa():
             flash("Invalid verification code. Please try again.", "error")
 
     return render_template("login_2fa.html")
+
+
+@app.route("/login/2fa-setup", methods=["GET", "POST"])
+def login_2fa_setup():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+
+    setup_2fa_user_id = session.get("setup_2fa_user_id")
+    setup_2fa_secret = session.get("setup_2fa_secret")
+
+    if not setup_2fa_user_id or not setup_2fa_secret:
+        flash("Please log in first.", "error")
+        return redirect(url_for("login"))
+
+    user = db.session.get(User, setup_2fa_user_id)
+    if not user or not user.is_admin or user.otp_secret:
+        session.pop("setup_2fa_user_id", None)
+        session.pop("setup_2fa_secret", None)
+        flash("Invalid setup session.", "error")
+        return redirect(url_for("login"))
+
+    prov_uri = pyotp.totp.TOTP(setup_2fa_secret).provisioning_uri(
+        name=user.email, issuer_name="PortOjo"
+    )
+
+    if request.method == "POST":
+        otp_code = request.form.get("otp_code", "").strip()
+        totp = pyotp.TOTP(setup_2fa_secret)
+        if totp.verify(otp_code):
+            user.otp_secret = setup_2fa_secret
+            db.session.commit()
+            login_user(user)
+            session.pop("setup_2fa_user_id", None)
+            session.pop("setup_2fa_secret", None)
+            flash("2FA configured and login successful.", "success")
+            return redirect(url_for("dashboard"))
+        else:
+            flash("Invalid verification code. Please try again.", "error")
+
+    return render_template(
+        "login_2fa_setup.html",
+        secret_key=setup_2fa_secret,
+        prov_uri=prov_uri
+    )
 
 
 @app.route("/logout")
@@ -1746,6 +1841,8 @@ def scan():
         selected_creds = request.form.getlist("credential_ids")
         credential_ids_str = ",".join(selected_creds) if selected_creds else None
 
+        audit_credentials = request.form.get("audit_credentials") == "y"
+
         scan_result = ScanResult(
             user_id=current_user.id,
             input_ip=ip_address,
@@ -1758,13 +1855,12 @@ def scan():
             exclude_targets=exclude_targets if exclude_targets else None,
             credential_ids=credential_ids_str,
             timing_template=timing_template,
+            audit_credentials=audit_credentials,
             status="pending"
         )
 
         db.session.add(scan_result)
         db.session.commit()
-
-        audit_credentials = request.form.get("audit_credentials") == "y"
 
         scan_thread = threading.Thread(
             target=execute_scan,
@@ -1803,7 +1899,7 @@ def stop_scan(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
     
     if scan_result.user_id != current_user.id and not current_user.is_admin:
-        flash("You are not authorized to stop this scan.", "error")
+        flash("You are not authorised to stop this scan.", "error")
         return redirect(url_for("result", scan_id=scan_id))
         
     if scan_result.status in ["pending", "running"]:
@@ -1830,7 +1926,7 @@ def repeat_scan(scan_id):
     old_scan = ScanResult.query.get_or_404(scan_id)
     
     if old_scan.user_id != current_user.id and not current_user.is_admin:
-        flash("You are not authorized to repeat this scan.", "error")
+        flash("You are not authorised to repeat this scan.", "error")
         return redirect(url_for("scan"))
         
     network_info = calculate_network(old_scan.input_ip, old_scan.subnet_mask if old_scan.subnet_mask != "N/A" else None)
@@ -1855,6 +1951,7 @@ def repeat_scan(scan_id):
         exclude_targets=old_scan.exclude_targets,
         credential_ids=old_scan.credential_ids,
         timing_template=old_scan.timing_template,
+        audit_credentials=old_scan.audit_credentials,
         status="pending"
     )
     
@@ -1863,7 +1960,7 @@ def repeat_scan(scan_id):
     
     scan_thread = threading.Thread(
         target=execute_scan,
-        args=(scan_result.id, False)
+        args=(scan_result.id, old_scan.audit_credentials)
     )
     scan_thread.daemon = True
     scan_thread.start()
@@ -1996,7 +2093,7 @@ def toggle_schedule(schedule_id):
     schedule = ScanSchedule.query.get_or_404(schedule_id)
     
     if schedule.user_id != current_user.id and not current_user.is_admin:
-        flash("You are not authorized to modify this schedule.", "error")
+        flash("You are not authorised to modify this schedule.", "error")
         return redirect(url_for("schedules"))
 
     schedule.is_active = not schedule.is_active
@@ -2012,7 +2109,7 @@ def delete_schedule(schedule_id):
     schedule = ScanSchedule.query.get_or_404(schedule_id)
     
     if schedule.user_id != current_user.id and not current_user.is_admin:
-        flash("You are not authorized to delete this schedule.", "error")
+        flash("You are not authorised to delete this schedule.", "error")
         return redirect(url_for("schedules"))
 
     db.session.delete(schedule)
@@ -2027,7 +2124,7 @@ def print_report(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
 
     if not user_can_view_scan(scan_result):
-        flash("You are not authorized to view this scan report.", "error")
+        flash("You are not authorised to view this scan report.", "error")
         return redirect(url_for("scan"))
 
     parsed_result = None
@@ -2053,7 +2150,7 @@ def result(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
 
     if not user_can_view_scan(scan_result):
-        flash("You are not authorized to view this scan result.", "error")
+        flash("You are not authorised to view this scan result.", "error")
         return redirect(url_for("scan"))
 
     parsed_result = None
@@ -2080,7 +2177,7 @@ def export_result_csv(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
 
     if not user_can_view_scan(scan_result):
-        flash("You are not authorized to export this scan result.", "error")
+        flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan"))
 
     if not scan_result.result_data:
@@ -2200,7 +2297,7 @@ def export_result_json(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
 
     if not user_can_view_scan(scan_result):
-        flash("You are not authorized to export this scan result.", "error")
+        flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan"))
 
     if not scan_result.result_data:
@@ -2249,7 +2346,7 @@ def export_result_txt(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
 
     if not user_can_view_scan(scan_result):
-        flash("You are not authorized to export this scan result.", "error")
+        flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan"))
 
     if not scan_result.result_data:
@@ -2570,7 +2667,7 @@ def compare_scans():
         return redirect(url_for("history"))
 
     if not user_can_view_scan(scan_a) or not user_can_view_scan(scan_b):
-        flash("You are not authorized to compare these scans.", "error")
+        flash("You are not authorised to compare these scans.", "error")
         return redirect(url_for("history"))
 
     if scan_a.status != "completed" or scan_b.status != "completed":
@@ -2695,7 +2792,7 @@ def settings():
     
     # Enforce admin-only access for the freeze, exclusions, and honeypot tabs
     if tab in ["freeze", "exclusions", "honeypot"] and not current_user.is_admin:
-        flash("Unauthorized access to settings.", "error")
+        flash("Unauthorised access to settings.", "error")
         return redirect(url_for("settings", tab="smtp"))
         
     setting = SystemSetting.query.filter_by(user_id=current_user.id).first()
@@ -2704,7 +2801,7 @@ def settings():
         form_type = request.form.get("form_type", "smtp")
         
         if form_type in ["freeze", "exclusions", "honeypot"] and not current_user.is_admin:
-            flash("Unauthorized access to settings.", "error")
+            flash("Unauthorised access to settings.", "error")
             return redirect(url_for("settings", tab="smtp"))
 
         if not setting:
@@ -2936,6 +3033,8 @@ def admin_toggle_user_role(user_id):
 
     user = User.query.get_or_404(user_id)
     user.is_admin = not user.is_admin
+    if not user.is_admin:
+        user.otp_secret = None
     db.session.commit()
 
     role_str = "Admin" if user.is_admin else "User"

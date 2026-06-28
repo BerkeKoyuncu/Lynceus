@@ -69,7 +69,7 @@
 </div>
 
 <!-- Assets Table Container -->
-<form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="max-width: none; width: 100%;">
+<form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;"></form>
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 25px; box-shadow: var(--shadow);">
     {% if assets %}
     <div style="overflow-x: auto;">
@@ -93,7 +93,7 @@
             <tbody>
                 {% for asset in assets %}
                 <tr>
-                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" aria-label="Select asset"></td>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" form="bulk-delete-form" aria-label="Select asset"></td>
                     <td>
                         <strong style="font-size: 15px;">{{ asset.name or 'Unnamed Asset' }}</strong>
                         {% if asset.serial_number %}
@@ -200,7 +200,6 @@
         </div>
     {% endif %}
 </div>
-</form>
 
 <script>
     document.addEventListener("DOMContentLoaded", () => {

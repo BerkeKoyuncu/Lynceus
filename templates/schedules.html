@@ -17,7 +17,7 @@
 
 {% if schedules %}
 
-<form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="max-width: none; width: 100%;">
+<form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="display: none;"></form>
 <table>
     <tr>
         <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-schedules" aria-label="Select all schedules"></th>
@@ -35,7 +35,7 @@
     {% for schedule in schedules %}
     <tr>
         <td style="text-align: center; width: 40px; vertical-align: middle;">
-            <input type="checkbox" class="schedule-checkbox" name="schedule_ids" value="{{ schedule.id }}" aria-label="Select schedule">
+            <input type="checkbox" class="schedule-checkbox" name="schedule_ids" value="{{ schedule.id }}" form="bulk-delete-schedules-form" aria-label="Select schedule">
         </td>
         <td><strong>{{ schedule.name }}</strong></td>
         <td>{{ schedule.network_cidr }}</td>
@@ -68,7 +68,6 @@
     </tr>
     {% endfor %}
 </table>
-</form>
 
 {% else %}
 

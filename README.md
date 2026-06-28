@@ -1,10 +1,10 @@
 # PortOjo
 
-PortOjo is a Flask-based network security scanning web application that uses Nmap to discover active hosts, open ports, running services, and potential security issues inside authorized local networks.
+PortOjo is a Flask-based network security scanning web application that uses Nmap to discover active hosts, open ports, running services, and potential security issues inside authorised local networks.
 
 The application provides user-based scan management, scan history, scheduled scans, exportable reports, SMTP alerts, honeypot monitoring, brute-force protection, asset inventory, and network anomaly detection.
 
-> **Important:** PortOjo is intended for educational, defensive, and authorized network assessment purposes only. Do not scan networks that you do not own or do not have permission to test.
+> **Important:** PortOjo is intended for educational, defensive, and authorised network assessment purposes only. Do not scan networks that you do not own or do not have permission to test.
 
 ---
 
@@ -15,7 +15,7 @@ The application provides user-based scan management, scan history, scheduled sca
 - User registration with email address
 - Secure password hashing
 - Login and logout system
-- Two-Factor Authentication (2FA) with Google Authenticator support
+- Two-Factor Authentication (2FA) with Google Authenticator support (automatically enforced for CLI-created admins and web-promoted admins on their first login)
 - Generic login error message for better security
 - Password visibility toggle on login/register forms
 - Admin role with access to global scan and security records
@@ -28,7 +28,7 @@ The application provides user-based scan management, scan history, scheduled sca
 - Background scan execution
 - Live scan status tracking: `pending`, `running`, `completed`, `failed`, and `cancelled`
 - Real-time scan control: Ability to stop/cancel running scans or repeat completed/failed/cancelled scans directly from the result screens
-- Custom Scan Timing selectors (T0 to T5) with dynamic CLI command preview updates to customize scan speed and stealth
+- Custom Scan Timing selectors (T0 to T5) with dynamic CLI command preview updates to customise scan speed and stealth
 - Optional custom port range input
 - Multiple Nmap scan profiles:
 
@@ -193,6 +193,8 @@ PortOjo/
 ├── templates/
 │   ├── base.html           # Main layout and navigation
 │   ├── login.html          # Login page
+│   ├── login_2fa.html      # Two-Factor Authentication verification page
+│   ├── login_2fa_setup.html # Two-Factor Authentication setup/enrollment page
 │   ├── register.html       # Registration page
 │   ├── dashboard.html      # User/admin dashboard
 │   ├── scan.html           # New scan form
@@ -264,7 +266,9 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Initialize the Database
+### 4. Initialise the Database (Optional)
+
+The application automatically checks, creates, and migrates database tables on startup. However, you can manually trigger database table generation and schema migrations using:
 
 ```bash
 python -m flask --app app init-db
