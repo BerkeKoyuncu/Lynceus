@@ -19,13 +19,13 @@ import re
 import os
 
 
-from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential, get_secret_key
+from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential, get_flask_secret_key
 from scanner import calculate_network, validate_scan_target, run_nmap_scan
 
 
 app = Flask(__name__)
 
-app.config["SECRET_KEY"] = get_secret_key()
+app.config["SECRET_KEY"] = get_flask_secret_key()
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
