@@ -13,7 +13,7 @@ from flask import current_app
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, Asset, ScanCredential, SecurityFinding, SecurityAnomaly
 from scanner import run_nmap_scan
 from services.anomaly_service import evaluate_host_anomalies
-from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules
+from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules, reconcile_findings_for_scan
 from services.email_service import send_notification_email_async
 
 # Mapping for common services to NVD vendors/products
@@ -70,7 +70,8 @@ def is_version_affected(user_ver, match_obj, api_product):
   
     user_parsed = parse_version(user_ver)
     if not user_parsed:
-        return True # Default to True if we cannot parse the version format
+        # Cannot parse version — mark as needs_review, not confirmed
+        return False
   
     # Check boundaries
     if "versionEndIncluding" in match_obj:
@@ -216,6 +217,55 @@ def fetch_cves_for_query(query):
         return filtered_cves
     except Exception:
         return []
+
+def create_credential_audit_finding(asset, ip_address, port_info, audit_res, scan_id=None):
+    """
+    Creates or updates a SecurityFinding for a confirmed weak-credential vulnerability.
+    source_type = 'credential_audit'
+    """
+    from services.rule_service import calculate_finding_fingerprint
+    p_num = int(port_info.get("port") or 0)
+    service = port_info.get("service") or "unknown"
+    version = port_info.get("version_display") or port_info.get("version") or ""
+    message = audit_res.get("message", "Weak or default credentials confirmed.")
+
+    fp = calculate_finding_fingerprint(ip_address, p_num, service, "credential_audit", service)
+
+    existing = SecurityFinding.query.filter_by(
+        asset_id=asset.id, fingerprint=fp
+    ).first()
+    if not existing:
+        existing = SecurityFinding.query.filter_by(
+            asset_id=asset.id, ip_address=ip_address, port=p_num,
+            source_type="credential_audit"
+        ).first()
+
+    if existing:
+        existing.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+        existing.evidence = message
+        existing.fingerprint = fp
+        existing.scan_id = scan_id
+        if existing.status == "resolved":
+            existing.status = "open"
+    else:
+        new_finding = SecurityFinding(
+            asset_id=asset.id,
+            ip_address=ip_address,
+            port=p_num,
+            service=service,
+            version=version,
+            severity="Critical",
+            evidence=message,
+            status="open",
+            remediation_note="Change or disable default/weak credentials immediately. Restrict service access via firewall rules.",
+            first_seen=datetime.now(timezone.utc).replace(tzinfo=None),
+            last_seen=datetime.now(timezone.utc).replace(tzinfo=None),
+            source_type="credential_audit",
+            scan_id=scan_id,
+            fingerprint=fp
+        )
+        db.session.add(new_finding)
+    db.session.commit()
 
 def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
     credentials = []
@@ -770,12 +820,12 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         }
                         send_notification_email_async(setting_dict, subject, body_html)
 
-        # 4. Weak credentials audits
+        # 4. Credential Audits (run BEFORE rule evaluation so rules can read audit results)
         if (audit_credentials or scan_result.credential_ids) and nmap_result["success"]:
             custom_ftp = []
             custom_redis = []
             custom_http = []
-            
+
             if scan_result.credential_ids:
                 try:
                     cred_ids = [int(x.strip()) for x in scan_result.credential_ids.split(",") if x.strip()]
@@ -793,12 +843,13 @@ def execute_scan(app, scan_id, audit_credentials=False):
 
             for host in hosts:
                 ip = host.get("address")
+                asset = Asset.query.filter_by(ip_address=ip).first()
                 ports_list = host.get("ports", [])
                 for port_info in ports_list:
                     p_num = int(port_info.get("port") or 0)
                     service = (port_info.get("service") or "").lower()
                     protocol = (port_info.get("protocol") or "tcp").lower()
-                    
+
                     audit_res = None
                     if p_num == 21 or "ftp" in service:
                         if audit_credentials or custom_ftp:
@@ -810,11 +861,23 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         if audit_credentials or custom_http:
                             is_ssl = p_num in [443, 8443] or "https" in service
                             audit_res = audit_http_basic(ip, p_num, is_ssl, custom_credentials=custom_http if custom_http else None, use_defaults=audit_credentials)
-                            
+
                     if audit_res:
                         port_info["credential_audit"] = audit_res
+                        # Create a finding immediately if vulnerability confirmed
+                        if asset and audit_res.get("status") == "vulnerable":
+                            create_credential_audit_finding(asset, ip, port_info, audit_res, scan_id=scan_result.id)
 
-        # Dynamic CVE findings check
+        # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
+        if nmap_result["success"]:
+            for host in hosts:
+                ip = host.get("address")
+                asset_match = Asset.query.filter_by(ip_address=ip).first()
+                if asset_match:
+                    prev_ports = prev_hosts_map.get(ip)
+                    evaluate_rules_for_host(host, asset_match, scan_result.user_id, prev_ports=prev_ports, scan_id=scan_result.id)
+
+        # 6. Dynamic CVE findings check
         if nmap_result["success"]:
             for host in hosts:
                 ip = host.get("address")
@@ -822,11 +885,17 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 if not asset:
                     continue
                 for port_info in host.get("ports", []):
-                    version = port_info.get("version")
-                    service = port_info.get("service")
-                    if version and version != "-":
-                        query = f"{service} {version}"
-                        # Fetch CVEs and record findings in the database
+                    # Use 'product' for VENDOR_PRODUCT_MAP lookup (e.g. 'OpenSSH' not 'ssh')
+                    product = port_info.get("product") or ""
+                    service = port_info.get("service") or ""
+                    raw_version = port_info.get("version") or ""
+                    cpe_list = port_info.get("cpe") or []
+
+                    # Build lookup key: prefer product name, fall back to service name
+                    lookup_key = product.lower().strip() if product else service.lower().strip()
+
+                    if lookup_key and lookup_key != "-":
+                        query = f"{lookup_key} {raw_version}".strip()
                         cves = fetch_cves_for_query(query)
                         if cves:
                             evaluate_cve_findings(
@@ -836,6 +905,24 @@ def execute_scan(app, scan_id, audit_credentials=False):
                                 cve_list=cves,
                                 scan_id=scan_result.id
                             )
+
+        # 7. Finding lifecycle reconciliation — mark unobserved findings 'not_observed'
+        if nmap_result["success"]:
+            # Collect all fingerprints written in this scan across all pipelines
+            from models import SecurityFinding as SF
+            scan_fps = set(
+                r[0] for r in db.session.query(SF.fingerprint).filter(
+                    SF.scan_id == scan_result.id,
+                    SF.fingerprint.isnot(None)
+                ).all()
+            )
+            online_ips = {h.get("address") for h in hosts if h.get("status") == "up"}
+            for host in hosts:
+                ip = host.get("address")
+                asset = Asset.query.filter_by(ip_address=ip).first()
+                if asset:
+                    host_online = ip in online_ips or host.get("status") == "up"
+                    reconcile_findings_for_scan(asset, host_online, scan_fps, scan_result.id)
 
         result_payload = {
             "command": nmap_result.get("command", "N/A"),

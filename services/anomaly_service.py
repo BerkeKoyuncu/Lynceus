@@ -2,6 +2,21 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from models import db, Asset, AssetObservation, SecurityAnomaly
 
+
+def _anomaly_exists(anomaly_type, ip_address, mac_address, hours=24):
+    """
+    Returns True if an unresolved anomaly of the same type, IP, and MAC
+    was already recorded within the last `hours` hours.
+    """
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=hours)
+    return SecurityAnomaly.query.filter(
+        SecurityAnomaly.anomaly_type == anomaly_type,
+        SecurityAnomaly.ip_address == ip_address,
+        SecurityAnomaly.mac_address == mac_address,
+        SecurityAnomaly.resolved == False,
+        SecurityAnomaly.detected_at >= since
+    ).first() is not None
+
 def get_ports_hash(ports_list):
     """
     Computes a stable hash from a list of open ports.
@@ -58,15 +73,16 @@ def evaluate_host_anomalies(host, scan_id):
     # If no asset match exists, it is a completely new device (Rogue Device)
     if not asset_match:
         desc = f"New unknown device detected on the network: IP {ip}, MAC {mac or 'N/A'} ({vendor or 'Unknown'})."
-        anomaly = SecurityAnomaly(
-            anomaly_type="rogue_device",
-            ip_address=ip,
-            mac_address=mac,
-            description=desc,
-            confidence_score="Medium"  # Default rogue device confidence
-        )
-        db.session.add(anomaly)
-        db.session.commit()
+        if not _anomaly_exists("rogue_device", ip, mac):
+            anomaly = SecurityAnomaly(
+                anomaly_type="rogue_device",
+                ip_address=ip,
+                mac_address=mac,
+                description=desc,
+                confidence_score="Medium"
+            )
+            db.session.add(anomaly)
+            db.session.commit()
         return {
             "type": "rogue_device",
             "description": desc,
@@ -121,15 +137,16 @@ def evaluate_host_anomalies(host, scan_id):
             reason = "DHCP lease changed to a new MAC; old client inactive."
 
         desc = f"IP address {ip} has changed its MAC address from {asset_match.mac_address} to {mac}. {reason}"
-        anomaly = SecurityAnomaly(
-            anomaly_type="mac_spoofing",
-            ip_address=ip,
-            mac_address=mac,
-            description=desc,
-            confidence_score=confidence
-        )
-        db.session.add(anomaly)
-        db.session.commit()
+        if not _anomaly_exists("mac_spoofing", ip, mac):
+            anomaly = SecurityAnomaly(
+                anomaly_type="mac_spoofing",
+                ip_address=ip,
+                mac_address=mac,
+                description=desc,
+                confidence_score=confidence
+            )
+            db.session.add(anomaly)
+            db.session.commit()
         anomaly_result = {
             "type": "mac_spoofing",
             "expected_mac": asset_match.mac_address,
@@ -162,15 +179,16 @@ def evaluate_host_anomalies(host, scan_id):
             reason = "Standard DHCP lease renewal / migration."
 
         desc = f"MAC address {mac} ({vendor or 'Unknown'}) changed its IP address from {old_ip} to {ip}. {reason}"
-        anomaly = SecurityAnomaly(
-            anomaly_type="ip_hijack",
-            ip_address=ip,
-            mac_address=mac,
-            description=desc,
-            confidence_score=confidence
-        )
-        db.session.add(anomaly)
-        db.session.commit()
+        if not _anomaly_exists("ip_hijack", ip, mac):
+            anomaly = SecurityAnomaly(
+                anomaly_type="ip_hijack",
+                ip_address=ip,
+                mac_address=mac,
+                description=desc,
+                confidence_score=confidence
+            )
+            db.session.add(anomaly)
+            db.session.commit()
         anomaly_result = {
             "type": "ip_hijack",
             "expected_ip": old_ip,

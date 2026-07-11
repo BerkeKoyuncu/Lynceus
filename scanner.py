@@ -261,7 +261,13 @@ def parse_nmap_xml(xml_output):
                     version = service_element.get("version", "")
                     extra_info = service_element.get("extrainfo", "")
 
-                version_info = " ".join(
+                # Collect CPE strings for this port
+                cpe_list = []
+                if service_element is not None:
+                    for cpe_el in service_element.findall("cpe"):
+                        cpe_list.append(cpe_el.text or "")
+
+                version_display = " ".join(
                     item for item in [product, version, extra_info] if item
                 )
 
@@ -270,7 +276,11 @@ def parse_nmap_xml(xml_output):
                     "protocol": protocol,
                     "state": state,
                     "service": service_name,
-                    "version": version_info if version_info else "-"
+                    "product": product,
+                    "version": version,
+                    "extra_info": extra_info,
+                    "version_display": version_display if version_display else "-",
+                    "cpe": cpe_list,
                 })
 
         # Parse trace hops

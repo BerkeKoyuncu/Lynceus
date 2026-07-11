@@ -1,21 +1,39 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
+from functools import wraps
 
-from models import db, SecurityRule
-from services.rule_service import seed_default_rules
+from models import db, SecurityRule, User
+from services.rule_service import seed_default_rules, validate_rule_conditions
 
 rules_bp = Blueprint("rules", __name__)
+
+
+def admin_required(f):
+    """Decorator that requires the current user to be an admin."""
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if not current_user.is_admin:
+            flash("Access denied. Only administrators can manage security rules.", "error")
+            return redirect(url_for("rules.list_rules"))
+        return f(*args, **kwargs)
+    return decorated
+
 
 @rules_bp.route("/rules", methods=["GET"])
 @login_required
 def list_rules():
-    # Ensure default rules are seeded for user
-    seed_default_rules(current_user.id)
-    rules = SecurityRule.query.filter_by(user_id=current_user.id).order_by(SecurityRule.created_at.desc()).all()
+    # Seed default rules for admin if not yet present
+    admin_user = User.query.filter_by(is_admin=True).first()
+    if admin_user:
+        seed_default_rules(admin_user.id)
+    # Show all rules (global/admin-managed Model A)
+    rules = SecurityRule.query.order_by(SecurityRule.created_at.desc()).all()
     return render_template("rules.html", rules=rules)
 
+
 @rules_bp.route("/rules/add", methods=["POST"])
-@login_required
+@admin_required
 def add_rule():
     name = request.form.get("name", "").strip()
     severity = request.form.get("severity", "Medium").strip()
@@ -30,8 +48,14 @@ def add_rule():
         flash("Please fill in rule name and matching conditions.", "error")
         return redirect(url_for("rules.list_rules"))
 
+    ok, err = validate_rule_conditions(port_service_condition, scope, severity, asset_criticality_condition)
+    if not ok:
+        flash(f"Rule validation failed: {err}", "error")
+        return redirect(url_for("rules.list_rules"))
+
+    admin_user = User.query.filter_by(is_admin=True).first()
     rule = SecurityRule(
-        user_id=current_user.id,
+        user_id=admin_user.id,
         name=name,
         severity=severity,
         scope=scope,
@@ -46,16 +70,27 @@ def add_rule():
     flash("Security rule successfully added.", "success")
     return redirect(url_for("rules.list_rules"))
 
+
 @rules_bp.route("/rules/<int:rule_id>/edit", methods=["POST"])
-@login_required
+@admin_required
 def edit_rule(rule_id):
-    rule = SecurityRule.query.filter_by(id=rule_id, user_id=current_user.id).first_or_404()
-    
+    rule = SecurityRule.query.get_or_404(rule_id)
+
+    new_condition = request.form.get("port_service_condition", "").strip()
+    new_scope = request.form.get("scope", "*").strip()
+    new_severity = request.form.get("severity", "Medium").strip()
+    new_criticality = request.form.get("asset_criticality_condition", "*").strip()
+
+    ok, err = validate_rule_conditions(new_condition, new_scope, new_severity, new_criticality)
+    if not ok:
+        flash(f"Rule validation failed: {err}", "error")
+        return redirect(url_for("rules.list_rules"))
+
     rule.name = request.form.get("name", "").strip()
-    rule.severity = request.form.get("severity", "Medium").strip()
-    rule.scope = request.form.get("scope", "*").strip()
-    rule.port_service_condition = request.form.get("port_service_condition", "").strip()
-    rule.asset_criticality_condition = request.form.get("asset_criticality_condition", "*").strip()
+    rule.severity = new_severity
+    rule.scope = new_scope
+    rule.port_service_condition = new_condition
+    rule.asset_criticality_condition = new_criticality
     rule.exception_list = request.form.get("exception_list", "").strip()
     rule.remediation_text = request.form.get("remediation_text", "").strip()
     rule.enabled = request.form.get("enabled") == "y"
@@ -64,20 +99,22 @@ def edit_rule(rule_id):
     flash("Security rule successfully updated.", "success")
     return redirect(url_for("rules.list_rules"))
 
+
 @rules_bp.route("/rules/<int:rule_id>/toggle", methods=["POST"])
-@login_required
+@admin_required
 def toggle_rule(rule_id):
-    rule = SecurityRule.query.filter_by(id=rule_id, user_id=current_user.id).first_or_404()
+    rule = SecurityRule.query.get_or_404(rule_id)
     rule.enabled = not rule.enabled
     db.session.commit()
     status_str = "enabled" if rule.enabled else "disabled"
     flash(f"Security rule '{rule.name}' has been {status_str}.", "success")
     return redirect(url_for("rules.list_rules"))
 
+
 @rules_bp.route("/rules/<int:rule_id>/delete", methods=["POST"])
-@login_required
+@admin_required
 def delete_rule(rule_id):
-    rule = SecurityRule.query.filter_by(id=rule_id, user_id=current_user.id).first_or_404()
+    rule = SecurityRule.query.get_or_404(rule_id)
     db.session.delete(rule)
     db.session.commit()
     flash("Security rule successfully deleted.", "success")

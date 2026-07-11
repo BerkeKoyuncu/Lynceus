@@ -170,22 +170,48 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
         
         conditions = [c.strip().lower() for c in rule.port_service_condition.split(",") if c.strip()] if rule.port_service_condition else []
         
-        # Check "new_port" condition
+        # Check "new_port" condition — detect ALL new ports, not just the first
         if "new_port" in conditions:
             if prev_ports is not None:
                 current_port_nums = [int(p.get("port") or 0) for p in ports]
                 for cp in current_port_nums:
                     if cp not in prev_ports:
-                        matched = True
-                        matched_port = cp
-                        evidence = f"New port {cp} was detected. It was not open in previous scans."
                         # Find service info for this port
+                        new_service = None
+                        new_version = None
                         for pinfo in ports:
                             if int(pinfo.get("port") or 0) == cp:
-                                matched_service = pinfo.get("service")
-                                matched_version = pinfo.get("version")
+                                new_service = pinfo.get("service")
+                                new_version = pinfo.get("version_display") or pinfo.get("version")
                                 break
-                        break
+                        new_evidence = f"New port {cp} was detected. It was not open in previous scans."
+                        new_fp = calculate_finding_fingerprint(ip, cp, new_service, "rule", rule.id)
+                        existing_new = SecurityFinding.query.filter_by(asset_id=asset.id, fingerprint=new_fp).first()
+                        if not existing_new:
+                            existing_new = SecurityFinding.query.filter_by(
+                                asset_id=asset.id, ip_address=ip, port=cp,
+                                source_type="rule", source_rule_id=rule.id
+                            ).first()
+                        if existing_new:
+                            existing_new.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+                            existing_new.evidence = new_evidence
+                            existing_new.fingerprint = new_fp
+                            existing_new.scan_id = scan_id
+                            if existing_new.status == "resolved":
+                                existing_new.status = "open"
+                        else:
+                            db.session.add(SecurityFinding(
+                                asset_id=asset.id, ip_address=ip, port=cp,
+                                service=new_service or "unknown", version=new_version,
+                                severity=rule.severity, evidence=new_evidence, status="open",
+                                remediation_note=rule.remediation_text,
+                                first_seen=datetime.now(timezone.utc).replace(tzinfo=None),
+                                last_seen=datetime.now(timezone.utc).replace(tzinfo=None),
+                                source_type="rule", source_rule_id=rule.id,
+                                scan_id=scan_id, fingerprint=new_fp
+                            ))
+                db.session.commit()
+            continue  # new_port rule handled above; skip the regular matched block
 
         if not matched:
             for pinfo in ports:
@@ -196,7 +222,10 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                 # Check port/service matching conditions
                 for cond in conditions:
                     if cond.startswith("port:"):
-                        cond_port = int(cond.split(":")[1])
+                        try:
+                            cond_port = int(cond.split(":")[1])
+                        except (ValueError, IndexError):
+                            continue
                         if p_num == cond_port:
                             matched = True
                             matched_port = p_num
@@ -304,7 +333,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
     """
     p_num = int(port_info.get("port") or 0)
     service = port_info.get("service") or "unknown"
-    version = port_info.get("version") or ""
+    version = port_info.get("version_display") or port_info.get("version") or ""
     
     for cve in cve_list:
         cve_id = cve.get("id")
@@ -377,6 +406,77 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
             db.session.add(new_finding)
     db.session.commit()
 
+def validate_rule_conditions(port_service_condition, scope, severity, criticality_condition):
+    """
+    Validates a security rule's fields before saving.
+    Returns (True, None) on success or (False, error_message) on failure.
+    """
+    import ipaddress as _ip
+    valid_severities = ["Low", "Medium", "High", "Critical"]
+    if severity not in valid_severities:
+        return False, f"Severity must be one of: {', '.join(valid_severities)}."
+
+    if scope and scope != "*":
+        try:
+            _ip.ip_network(scope, strict=False)
+        except ValueError:
+            return False, f"Scope '{scope}' is not a valid CIDR range or '*'."
+
+    valid_criticalities = {"*", "low", "medium", "high", "critical"}
+    if criticality_condition:
+        parts = [c.strip().lower() for c in criticality_condition.split(",") if c.strip()]
+        invalid = [p for p in parts if p not in valid_criticalities]
+        if invalid:
+            return False, f"Invalid criticality values: {', '.join(invalid)}. Use Low, Medium, High, Critical, or *."
+
+    if not port_service_condition or not port_service_condition.strip():
+        return False, "Port/service condition cannot be empty."
+
+    allowed_special = {"new_port"}
+    tokens = [t.strip().lower() for t in port_service_condition.split(",") if t.strip()]
+    for token in tokens:
+        if token in allowed_special:
+            continue
+        if token.startswith("port:"):
+            try:
+                port_num = int(token.split(":")[1])
+                if not (1 <= port_num <= 65535):
+                    return False, f"Port number {port_num} out of valid range (1–65535)."
+            except (ValueError, IndexError):
+                return False, f"Invalid port condition '{token}'. Use format port:NUMBER (e.g. port:22)."
+        elif token.startswith("service:"):
+            svc = token.split(":", 1)[1].strip()
+            if not svc:
+                return False, "Service condition requires a non-empty service name (e.g. service:ssh)."
+        else:
+            return False, f"Unknown condition token '{token}'. Valid tokens: new_port, port:N, service:name."
+
+    return True, None
+
+
+def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_id):
+    """
+    After a scan, marks findings that were not observed in this scan as 'not_observed'.
+    Only does this if the host was seen online (status='up') during the scan.
+    Findings with status false_positive or accepted_risk are never touched.
+    """
+    if not host_online:
+        return  # Host offline — don't auto-close findings
+
+    protected_statuses = {"false_positive", "accepted_risk", "not_observed", "resolved"}
+    active_findings = SecurityFinding.query.filter(
+        SecurityFinding.asset_id == asset.id,
+        SecurityFinding.status.in_(["open", "needs_review"])
+    ).all()
+
+    for finding in active_findings:
+        if finding.fingerprint and finding.fingerprint not in observed_fingerprints:
+            finding.status = "not_observed"
+            finding.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    db.session.commit()
+
+
 def calculate_network_risk_score(user_id):
     """
     Calculates the dynamic security risk score (0-100) based on actual findings,
@@ -386,18 +486,31 @@ def calculate_network_risk_score(user_id):
     risk_factors = []
 
     # 1. Unresolved Security Findings
-    findings = SecurityFinding.query.filter(SecurityFinding.status.in_(["open", "needs_review"])).all()
+    # 'open' findings are confirmed; 'needs_review' are potential (half weight)
+    confirmed_findings = SecurityFinding.query.filter_by(status="open").all()
+    review_findings = SecurityFinding.query.filter_by(status="needs_review").all()
+
     findings_by_severity = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-    for f in findings:
+    for f in confirmed_findings:
         severity = f.severity or "Medium"
         if severity in findings_by_severity:
             findings_by_severity[severity] += 1
-            
+
+    review_by_severity = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    for f in review_findings:
+        severity = f.severity or "Medium"
+        if severity in review_by_severity:
+            review_by_severity[severity] += 1
+
     findings_score = (
         (findings_by_severity["Critical"] * 25) +
         (findings_by_severity["High"] * 15) +
         (findings_by_severity["Medium"] * 5) +
-        (findings_by_severity["Low"] * 1)
+        (findings_by_severity["Low"] * 1) +
+        # needs_review at half-weight
+        (review_by_severity["Critical"] * 12) +
+        (review_by_severity["High"] * 7) +
+        (review_by_severity["Medium"] * 2)
     )
     risk_score += findings_score
 
@@ -452,10 +565,12 @@ def calculate_network_risk_score(user_id):
             "message": f"{untrusted_count} devices in inventory are marked as Untrusted."
         })
 
-    # 4. Global Settings Risk Check
-    setting = SystemSetting.query.filter_by(user_id=user_id).first()
+    # 4. Global Settings Risk Check — always use the admin's SystemSetting
+    from models import User as _User
+    admin_user = _User.query.filter_by(is_admin=True).first()
+    setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
     if setting:
-        if not setting.honeypot_active:
+        if not setting.honeypot_enabled:
             risk_score += 10
             risk_factors.append({
                 "severity": "low",

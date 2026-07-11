@@ -298,8 +298,8 @@ def create_app(config=None):
     # CLI actions
     @app.cli.command("init-db")
     def init_db():
-        db.create_all()
-        click.echo("Database tables created successfully.")
+        click.echo("Tables are managed by Alembic. Run 'flask db upgrade' to apply all migrations.")
+        click.echo("Then run 'flask create-admin' to create the first admin account.")
 
     def print_cli_qr(prov_uri):
         import sys
@@ -328,7 +328,6 @@ def create_app(config=None):
         import pyotp
         from werkzeug.security import generate_password_hash, check_password_hash
 
-        db.create_all()
         existing_admin = User.query.filter_by(is_admin=True).first()
 
         if existing_admin:

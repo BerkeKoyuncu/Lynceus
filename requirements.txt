@@ -19,3 +19,4 @@ Flask-WTF==1.2.1
 Flask-Migrate==4.0.7
 pytest==8.1.1
 waitress==3.0.0
+psycopg[binary]>=3.1
