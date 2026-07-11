@@ -290,6 +290,19 @@ def admin_delete_user(user_id):
         return redirect(url_for("admin.admin_panel", tab="users"))
 
     try:
+        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, ScanResult, SecurityFinding
+        ScanSchedule.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        SystemSetting.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        ScanCredential.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        SecurityRule.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        
+        user_scan_ids = [s.id for s in ScanResult.query.filter_by(user_id=user.id).all()]
+        if user_scan_ids:
+            AssetObservation.query.filter(AssetObservation.scan_id.in_(user_scan_ids)).delete(synchronize_session=False)
+            ScanResult.query.filter(ScanResult.id.in_(user_scan_ids)).delete(synchronize_session=False)
+            
+        SecurityFinding.query.filter_by(assigned_user_id=user.id).update({SecurityFinding.assigned_user_id: None}, synchronize_session=False)
+
         db.session.delete(user)
         db.session.commit()
         flash(f"User account {user.email} and all their scan data have been permanently deleted.", "success")
@@ -304,6 +317,8 @@ def admin_delete_user(user_id):
 @admin_required
 def admin_delete_scan(scan_id):
     scan = ScanResult.query.get_or_404(scan_id)
+    from models import AssetObservation
+    AssetObservation.query.filter_by(scan_id=scan.id).delete(synchronize_session=False)
     db.session.delete(scan)
     db.session.commit()
     flash("Scan result deleted.", "success")
@@ -393,6 +408,20 @@ def admin_bulk_delete_users():
         if current_user.id in int_ids:
             flash("You cannot delete your own account in bulk delete.", "error")
             return redirect(url_for("admin.admin_panel", tab="users"))
+
+        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, ScanResult, SecurityFinding
+        ScanSchedule.query.filter(ScanSchedule.user_id.in_(int_ids)).delete(synchronize_session=False)
+        SystemSetting.query.filter(SystemSetting.user_id.in_(int_ids)).delete(synchronize_session=False)
+        ScanCredential.query.filter(ScanCredential.user_id.in_(int_ids)).delete(synchronize_session=False)
+        SecurityRule.query.filter(SecurityRule.user_id.in_(int_ids)).delete(synchronize_session=False)
+        
+        user_scan_ids = [s.id for s in ScanResult.query.filter(ScanResult.user_id.in_(int_ids)).all()]
+        if user_scan_ids:
+            AssetObservation.query.filter(AssetObservation.scan_id.in_(user_scan_ids)).delete(synchronize_session=False)
+            ScanResult.query.filter(ScanResult.id.in_(user_scan_ids)).delete(synchronize_session=False)
+            
+        SecurityFinding.query.filter(SecurityFinding.assigned_user_id.in_(int_ids)).update({SecurityFinding.assigned_user_id: None}, synchronize_session=False)
+
         deleted_count = User.query.filter(User.id.in_(int_ids)).delete(synchronize_session=False)
         db.session.commit()
         flash(f"Successfully deleted {deleted_count} user accounts.", "success")
@@ -411,6 +440,8 @@ def admin_bulk_delete_scans():
         return redirect(url_for("admin.admin_panel", tab="scans"))
     try:
         int_ids = [int(sid) for sid in scan_ids]
+        from models import AssetObservation
+        AssetObservation.query.filter(AssetObservation.scan_id.in_(int_ids)).delete(synchronize_session=False)
         deleted_count = ScanResult.query.filter(ScanResult.id.in_(int_ids)).delete(synchronize_session=False)
         db.session.commit()
         flash(f"Successfully deleted {deleted_count} scan records.", "success")

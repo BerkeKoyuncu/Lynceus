@@ -75,6 +75,105 @@ def is_scan_frozen():
     except Exception:
         return False
 
+def validate_scan_request(
+    ip_address,
+    subnet_mask,
+    scan_type,
+    ports,
+    timing_template,
+    credential_ids,
+    user_id,
+    exclude_targets=None,
+    frequency=None
+):
+    valid_scan_types = [
+        "quick", "detailed",
+        "fast", "service_version", "ping_sweep",
+        "syn", "connect", "udp", "aggressive", "vuln"
+    ]
+    if not scan_type or scan_type not in valid_scan_types:
+        return {"success": False, "error": "Invalid scan type selected."}
+
+    if frequency is not None:
+        valid_frequencies = ["hourly", "daily", "weekly", "monthly"]
+        if frequency not in valid_frequencies:
+            return {"success": False, "error": "Invalid schedule frequency."}
+
+    if timing_template not in ["0", "1", "2", "3", "4", "5"]:
+        return {"success": False, "error": "Timing template must be between 0 and 5."}
+
+    if ports:
+        if not re.match(r"^[0-9,-]+$", ports):
+            return {"success": False, "error": "Invalid ports format. Use numbers, commas, and hyphens (e.g., 22,80,443 or 1-1000)."}
+        
+        port_list = []
+        for part in ports.split(","):
+            if "-" in part:
+                subparts = part.split("-")
+                if len(subparts) != 2:
+                    return {"success": False, "error": "Invalid port range format."}
+                try:
+                    start_port = int(subparts[0])
+                    end_port = int(subparts[1])
+                    if start_port > end_port:
+                        return {"success": False, "error": f"Invalid port range: {start_port}-{end_port}."}
+                    port_list.extend(range(start_port, end_port + 1))
+                except ValueError:
+                    return {"success": False, "error": "Port numbers must be integers."}
+            else:
+                try:
+                    port_list.append(int(part))
+                except ValueError:
+                    return {"success": False, "error": "Port numbers must be integers."}
+        for p in port_list:
+            if p < 1 or p > 65535:
+                return {"success": False, "error": f"Port {p} out of range. Ports must be between 1 and 65535."}
+
+    if credential_ids:
+        if isinstance(credential_ids, str):
+            cred_id_list = [c.strip() for c in credential_ids.split(",") if c.strip()]
+        else:
+            cred_id_list = [str(c).strip() for c in credential_ids if str(c).strip()]
+        
+        if cred_id_list:
+            try:
+                int_cred_ids = [int(cid) for cid in cred_id_list]
+                user_creds = ScanCredential.query.filter(ScanCredential.id.in_(int_cred_ids)).all()
+                if len(user_creds) != len(int_cred_ids) or any(c.user_id != user_id for c in user_creds):
+                    return {"success": False, "error": "One or more selected credentials are invalid or do not belong to you."}
+            except ValueError:
+                return {"success": False, "error": "Invalid credential IDs format."}
+
+    network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
+    if not network_info["success"]:
+        return {"success": False, "error": f"Invalid scan target: {network_info['error']}"}
+
+    target_validation = validate_scan_target(network_info, scan_type)
+    if not target_validation["success"]:
+        return {"success": False, "error": target_validation["error"]}
+
+    if exclude_targets:
+        import ipaddress
+        try:
+            scan_net = ipaddress.ip_network(network_info["cidr"], strict=False)
+            targets = [t.strip() for t in re.split(r'[,\s]+', exclude_targets) if t.strip()]
+            for target in targets:
+                try:
+                    if "/" in target:
+                        target_net = ipaddress.ip_network(target, strict=False)
+                        if not scan_net.supernet_of(target_net):
+                            return {"success": False, "error": f"Exclusion target subnet {target} is outside of the scan target range {network_info['cidr']}."}
+                    else:
+                        target_ip = ipaddress.ip_address(target)
+                        if target_ip not in scan_net:
+                            return {"success": False, "error": f"Exclusion target IP {target} is outside of the scan target range {network_info['cidr']}."}
+                except ValueError:
+                    return {"success": False, "error": f"Invalid exclusion target format: {target}"}
+        except ValueError:
+            return {"success": False, "error": "Invalid scan target CIDR."}
+
+    return {"success": True, "network_info": network_info}
+
 @scan_bp.route("/scan", methods=["GET", "POST"])
 @login_required
 def scan():
@@ -88,40 +187,30 @@ def scan():
         scan_type = request.form.get("scan_type", "").strip()
         ports = request.form.get("ports", "").replace(" ", "").strip()
         timing_template = request.form.get("timing_template", "4").strip()
+        exclude_targets = request.form.get("exclude_targets", "").strip()
+        selected_creds = request.form.getlist("credential_ids")
+        audit_credentials = request.form.get("audit_credentials") == "y"
 
         if not ip_address or not scan_type:
             flash("Please fill in all required scan fields.", "error")
             return redirect(url_for("scan.scan"))
 
-        valid_scan_types = [
-            "quick", "detailed",
-            "fast", "service_version", "ping_sweep",
-            "syn", "connect", "udp", "aggressive", "vuln"
-        ]
-
-        if scan_type not in valid_scan_types:
-            flash("Invalid scan type selected.", "error")
+        validation = validate_scan_request(
+            ip_address=ip_address,
+            subnet_mask=subnet_mask,
+            scan_type=scan_type,
+            ports=ports,
+            timing_template=timing_template,
+            credential_ids=selected_creds,
+            user_id=current_user.id,
+            exclude_targets=exclude_targets
+        )
+        if not validation["success"]:
+            flash(validation["error"], "error")
             return redirect(url_for("scan.scan"))
 
-        if ports:
-            if not re.match(r"^[0-9,-]+$", ports):
-                flash("Invalid ports format. Use numbers, commas, and hyphens (e.g., 22,80,443 or 1-1000).", "error")
-                return redirect(url_for("scan.scan"))
-
-        network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
-        if not network_info["success"]:
-            flash(f"Invalid scan target: {network_info['error']}", "error")
-            return redirect(url_for("scan.scan"))
-        
-        target_validation = validate_scan_target(network_info, scan_type)
-        if not target_validation["success"]:
-            flash(target_validation["error"], "error")
-            return redirect(url_for("scan.scan"))
-
-        exclude_targets = request.form.get("exclude_targets", "").strip()
-        selected_creds = request.form.getlist("credential_ids")
+        network_info = validation["network_info"]
         credential_ids_str = ",".join(selected_creds) if selected_creds else None
-        audit_credentials = request.form.get("audit_credentials") == "y"
 
         scan_result = ScanResult(
             user_id=current_user.id,
@@ -183,6 +272,11 @@ def stop_scan(scan_id):
     if scan_result.status in ["pending", "running"]:
         scan_result.status = "cancelled"
         db.session.commit()
+        
+        # Kill background Nmap process
+        from scanner import stop_scan_process
+        stop_scan_process(scan_result.id)
+        
         flash("Scan execution cancelled.", "success")
     else:
         flash("Scan is not in a cancellable state.", "warning")
@@ -473,22 +567,34 @@ def new_schedule():
         ports = request.form.get("ports", "").replace(" ", "").strip()
         frequency = request.form.get("frequency", "").strip()
         timing_template = request.form.get("timing_template", "4").strip()
+        exclude_targets = request.form.get("exclude_targets", "").strip()
+        selected_creds = request.form.getlist("credential_ids")
+        audit_credentials = request.form.get("audit_credentials") == "y"
 
         if not name or not ip_address or not scan_type or not frequency:
             flash("Please fill in all required scheduling fields.", "error")
             return redirect(url_for("scan.new_schedule"))
 
-        network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
-        if not network_info["success"]:
-            flash(f"Invalid scheduling target: {network_info['error']}", "error")
+        validation = validate_scan_request(
+            ip_address=ip_address,
+            subnet_mask=subnet_mask,
+            scan_type=scan_type,
+            ports=ports,
+            timing_template=timing_template,
+            credential_ids=selected_creds,
+            user_id=current_user.id,
+            exclude_targets=exclude_targets,
+            frequency=frequency
+        )
+        if not validation["success"]:
+            flash(validation["error"], "error")
             return redirect(url_for("scan.new_schedule"))
 
-        exclude_targets = request.form.get("exclude_targets", "").strip()
-        selected_creds = request.form.getlist("credential_ids")
+        network_info = validation["network_info"]
         credential_ids_str = ",".join(selected_creds) if selected_creds else None
-        audit_credentials = request.form.get("audit_credentials") == "y"
 
-        now = datetime.now()
+        # Database times MUST be UTC
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         next_run = now
         if frequency == "hourly":
             next_run = now + timedelta(hours=1)
@@ -528,26 +634,60 @@ def new_schedule():
 def edit_schedule(schedule_id):
     sched = ScanSchedule.query.filter_by(id=schedule_id, user_id=current_user.id).first_or_404()
     if request.method == "POST":
-        sched.name = request.form.get("name", "").strip()
+        name = request.form.get("name", "").strip()
         ip_address = request.form.get("ip_address", "").strip()
         subnet_mask = request.form.get("subnet_mask", "").strip()
-        sched.scan_type = request.form.get("scan_type", "").strip()
-        sched.ports = request.form.get("ports", "").replace(" ", "").strip()
-        sched.frequency = request.form.get("frequency", "").strip()
-        sched.timing_template = request.form.get("timing_template", "4").strip()
-        sched.exclude_targets = request.form.get("exclude_targets", "").strip()
-        
+        scan_type = request.form.get("scan_type", "").strip()
+        ports = request.form.get("ports", "").replace(" ", "").strip()
+        frequency = request.form.get("frequency", "").strip()
+        timing_template = request.form.get("timing_template", "4").strip()
+        exclude_targets = request.form.get("exclude_targets", "").strip()
         selected_creds = request.form.getlist("credential_ids")
-        sched.credential_ids = ",".join(selected_creds) if selected_creds else None
-        sched.audit_credentials = request.form.get("audit_credentials") == "y"
+        audit_credentials = request.form.get("audit_credentials") == "y"
 
-        network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
-        if not network_info["success"]:
-            flash(f"Invalid target: {network_info['error']}", "error")
+        if not name or not ip_address or not scan_type or not frequency:
+            flash("Please fill in all required scheduling fields.", "error")
             return redirect(url_for("scan.edit_schedule", schedule_id=sched.id))
 
+        validation = validate_scan_request(
+            ip_address=ip_address,
+            subnet_mask=subnet_mask,
+            scan_type=scan_type,
+            ports=ports,
+            timing_template=timing_template,
+            credential_ids=selected_creds,
+            user_id=current_user.id,
+            exclude_targets=exclude_targets,
+            frequency=frequency
+        )
+        if not validation["success"]:
+            flash(validation["error"], "error")
+            return redirect(url_for("scan.edit_schedule", schedule_id=sched.id))
+
+        network_info = validation["network_info"]
+
+        # Recalculate next run if frequency has changed
+        if sched.frequency != frequency:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if frequency == "hourly":
+                sched.next_run = now + timedelta(hours=1)
+            elif frequency == "daily":
+                sched.next_run = now + timedelta(days=1)
+            elif frequency == "weekly":
+                sched.next_run = now + timedelta(weeks=1)
+            elif frequency == "monthly":
+                sched.next_run = now + timedelta(days=30)
+
+        sched.name = name
         sched.input_ip = ip_address
         sched.subnet_mask = subnet_mask if subnet_mask else "N/A"
+        sched.scan_type = scan_type
+        sched.ports = ports if ports else None
+        sched.frequency = frequency
+        sched.timing_template = timing_template
+        sched.exclude_targets = exclude_targets if exclude_targets else None
+        sched.credential_ids = ",".join(selected_creds) if selected_creds else None
+        sched.audit_credentials = audit_credentials
         sched.network_cidr = network_info["cidr"]
 
         db.session.commit()

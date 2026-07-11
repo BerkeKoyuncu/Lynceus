@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 
 from models import db, SecurityFinding, User
+from routes.admin import admin_required
 
 findings_bp = Blueprint("findings", __name__)
 
@@ -43,6 +44,7 @@ def list_findings():
 
 @findings_bp.route("/findings/<int:finding_id>/update", methods=["POST"])
 @login_required
+@admin_required
 def update_finding(finding_id):
     finding = SecurityFinding.query.get_or_404(finding_id)
     
@@ -51,7 +53,7 @@ def update_finding(finding_id):
     due_date_raw = request.form.get("due_date")
     remediation_note = request.form.get("remediation_note")
     
-    if status in ["open", "resolved", "accepted_risk", "false_positive"]:
+    if status in ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]:
         finding.status = status
         
     if assigned_user_id:
@@ -77,10 +79,8 @@ def update_finding(finding_id):
 
 @findings_bp.route("/findings/<int:finding_id>/delete", methods=["POST"])
 @login_required
+@admin_required
 def delete_finding(finding_id):
-    if not current_user.is_admin:
-        flash("Unauthorised access.", "error")
-        return redirect(url_for("findings.list_findings"))
     finding = SecurityFinding.query.get_or_404(finding_id)
     db.session.delete(finding)
     db.session.commit()

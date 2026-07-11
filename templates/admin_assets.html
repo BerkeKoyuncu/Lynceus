@@ -7,6 +7,7 @@
         <h2>Asset Inventory (Total: {{ assets|length }})</h2>
         <p>Manage and track critical network assets, assign ownership, and audit device details.</p>
     </div>
+    {% if current_user.is_admin %}
     <div style="display: flex; gap: 10px; align-items: center;">
         <button type="submit" form="bulk-delete-form" id="bulk-delete-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected assets?')">
             <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Delete Selected
@@ -15,6 +16,7 @@
             <i data-lucide="plus" class="icon-inline" style="margin-right: 6px;"></i> Add New Asset
         </a>
     </div>
+    {% endif %}
 </div>
 
 <!-- Search & Filtering Bar -->
@@ -69,15 +71,19 @@
 </div>
 
 <!-- Assets Table Container -->
+{% if current_user.is_admin %}
 <form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+{% endif %}
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 25px; box-shadow: var(--shadow);">
     {% if assets %}
     <div style="overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse;">
             <thead>
                 <tr>
+                    {% if current_user.is_admin %}
                     <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-assets" aria-label="Select all assets"></th>
+                    {% endif %}
                     <th>Asset Details</th>
                     <th>Network Info</th>
                     <th>Vendor</th>
@@ -88,13 +94,17 @@
                     <th>Owner & Location</th>
                     <th>Last Seen</th>
                     <th>Trust Status</th>
+                    {% if current_user.is_admin %}
                     <th style="text-align: center;">Actions</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for asset in assets %}
                 <tr>
+                    {% if current_user.is_admin %}
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" form="bulk-delete-form" aria-label="Select asset"></td>
+                    {% endif %}
                     <td>
                         <strong style="font-size: 15px;">{{ asset.name or 'Unnamed Asset' }}</strong>
                         {% if asset.serial_number %}
@@ -172,6 +182,7 @@
                             <span class="badge error-badge">Untrusted</span>
                         {% endif %}
                     </td>
+                    {% if current_user.is_admin %}
                     <td style="text-align: center; vertical-align: middle;">
                         <div style="display: flex; justify-content: center; gap: 8px; align-items: center;">
                             <form method="POST" action="{{ url_for('admin_toggle_asset_trust', asset_id=asset.id) }}" style="margin: 0; display: inline-flex; vertical-align: middle;">
@@ -191,6 +202,7 @@
                             </form>
                         </div>
                     </td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
             </tbody>

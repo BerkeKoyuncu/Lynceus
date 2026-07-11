@@ -82,6 +82,7 @@ def create_app(config=None):
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["TRUST_PROXY"] = os.environ.get("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
+    app.config["SEED_DEMO_DATA"] = os.environ.get("SEED_DEMO_DATA", "False").lower() in ("true", "1", "yes")
 
     if config:
         app.config.update(config)
@@ -417,9 +418,13 @@ def create_app(config=None):
 
     @app.cli.command("cleanup-scans")
     def cleanup_scans_command():
-        db.create_all()
         cleanup_stale_scans()
         click.echo("Stale scans cleaned up successfully.")
+
+    @app.cli.command("seed-demo-data")
+    def seed_demo_data_command():
+        seed_mock_security_data()
+        click.echo("Demo security data seeded successfully.")
 
     # Background threads
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
@@ -482,17 +487,14 @@ def create_app(config=None):
 
     with app.app_context():
         try:
-            db.create_all()
-        except Exception:
-            pass
-        try:
             backfill_legacy_scans()
         except Exception:
             pass
-        try:
-            seed_mock_security_data()
-        except Exception:
-            pass
+        if app.config.get("SEED_DEMO_DATA"):
+            try:
+                seed_mock_security_data()
+            except Exception:
+                pass
         try:
             cleanup_stale_scans()
         except Exception:
@@ -676,4 +678,6 @@ def cleanup_stale_scans():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0")
+    import os
+    debug_val = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    app.run(debug=debug_val, host="127.0.0.1")

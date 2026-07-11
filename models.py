@@ -41,7 +41,7 @@ class User(UserMixin, db.Model):
 class ScanResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
 
     input_ip = db.Column(db.String(45), nullable=False)
     subnet_mask = db.Column(db.String(45), nullable=False)
@@ -69,7 +69,7 @@ class ScanResult(db.Model):
 
 class ScanSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     
     name = db.Column(db.String(100), nullable=False)
     input_ip = db.Column(db.String(45), nullable=False)
@@ -96,7 +96,7 @@ class ScanSchedule(db.Model):
 
 class SystemSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), unique=True, nullable=False)
     
     smtp_server = db.Column(db.String(100), default="smtp.gmail.com")
     smtp_port = db.Column(db.Integer, default=587)
@@ -136,7 +136,7 @@ class SystemSetting(db.Model):
 
 class ScanCredential(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     _username = db.Column("username", db.String(255), nullable=True)
     _password = db.Column("password", db.String(255), nullable=True)
@@ -238,6 +238,11 @@ class SecurityFinding(db.Model):
     assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
     due_date = db.Column(db.DateTime, nullable=True)
     remediation_note = db.Column(db.Text, nullable=True)
+    source_type = db.Column(db.String(50), nullable=True)
+    source_rule_id = db.Column(db.Integer, nullable=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey("scan_result.id", ondelete="SET NULL"), nullable=True)
+    fingerprint = db.Column(db.String(64), nullable=True)
+    acceptance_expiry = db.Column(db.DateTime, nullable=True)
 
     asset = db.relationship("Asset", backref=db.backref("findings", lazy=True, cascade="all, delete-orphan"))
     assigned_user = db.relationship("User", backref="assigned_findings", foreign_keys=[assigned_user_id])
@@ -267,7 +272,7 @@ class AssetObservation(db.Model):
 
 class SecurityRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     severity = db.Column(db.String(20), default="Medium")  # 'Low', 'Medium', 'High', 'Critical'
     scope = db.Column(db.String(100), default="*")  # Subnet CIDR or '*'

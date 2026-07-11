@@ -45,6 +45,56 @@ VENDOR_PRODUCT_MAP = {
 
 CVE_CACHE = {}
 
+def parse_version(v_str):
+    import re
+    # Extract digit sequences
+    nums = re.findall(r'\d+', v_str)
+    return tuple(int(x) for x in nums) if nums else ()
+
+def is_version_affected(user_ver, match_obj, api_product):
+    cpe_uri = match_obj.get("criteria", "")
+    
+    # Check if this criteria matches our product
+    if api_product not in cpe_uri.lower():
+        return False
+        
+    parts = cpe_uri.split(":")
+    if len(parts) > 5:
+        cpe_ver = parts[5]
+        if cpe_ver != "*" and cpe_ver != "-":
+            # Exact or substring comparison
+            clean_user = user_ver.lower().replace("p", "").replace("v", "")
+            clean_cpe = cpe_ver.lower().replace("p", "").replace("v", "")
+            if clean_user not in clean_cpe and clean_cpe not in clean_user:
+                return False
+  
+    user_parsed = parse_version(user_ver)
+    if not user_parsed:
+        return True # Default to True if we cannot parse the version format
+  
+    # Check boundaries
+    if "versionEndIncluding" in match_obj:
+        end_parsed = parse_version(match_obj["versionEndIncluding"])
+        if end_parsed and user_parsed > end_parsed:
+            return False
+            
+    if "versionEndExcluding" in match_obj:
+        end_parsed = parse_version(match_obj["versionEndExcluding"])
+        if end_parsed and user_parsed >= end_parsed:
+            return False
+            
+    if "versionStartIncluding" in match_obj:
+        start_parsed = parse_version(match_obj["versionStartIncluding"])
+        if start_parsed and user_parsed < start_parsed:
+            return False
+            
+    if "versionStartExcluding" in match_obj:
+        start_parsed = parse_version(match_obj["versionStartExcluding"])
+        if start_parsed and user_parsed <= start_parsed:
+            return False
+            
+    return True
+
 def fetch_cves_for_query(query):
     """
     Queries the CIRCL CVE API for a service query and returns up to 15 CVE details.
@@ -94,7 +144,6 @@ def fetch_cves_for_query(query):
             cve_id = item[0].upper()
             if cve_id in seen_cves:
                 continue
-            seen_cves.add(cve_id)
             cve_record = item[1]
 
             descriptions = cve_record.get("containers", {}).get("cna", {}).get("descriptions", [])
@@ -116,11 +165,50 @@ def fetch_cves_for_query(query):
                 if cvss_score is not None:
                     break
 
-            filtered_cves.append({
-                "id": cve_id,
-                "summary": summary,
-                "cvss": cvss_score
-            })
+            # Check if version is affected
+            is_affected = True
+            is_definite = False
+            if version:
+                is_affected = False
+                cpe_nodes = cve_record.get("containers", {}).get("cna", {}).get("cpeApplicability", [])
+                cpe_found = False
+
+                for node in cpe_nodes:
+                    for subnode in node.get("nodes", []):
+                        for match in subnode.get("cpeMatch", []):
+                            cpe_uri = match.get("criteria", "")
+                            if api_product in cpe_uri.lower():
+                                cpe_found = True
+                                if is_version_affected(version, match, api_product):
+                                    is_affected = True
+                                    break
+                        if is_affected:
+                            break
+                    if is_affected:
+                        break
+
+                if cpe_found:
+                    if is_affected:
+                        is_definite = True
+                else:
+                    # CPE not found, check description as fallback
+                    if api_product in summary.lower():
+                        is_affected = True
+                        is_definite = False
+                    else:
+                        is_affected = False
+            else:
+                is_affected = True
+                is_definite = False
+
+            if is_affected:
+                seen_cves.add(cve_id)
+                filtered_cves.append({
+                    "id": cve_id,
+                    "summary": summary,
+                    "cvss": cvss_score,
+                    "is_definite_match": is_definite
+                })
 
         filtered_cves.sort(key=lambda x: x["cvss"] if x["cvss"] is not None else -1, reverse=True)
         filtered_cves = filtered_cves[:15]
@@ -600,7 +688,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     
                     # Evaluate custom rules for this asset
                     prev_ports = prev_hosts_map.get(ip)
-                    evaluate_rules_for_host(host, asset_match, scan_result.user_id, prev_ports=prev_ports)
+                    evaluate_rules_for_host(host, asset_match, scan_result.user_id, prev_ports=prev_ports, scan_id=scan_result.id)
                 else:
                     # Create as Untrusted Asset
                     new_asset = Asset(
@@ -619,7 +707,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     db.session.commit()
 
                     # Evaluate custom rules for this new asset
-                    evaluate_rules_for_host(host, new_asset, scan_result.user_id, prev_ports=None)
+                    evaluate_rules_for_host(host, new_asset, scan_result.user_id, prev_ports=None, scan_id=scan_result.id)
 
             db.session.commit()
 
@@ -741,7 +829,13 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         # Fetch CVEs and record findings in the database
                         cves = fetch_cves_for_query(query)
                         if cves:
-                            evaluate_cve_findings(host, asset, cves)
+                            evaluate_cve_findings(
+                                asset=asset,
+                                ip_address=ip,
+                                port_info=port_info,
+                                cve_list=cves,
+                                scan_id=scan_result.id
+                            )
 
         result_payload = {
             "command": nmap_result.get("command", "N/A"),

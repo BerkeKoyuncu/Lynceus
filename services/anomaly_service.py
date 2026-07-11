@@ -73,17 +73,8 @@ def evaluate_host_anomalies(host, scan_id):
             "confidence_score": "Medium"
         }
 
-    # Record observation history
-    record_observation(
-        asset_id=asset_match.id,
-        scan_id=scan_id,
-        ip_address=ip,
-        mac_address=mac,
-        hostname=hostname,
-        vendor=vendor,
-        operating_system=host.get("operating_system"),
-        open_ports=ports
-    )
+    # Evaluate anomalies FIRST before saving the current observation
+    anomaly_result = None
 
     # 2. Check for MAC Spoofing (Expected IP matches scanned IP, but MAC changed)
     if asset_match.ip_address == ip and asset_match.mac_address and mac and asset_match.mac_address.lower() != mac:
@@ -112,7 +103,11 @@ def evaluate_host_anomalies(host, scan_id):
         confidence = "High"
         reason = "Potential MAC Spoofing!"
         
-        if unique_macs_on_ip > 3:
+        if old_mac_active_elsewhere:
+            # Both old MAC and new MAC are active at the same time on different IPs
+            confidence = "High"
+            reason = "Active conflict: Expected MAC is active on another IP, while this IP was claimed by a new MAC."
+        elif unique_macs_on_ip > 3:
             # Frequent changes on this IP suggest MAC Randomization or virtual machine churn
             confidence = "Low"
             reason = "Frequent MAC variations on this IP (likely MAC randomization or dynamic environment)."
@@ -120,14 +115,10 @@ def evaluate_host_anomalies(host, scan_id):
             # We've seen this IP-MAC mapping before, so it's probably legitimate lease changes or multi-NIC device
             confidence = "Low"
             reason = "Known historical IP-MAC mapping detected."
-        elif asset_match.ip_assignment_type == "DHCP" and not old_mac_active_elsewhere:
+        elif asset_match.ip_assignment_type == "DHCP":
             # DHCP client changed IP/MAC mapping and old client is gone
             confidence = "Medium"
             reason = "DHCP lease changed to a new MAC; old client inactive."
-        elif old_mac_active_elsewhere:
-            # Both old MAC and new MAC are active at the same time on different IPs
-            confidence = "High"
-            reason = "Active conflict: Expected MAC is active on another IP, while this IP was claimed by a new MAC."
 
         desc = f"IP address {ip} has changed its MAC address from {asset_match.mac_address} to {mac}. {reason}"
         anomaly = SecurityAnomaly(
@@ -139,7 +130,7 @@ def evaluate_host_anomalies(host, scan_id):
         )
         db.session.add(anomaly)
         db.session.commit()
-        return {
+        anomaly_result = {
             "type": "mac_spoofing",
             "expected_mac": asset_match.mac_address,
             "found_mac": mac,
@@ -180,7 +171,7 @@ def evaluate_host_anomalies(host, scan_id):
         )
         db.session.add(anomaly)
         db.session.commit()
-        return {
+        anomaly_result = {
             "type": "ip_hijack",
             "expected_ip": old_ip,
             "found_ip": ip,
@@ -188,4 +179,16 @@ def evaluate_host_anomalies(host, scan_id):
             "confidence_score": confidence
         }
         
-    return None
+    # Record observation history at the very end
+    record_observation(
+        asset_id=asset_match.id,
+        scan_id=scan_id,
+        ip_address=ip,
+        mac_address=mac,
+        hostname=hostname,
+        vendor=vendor,
+        operating_system=host.get("operating_system"),
+        open_ports=ports
+    )
+        
+    return anomaly_result

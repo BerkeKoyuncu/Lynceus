@@ -273,13 +273,26 @@ def parse_nmap_xml(xml_output):
                     "version": version_info if version_info else "-"
                 })
 
+        # Parse trace hops
+        trace_hops = []
+        trace_element = host.find("trace")
+        if trace_element is not None:
+            for hop in trace_element.findall("hop"):
+                trace_hops.append({
+                    "hop": hop.get("ttl"),
+                    "ipaddr": hop.get("ipaddr"),
+                    "rtt": hop.get("rtt"),
+                    "host": hop.get("host", "")
+                })
+
         parsed_hosts.append({
             "address": ip_address,
             "mac_address": mac_address,
             "mac_vendor": mac_vendor,
             "hostname": hostname,
             "status": host_status,
-            "ports": ports_data
+            "ports": ports_data,
+            "trace": trace_hops
         })
 
     return parsed_hosts
