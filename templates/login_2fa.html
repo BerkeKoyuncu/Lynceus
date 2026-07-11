@@ -4,7 +4,9 @@
 
 <div class="auth-panel">
     <div style="text-align: center; margin-bottom: 24px;">
-        <img src="{{ url_for('static', filename='images/logos/portojo-logo.svg') }}" alt="PortOjo Logo"
+        <img src="{{ url_for('static', filename='images/logos/Lynceus-logo-dark-green.svg') }}" class="logo-light-theme" alt="Lynceus Logo"
+            style="height: 250px; max-width: 100%;">
+        <img src="{{ url_for('static', filename='images/logos/Lynceus-logo-beige.svg') }}" class="logo-dark-theme" alt="Lynceus Logo"
             style="height: 250px; max-width: 100%;">
     </div>
     <h2>Two-Factor Authentication</h2>
@@ -14,7 +16,9 @@
 
     <form method="POST">
         <label for="otp_code">Verification Code</label>
-        <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="123456" pattern="[0-9]*" inputmode="numeric" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color);">
+        <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="••••••" pattern="[0-9]*"
+            inputmode="numeric" maxlength="6"
+            style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color);">
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

@@ -5,38 +5,38 @@
 <h2>New Network Scan</h2>
 
 {% if is_frozen %}
-<div class="alert alert-error" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; color: #ef4444;">
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-alert" style="flex-shrink: 0;"><path d="M20 13c0 5-3.5 7.5-7.66 9.7a1 1 0 0 1-.68 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+<div class="alert alert-error"
+    style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; color: #ef4444;">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-alert"
+        style="flex-shrink: 0;">
+        <path
+            d="M20 13c0 5-3.5 7.5-7.66 9.7a1 1 0 0 1-.68 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z" />
+        <path d="M12 8v4" />
+        <path d="M12 16h.01" />
+    </svg>
     <div>
-        <strong>Scan Blackout Active:</strong> Manual scanning is temporarily disabled by the Administrator during the blackout window ({{ freeze_start }} - {{ freeze_end }}).
+        <strong>Scan Blackout Active:</strong> Manual scanning is temporarily disabled by the Administrator during the
+        blackout window ({{ freeze_start }} - {{ freeze_end }}).
     </div>
 </div>
 {% endif %}
 
 <p>
-    Enter an IP address and subnet mask. PortOjo will calculate the network range automatically.
+    Enter an IP address and subnet mask. Lynceus will calculate the network range automatically.
 </p>
 
 <p>
-    For safety, PortOjo allows scans only on private, loopback, or link-local networks.
+    For safety, Lynceus allows scans only on private, loopback, or link-local networks.
     Select a scan type below to view its specific target size limits and required privileges.
 </p>
 
 <form method="POST">
     <label>IP Address / Custom Target Range</label>
-    <input 
-        type="text" 
-        name="ip_address" 
-        placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" 
-        required
-    >
+    <input type="text" name="ip_address" placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" required>
 
     <label>Subnet Mask (Optional)</label>
-    <input 
-        type="text" 
-        name="subnet_mask" 
-        placeholder="e.g. 255.255.255.0 (leave blank for single IP or custom range)" 
-    >
+    <input type="text" name="subnet_mask" placeholder="e.g. 255.255.255.0 (leave blank for single IP or custom range)">
 
     <label>Scan Type</label>
     <select name="scan_type" id="scan_type" required onchange="updateScanDescription()">
@@ -65,7 +65,7 @@
     <div id="scan-desc-card" class="scan-desc-card" style="display: none;">
         <h4 id="desc-title"></h4>
         <p id="desc-text" class="desc-text"></p>
-        
+
         <div class="desc-meta-grid">
             <div>
                 <strong>Nmap Command:</strong>
@@ -84,33 +84,22 @@
 
     <div id="ports-field-wrapper" style="display: none;">
         <label for="ports">Custom Ports (Optional)</label>
-        <input 
-            type="text" 
-            id="ports" 
-            name="ports" 
-            placeholder="e.g. 22,80,443 or 1-1000 (leave empty for default ports)"
-        >
+        <input type="text" id="ports" name="ports"
+            placeholder="e.g. 22,80,443 or 1-1000 (leave empty for default ports)">
     </div>
 
     <div style="margin-top: 15px;">
         <label for="exclude_targets">Exclude Targets (Optional)</label>
-        <input 
-            type="text" 
-            id="exclude_targets" 
-            name="exclude_targets" 
-            placeholder="e.g. 192.168.1.5, 192.168.1.100-120 (comma-separated IPs/ranges to skip)"
-        >
+        <input type="text" id="exclude_targets" name="exclude_targets"
+            placeholder="e.g. 192.168.1.5, 192.168.1.100-120 (comma-separated IPs/ranges to skip)">
     </div>
 
-    <div id="credential-audit-wrapper" style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 8px;">
-        <input 
-            type="checkbox" 
-            id="audit_credentials" 
-            name="audit_credentials" 
-            value="y"
-            style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
-        >
-        <label for="audit_credentials" style="margin: 0; cursor: pointer; font-size: 14px; font-weight: normal; color: var(--text);">
+    <div id="credential-audit-wrapper"
+        style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="audit_credentials" name="audit_credentials" value="y"
+            style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
+        <label for="audit_credentials"
+            style="margin: 0; cursor: pointer; font-size: 14px; font-weight: normal; color: var(--text);">
             Perform Weak Credential Audit (FTP, Redis, HTTP Basic Auth)
         </label>
     </div>
@@ -121,25 +110,30 @@
         <span style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;">
             Choose credentials to test against matching open ports discovered during the scan.
         </span>
-        
-        <select id="credential_select_input" onchange="addCredentialBadge()" style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+
+        <select id="credential_select_input" onchange="addCredentialBadge()"
+            style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
             <option value="">-- Choose credential to add --</option>
             {% for cred in user_credentials %}
-                <option value="{{ cred.id }}" data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}" data-name="{{ cred.name }}">
-                    {{ cred.name }} ({{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }})
-                </option>
+            <option value="{{ cred.id }}"
+                data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}"
+                data-name="{{ cred.name }}">
+                {{ cred.name }} ({{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }})
+            </option>
             {% endfor %}
         </select>
-        
+
         <div id="credentials_badges_container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
             <!-- Badges will be generated dynamically -->
         </div>
-        
+
         <div id="credentials_hidden_inputs"></div>
     </div>
     {% endif %}
 
-    <button type="submit" {% if is_frozen %}disabled style="background: var(--border); color: var(--text-muted); cursor: not-allowed; opacity: 0.6;"{% endif %}>Start Scan</button>
+    <button type="submit" {% if is_frozen %}disabled
+        style="background: var(--border); color: var(--text-muted); cursor: not-allowed; opacity: 0.6;" {% endif
+        %}>Start Scan</button>
 </form>
 
 <script>
@@ -174,7 +168,7 @@
         },
         "connect": {
             title: "TCP Connect Scan (Full Handshake)",
-            text: "Completes the full TCP 3-way handshake with target ports using standard system network APIs.\n\nUse Case: Recommended when running PortOjo without administrator/root privileges, or when scanning through network proxies or application-layer firewalls.",
+            text: "Completes the full TCP 3-way handshake with target ports using standard system network APIs.\n\nUse Case: Recommended when running Lynceus without administrator/root privileges, or when scanning through network proxies or application-layer firewalls.",
             command: "nmap -sT <target>",
             limit: 512,
             privs: "Standard User"
@@ -220,7 +214,7 @@
 
         const timingSelect = document.getElementById("timing_template");
         const timingVal = timingSelect ? timingSelect.value : "4";
-        
+
         let cmd = info.command;
         if (cmd.includes("-T4")) {
             cmd = cmd.replace("-T4", `-T${timingVal}`);
@@ -232,7 +226,7 @@
         document.getElementById("desc-command").textContent = cmd;
 
         document.getElementById("desc-limit").textContent = info.limit;
-        
+
         const privsEl = document.getElementById("desc-privs");
         privsEl.textContent = info.privs;
         if (info.privs.includes("Administrator")) {

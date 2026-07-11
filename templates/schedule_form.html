@@ -10,12 +10,7 @@
 
 <form method="POST">
     <label>Schedule Name</label>
-    <input 
-        type="text" 
-        name="name" 
-        placeholder="e.g. Weekly Subnet Audit" 
-        required
-    >
+    <input type="text" name="name" placeholder="e.g. Weekly Subnet Audit" required>
 
     <label>Frequency</label>
     <select name="frequency" required>
@@ -26,19 +21,10 @@
     </select>
 
     <label>IP Address / Custom Target Range</label>
-    <input 
-        type="text" 
-        name="ip_address" 
-        placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" 
-        required
-    >
+    <input type="text" name="ip_address" placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" required>
 
     <label>Subnet Mask (Optional)</label>
-    <input 
-        type="text" 
-        name="subnet_mask" 
-        placeholder="e.g. 255.255.255.0 (leave blank for single IP or custom range)" 
-    >
+    <input type="text" name="subnet_mask" placeholder="e.g. 255.255.255.0 (leave blank for single IP or custom range)">
 
     <label>Scan Type</label>
     <select name="scan_type" id="scan_type" required onchange="updateScanDescription()">
@@ -67,7 +53,7 @@
     <div id="scan-desc-card" class="scan-desc-card" style="display: none;">
         <h4 id="desc-title"></h4>
         <p id="desc-text" class="desc-text"></p>
-        
+
         <div class="desc-meta-grid">
             <div>
                 <strong>Nmap Command:</strong>
@@ -86,33 +72,22 @@
 
     <div id="ports-field-wrapper" style="display: none;">
         <label for="ports">Custom Ports (Optional)</label>
-        <input 
-            type="text" 
-            id="ports" 
-            name="ports" 
-            placeholder="e.g. 22,80,443 or 1-1000 (leave empty for default ports)"
-        >
+        <input type="text" id="ports" name="ports"
+            placeholder="e.g. 22,80,443 or 1-1000 (leave empty for default ports)">
     </div>
 
     <div style="margin-top: 15px; margin-bottom: 20px;">
         <label for="exclude_targets">Exclude Targets (Optional)</label>
-        <input 
-            type="text" 
-            id="exclude_targets" 
-            name="exclude_targets" 
-            placeholder="e.g. 192.168.1.5, 192.168.1.100-120 (comma-separated IPs/ranges to skip)"
-        >
+        <input type="text" id="exclude_targets" name="exclude_targets"
+            placeholder="e.g. 192.168.1.5, 192.168.1.100-120 (comma-separated IPs/ranges to skip)">
     </div>
 
-    <div id="credential-audit-wrapper" style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 8px;">
-        <input 
-            type="checkbox" 
-            id="audit_credentials" 
-            name="audit_credentials" 
-            value="y"
-            style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
-        >
-        <label for="audit_credentials" style="margin: 0; cursor: pointer; font-size: 14px; font-weight: normal; color: var(--text);">
+    <div id="credential-audit-wrapper"
+        style="margin-top: 15px; margin-bottom: 25px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="audit_credentials" name="audit_credentials" value="y"
+            style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;">
+        <label for="audit_credentials"
+            style="margin: 0; cursor: pointer; font-size: 14px; font-weight: normal; color: var(--text);">
             Perform Weak Credential Audit (FTP, Redis, HTTP Basic Auth)
         </label>
     </div>
@@ -123,20 +98,23 @@
         <span style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;">
             Choose credentials to test against matching open ports discovered during scheduled scans.
         </span>
-        
-        <select id="credential_select_input" onchange="addCredentialBadge()" style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
+
+        <select id="credential_select_input" onchange="addCredentialBadge()"
+            style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
             <option value="">-- Choose credential to add --</option>
             {% for cred in user_credentials %}
-                <option value="{{ cred.id }}" data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}" data-name="{{ cred.name }}">
-                    {{ cred.name }} ({{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }})
-                </option>
+            <option value="{{ cred.id }}"
+                data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}"
+                data-name="{{ cred.name }}">
+                {{ cred.name }} ({{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }})
+            </option>
             {% endfor %}
         </select>
-        
+
         <div id="credentials_badges_container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
             <!-- Badges will be generated dynamically -->
         </div>
-        
+
         <div id="credentials_hidden_inputs"></div>
     </div>
     {% endif %}
@@ -176,7 +154,7 @@
         },
         "connect": {
             title: "TCP Connect Scan (Full Handshake)",
-            text: "Completes the full TCP 3-way handshake with target ports using standard system network APIs.\n\nUse Case: Recommended when running PortOjo without administrator/root privileges, or when scanning through network proxies or application-layer firewalls.",
+            text: "Completes the full TCP 3-way handshake with target ports using standard system network APIs.\n\nUse Case: Recommended when running Lynceus without administrator/root privileges, or when scanning through network proxies or application-layer firewalls.",
             command: "nmap -sT <target>",
             limit: 512,
             privs: "Standard User"
@@ -222,7 +200,7 @@
 
         const timingSelect = document.getElementById("timing_template");
         const timingVal = timingSelect ? timingSelect.value : "4";
-        
+
         let cmd = info.command;
         if (cmd.includes("-T4")) {
             cmd = cmd.replace("-T4", `-T${timingVal}`);
@@ -234,7 +212,7 @@
         document.getElementById("desc-command").textContent = cmd;
 
         document.getElementById("desc-limit").textContent = info.limit;
-        
+
         const privsEl = document.getElementById("desc-privs");
         privsEl.textContent = info.privs;
         if (info.privs.includes("Administrator")) {

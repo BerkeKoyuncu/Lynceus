@@ -29,13 +29,13 @@
         letter-spacing: -0.5px;
     }
 
-    /* Filter Panel styling matching Portojo style */
+    /* Filter Panel styling matching Lynceus style */
     .filter-panel {
         background: var(--surface-soft);
         border: 1px solid var(--border);
         border-radius: var(--radius-md);
         padding: 15px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
     }
 
     .filter-grid {
@@ -58,7 +58,8 @@
         color: var(--text-muted);
     }
 
-    .filter-field input, .filter-field select {
+    .filter-field input,
+    .filter-field select {
         padding: 8px 12px;
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
@@ -69,9 +70,11 @@
         transition: border-color 0.2s, box-shadow 0.2s;
     }
 
-    .filter-field input:focus, .filter-field select:focus {
+    .filter-field input:focus,
+    .filter-field select:focus {
         border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(110, 125, 88, 0.15); /* olive tint */
+        box-shadow: 0 0 0 3px rgba(110, 125, 88, 0.15);
+        /* olive tint */
     }
 
     .filter-footer {
@@ -163,7 +166,7 @@
         display: flex;
         flex-direction: column;
         overflow-y: auto;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
         transition: transform 0.3s ease, width 0.3s ease;
     }
 
@@ -348,22 +351,41 @@
         font-weight: 700;
         text-transform: uppercase;
     }
-    .criticality-critical { background: #fde8e8; color: #9b2c2c; }
-    .criticality-high { background: #feebc8; color: #c05621; }
-    .criticality-medium { background: #ebf8ff; color: #2b6cb0; }
-    .criticality-low { background: #edf2f7; color: #4a5568; }
+
+    .criticality-critical {
+        background: #fde8e8;
+        color: #9b2c2c;
+    }
+
+    .criticality-high {
+        background: #feebc8;
+        color: #c05621;
+    }
+
+    .criticality-medium {
+        background: #ebf8ff;
+        color: #2b6cb0;
+    }
+
+    .criticality-low {
+        background: #edf2f7;
+        color: #4a5568;
+    }
 
     /* Custom scrollbars */
     .map-inspector::-webkit-scrollbar {
         width: 6px;
     }
+
     .map-inspector::-webkit-scrollbar-track {
         background: transparent;
     }
+
     .map-inspector::-webkit-scrollbar-thumb {
         background: var(--border);
         border-radius: 3px;
     }
+
     .map-inspector::-webkit-scrollbar-thumb:hover {
         background: var(--text-muted);
     }
@@ -443,10 +465,12 @@
                     <input type="checkbox" id="show-subnets-checkbox" checked onchange="toggleSubnets(this.checked)">
                     Group by Subnets
                 </label>
-                <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="centerMap()">Center Map</button>
-                
+                <button type="button" class="cve-btn" style="padding: 4px 10px;" onclick="centerMap()">Center
+                    Map</button>
+
                 <div class="map-controls-right">
-                    <button type="button" id="fullscreen-btn" class="cve-btn" style="padding: 4px 10px;" onclick="toggleFullscreen()">Fullscreen Mode</button>
+                    <button type="button" id="fullscreen-btn" class="cve-btn" style="padding: 4px 10px;"
+                        onclick="toggleFullscreen()">Fullscreen Mode</button>
                 </div>
             </div>
             <div class="map-viewport" id="network-map"></div>
@@ -461,7 +485,8 @@
             <div class="inspector-body" id="inspector-content">
                 <div class="inspector-welcome">
                     <i data-lucide="network" style="width: 48px; height: 48px;"></i>
-                    <p>Click on any host or subnet node in the map to inspect its details, status, and related configuration.</p>
+                    <p>Click on any host or subnet node in the map to inspect its details, status, and related
+                        configuration.</p>
                 </div>
             </div>
         </div>
@@ -476,7 +501,7 @@
 <script>
     // Master data parsed from script tag
     const rawHosts = JSON.parse(document.getElementById('hosts-json').textContent);
-    
+
     // Globals
     let network = null;
     let nodesDataSet = null;
@@ -487,7 +512,7 @@
     function populateSubnetDropdown() {
         const select = document.getElementById('filter-subnet');
         const subnets = [...new Set(rawHosts.map(h => h.subnet))].sort();
-        
+
         subnets.forEach(sub => {
             const opt = document.createElement('option');
             opt.value = sub;
@@ -561,7 +586,7 @@
 
         // Re-render topology based on raw data
         buildTopology();
-        
+
         network.once("stabilizationIterationsDone", function () {
             network.fit();
         });
@@ -599,16 +624,16 @@
         const isDark = document.documentElement.getAttribute("data-theme") === "dark";
         const groupSubnets = document.getElementById('show-subnets-checkbox').checked;
 
-        // Theme colors matching PortOjo aesthetics
+        // Theme colors matching Lynceus aesthetics
         const themeColors = {
             coreBg: isDark ? "#24291D" : "#3A3F2F", // dark green / forest
             coreBorder: isDark ? "#A0A494" : "#202417",
             coreText: "#FFFDF8",
-            
+
             subnetBg: isDark ? "#2D3325" : "#B7C49A", // surface-soft / sage
             subnetBorder: isDark ? "#A0A494" : "#6E7D58",
             subnetText: isDark ? "#F5F1E8" : "#202417",
-            
+
             hostNormalBg: isDark ? "#2D3325" : "#6E7D58", // surface-soft / olive
             hostNormalBorder: isDark ? "#A0A494" : "#3A3F2F",
             hostNormalText: isDark ? "#F5F1E8" : "#202417",
@@ -618,10 +643,10 @@
 
             hostUntrustedBg: isDark ? "#483A20" : "#EFE3BC", // warning sand background
             hostUntrustedBorder: "#745A1D",
-            
+
             hostAnomalyBg: isDark ? "#4C241E" : "#E9C9BE", // error pink background
             hostAnomalyBorder: "#7A2E1E",
-            
+
             edgeColor: isDark ? "#A0A494" : "#B7C49A",
             edgeHighlight: isDark ? "#FFFDF8" : "#3A3F2F"
         };
@@ -635,7 +660,7 @@
         // 1. Create Core Node
         newNodes.push({
             id: "core",
-            label: "PortOjo Gateway",
+            label: "Lynceus Gateway",
             shape: "box",
             margin: 12,
             shapeProperties: { borderRadius: 8 },
@@ -650,7 +675,7 @@
 
         // 2. Process unique subnets
         const visibleSubnets = [...new Set(filteredHosts.map(h => h.subnet))];
-        
+
         if (groupSubnets) {
             visibleSubnets.forEach(sub => {
                 newNodes.push({
@@ -785,7 +810,7 @@
                 const vendorMatch = h.vendor && h.vendor.toLowerCase().includes(search);
                 const ownerMatch = h.owner && h.owner.toLowerCase().includes(search);
                 const locationMatch = h.location && h.location.toLowerCase().includes(search);
-                
+
                 if (!ipMatch && !nameMatch && !macMatch && !vendorMatch && !ownerMatch && !locationMatch) {
                     return false;
                 }
@@ -842,7 +867,7 @@
         if (!container) return;
 
         container.classList.toggle('fullscreen');
-        
+
         if (container.classList.contains('fullscreen')) {
             btn.textContent = "Exit Fullscreen";
         } else {
@@ -871,7 +896,7 @@
     function showWelcomePanel() {
         const content = document.getElementById('inspector-content');
         if (!content) return;
-        
+
         content.innerHTML = `
             <div class="inspector-welcome">
                 <i data-lucide="network" style="width: 48px; height: 48px;"></i>
@@ -958,7 +983,7 @@
 
             // Badges
             const criticalityClass = `criticality-${host.criticality.toLowerCase()}`;
-            const trustBadge = host.is_trusted 
+            const trustBadge = host.is_trusted
                 ? `<span class="badge success-badge">Trusted</span>`
                 : `<span class="badge error-badge">Untrusted</span>`;
 
@@ -1050,7 +1075,7 @@
                     ${actionsHtml}
                 </div>
             `;
-            
+
             if (typeof lucide !== 'undefined') lucide.createIcons();
         }
     }

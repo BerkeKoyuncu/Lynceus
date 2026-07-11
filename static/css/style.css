@@ -2329,4 +2329,17 @@ th.sort-active .sort-indicator {
     color: var(--sage) !important;
 }
 
+/* Theme-aware logo display */
+.logo-dark-theme {
+    display: none !important;
+}
+.logo-light-theme {
+    display: inline-block !important;
+}
+[data-theme="dark"] .logo-dark-theme {
+    display: inline-block !important;
+}
+[data-theme="dark"] .logo-light-theme {
+    display: none !important;
+}
 

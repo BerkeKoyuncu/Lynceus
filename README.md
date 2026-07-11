@@ -1,10 +1,10 @@
-# PortOjo
+# Lynceus
 
-PortOjo is a Flask-based network security scanning web application that uses Nmap to discover active hosts, open ports, running services, and potential security issues inside authorised local networks.
+Lynceus is a Flask-based network security scanning web application that uses Nmap to discover active hosts, open ports, running services, and potential security issues inside authorised local networks.
 
 The application provides user-based scan management, scan history, scheduled scans, exportable reports, SMTP alerts, honeypot monitoring, brute-force protection, asset inventory, and network anomaly detection.
 
-> **Important:** PortOjo is intended for educational, defensive, and authorised network assessment purposes only. Do not scan networks that you do not own or do not have permission to test.
+> **Important:** Lynceus is intended for educational, defensive, and authorised network assessment purposes only. Do not scan networks that you do not own or do not have permission to test.
 
 ---
 
@@ -142,7 +142,7 @@ Scan results can be exported as:
 
 ### Security Anomaly Detection
 
-PortOjo can detect and record:
+Lynceus can detect and record:
 
 - Rogue devices
 - MAC spoofing indicators
@@ -182,7 +182,7 @@ Supported checks include:
 ## Project Structure
 
 ```text
-PortOjo/
+Lynceus/
 ├── app.py                  # Main Flask application, routes, scheduler, alerts, admin logic
 ├── models.py               # SQLAlchemy database models
 ├── scanner.py              # Network calculation, Nmap execution, XML parsing
@@ -239,8 +239,8 @@ nmap --version
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/BerkeKoyuncu/PortOjo.git
-cd PortOjo
+git clone https://github.com/BerkeKoyuncu/Lynceus.git
+cd Lynceus
 ```
 
 ### 2. Create a Virtual Environment
@@ -323,7 +323,7 @@ When hosted on the local network, it may also be reachable through the machine's
 
 ## Scan Target Restrictions
 
-For safety, PortOjo only allows scans against:
+For safety, Lynceus only allows scans against:
 
 - Private networks
 - Loopback addresses

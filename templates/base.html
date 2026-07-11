@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>PortOjo</title>
+    <title>Lynceus</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,8 +11,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
 
-    <link rel="icon" type="image/png"
-        href="{{ url_for('static', filename='images/favicons/portojo-favicon-4000.png') }}">
+    <link rel="icon" type="image/svg+xml"
+        href="{{ url_for('static', filename='images/icons/Lynceus-icon-beige.svg') }}">
+    <link rel="alternate icon" type="image/png"
+        href="{{ url_for('static', filename='images/icons/Lynceus-icon-beige-125.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=1.4">
     <script>
         (function () {
@@ -35,11 +37,10 @@
                 {% endif %}
                 <a href="{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}"
                     class="brand">
-                    <img src="{{ url_for('static', filename='images/icons/portojo-icon-3600.png') }}" alt="PortOjo"
+                    <img src="{{ url_for('static', filename='images/icons/Lynceus-icon-beige.svg') }}" alt="Lynceus"
                         style="height: 38px; width: auto; flex-shrink: 0;">
                     <div class="brand-text">
-                        <h1>PortOjo</h1>
-                        <span>Network Scanner</span>
+                        <h1>Lynceus</h1>
                     </div>
                 </a>
             </div>

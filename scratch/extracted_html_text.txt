@@ -74,9 +74,9 @@
   No known devices recorded in the database yet.
   Start a New Scan
 === base.html ===
-  PortOjo
+  Lynceus
   P
-  PortOjo
+  Lynceus
   Network Scanner
   New Scan
   Scan History
@@ -87,7 +87,7 @@
   Settings
   Logout
 === blocked.html ===
-  Access Denied - Portojo Security
+  Access Denied - Lynceus Security
   Access Denied
   Your access to this application has been restricted in accordance with system security policies.
             Requests originating from your device have been classified as suspicious or malicious.
@@ -212,10 +212,10 @@
   Already have an account?
   Login
 === report.html ===
-  PortOjo Scan Report - #{{ scan_result.id }}
+  Lynceus Scan Report - #{{ scan_result.id }}
   Print / Save as PDF
   Close Window
-  PortOjo Security Report
+  Lynceus Security Report
   Network Audit & Open Port Summary
   Scan ID:
   #{{ scan_result.id }}
@@ -246,7 +246,7 @@
   No hosts active or discovered during scan.
   Raw Audit Command & Log
   Executed Command:
-  This security document is generated automatically by PortOjo Network Scanner. Keep this document confidential.
+  This security document is generated automatically by Lynceus Network Scanner. Keep this document confidential.
 === result.html ===
   Scan Result
   Input IP Address
@@ -337,8 +337,8 @@
   Export TXT
 === scan.html ===
   New Network Scan
-  Enter an IP address and subnet mask. PortOjo will calculate the network range automatically.
-  For safety, PortOjo allows scans only on private, loopback, or link-local networks.
+  Enter an IP address and subnet mask. Lynceus will calculate the network range automatically.
+  For safety, Lynceus allows scans only on private, loopback, or link-local networks.
     Select a scan type below to view its specific target size limits and required privileges.
   IP Address
   [ATTR:placeholder] x.x.x.x

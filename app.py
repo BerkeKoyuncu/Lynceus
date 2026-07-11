@@ -150,7 +150,7 @@ def check_honeypot_and_blocking():
                 </table>
                 
                 <div style="background-color: #fff; border-left: 4px solid #e53e3e; padding: 12px; border-radius: 4px; font-size: 13px; color: #742a2a;">
-                    <strong>Status:</strong> {"This IP address has been automatically blocked from accessing the PortOjo system." if auto_block else "IP address has not been blocked. Please check your system status and access logs."}
+                    <strong>Status:</strong> {"This IP address has been automatically blocked from accessing the Lynceus system." if auto_block else "IP address has not been blocked. Please check your system status and access logs."}
                 </div>
             </div>
             """
@@ -279,7 +279,7 @@ def check_and_send_scan_alert(scan_result):
         subject = f"[PORT SCAN SECURITY ALERT] New open ports detected on {scan_result.network_cidr}"
     elif not setting.alert_on_new_ports_only:
         should_send = True
-        subject = f"[PortOjo] Scan Complete: {scan_result.network_cidr}"
+        subject = f"[Lynceus] Scan Complete: {scan_result.network_cidr}"
         
     if not should_send:
         return
@@ -387,7 +387,7 @@ def check_and_send_scan_alert(scan_result):
     body_html = f"""
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 650px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #fbfbf9; color: #2d3748;">
         <div style="text-align: center; margin-bottom: 25px;">
-            <h1 style="color: #4a5d4e; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">PortOjo Security Alerts</h1>
+            <h1 style="color: #4a5d4e; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">Lynceus Security Alerts</h1>
             <p style="color: #718096; margin: 5px 0 0 0; font-size: 14px;">Network Security & Port Tracking Report</p>
         </div>
         
@@ -420,7 +420,7 @@ def check_and_send_scan_alert(scan_result):
         
         <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
             <p style="font-size: 12px; color: #a0aec0; margin: 0;">
-                This email was sent automatically by the PortOjo scanning engine. To change your settings, please visit the settings tab in the application.
+                This email was sent automatically by the Lynceus scanning engine. To change your settings, please visit the settings tab in the application.
             </p>
         </div>
     </div>
@@ -804,7 +804,7 @@ def execute_scan(scan_id, audit_credentials=False):
                             
                             <div style="background-color: #fff; border-left: 4px solid #e53e3e; padding: 12px; border-radius: 4px; font-size: 13px; color: #742a2a; margin-top: 15px;">
                                 <strong>Time:</strong> {local_time_str}<br>
-                                <strong>Status:</strong> Please visit the PortOjo Admin Panel to examine details and manage block actions.
+                                <strong>Status:</strong> Please visit the Lynceus Admin Panel to examine details and manage block actions.
                             </div>
                         </div>
                         """
@@ -1314,7 +1314,7 @@ def print_cli_qr(prov_uri):
 @app.cli.command("create-admin")
 def create_admin():
     """
-    Creates the only admin user for PortOjo or resets their credentials/2FA.
+    Creates the only admin user for Lynceus or resets their credentials/2FA.
     Run with:
         python -m flask --app app create-admin
     """
@@ -1365,7 +1365,7 @@ def create_admin():
         click.echo("==================================================")
         click.echo(f"Admin Email: {existing_admin.email}")
         click.echo(f"Secret Key (Base32): {otp_secret}")
-        prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=existing_admin.email, issuer_name="PortOjo")
+        prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=existing_admin.email, issuer_name="Lynceus")
         click.echo(f"Provisioning URI: {prov_uri}")
         print_cli_qr(prov_uri)
         click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
@@ -1406,7 +1406,7 @@ def create_admin():
     click.echo("2-FACTOR AUTHENTICATION (2FA) ENABLED FOR ADMIN")
     click.echo("==================================================")
     click.echo(f"Secret Key (Base32): {otp_secret}")
-    prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email, issuer_name="PortOjo")
+    prov_uri = pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email, issuer_name="Lynceus")
     click.echo(f"Provisioning URI: {prov_uri}")
     print_cli_qr(prov_uri)
     click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
@@ -1622,9 +1622,144 @@ def dashboard():
         admin_stats["total_assets"] = Asset.query.count()
         admin_stats["honeypot_logs_count"] = HoneypotLog.query.count()
         admin_stats["blocked_ips_count"] = HoneypotBlockedIP.query.count()
+
+    # 5. Calculate Network Risk Score (0-100)
+    risk_score = 0
+    risk_factors = []
+
+    unresolved_anomalies = SecurityAnomaly.query.filter_by(is_resolved=False).all()
+    anomaly_count = len(unresolved_anomalies)
+    if anomaly_count > 0:
+        mac_spoofs = sum(1 for a in unresolved_anomalies if a.anomaly_type == "mac_spoofing")
+        ip_hijacks = sum(1 for a in unresolved_anomalies if a.anomaly_type == "ip_hijack")
+        rogue_devices = sum(1 for a in unresolved_anomalies if a.anomaly_type == "rogue_device")
         
-    # 5. Fetch recent 5 scans
-    recent_scans = ScanResult.query.filter_by(user_id=current_user.id).order_by(ScanResult.created_at.desc()).limit(5).all()
+        score_from_anomalies = (mac_spoofs * 25) + (ip_hijacks * 20) + (rogue_devices * 15)
+        risk_score += score_from_anomalies
+        
+        if mac_spoofs > 0:
+            risk_factors.append({
+                "severity": "high",
+                "message": f"{mac_spoofs} unresolved MAC Spoofing anomaly/anomalies detected."
+            })
+        if ip_hijacks > 0:
+            risk_factors.append({
+                "severity": "high",
+                "message": f"{ip_hijacks} unresolved IP Hijacking anomaly/anomalies detected."
+            })
+        if rogue_devices > 0:
+            risk_factors.append({
+                "severity": "medium",
+                "message": f"{rogue_devices} unauthorized/rogue device(s) active on the network."
+            })
+
+    untrusted_assets_count = Asset.query.filter_by(is_trusted=False).count()
+    if untrusted_assets_count > 0:
+        risk_score += min(untrusted_assets_count * 5, 20)
+        risk_factors.append({
+            "severity": "medium",
+            "message": f"{untrusted_assets_count} devices in inventory are marked as Untrusted."
+        })
+
+    if not honeypot_active:
+        risk_score += 15
+        risk_factors.append({
+            "severity": "low",
+            "message": "Honeypot system is disabled (reduced intrusion detection capability)."
+        })
+
+    if not smtp_configured:
+        risk_score += 10
+        risk_factors.append({
+            "severity": "low",
+            "message": "Email notifications (SMTP) not configured. Security alerts won't be sent."
+        })
+
+    recent_honeypot_hits = HoneypotLog.query.count()
+    if recent_honeypot_hits > 0:
+        hits_score = min(recent_honeypot_hits * 3, 15)
+        risk_score += hits_score
+        risk_factors.append({
+            "severity": "medium",
+            "message": f"{recent_honeypot_hits} intrusion attempts logged on decoy endpoints."
+        })
+
+    risk_score = min(max(risk_score, 0), 100)
+
+    if risk_score >= 70:
+        risk_level = "High"
+        risk_color = "var(--error-text)"
+        risk_bg = "var(--error-bg)"
+    elif risk_score >= 35:
+        risk_level = "Medium"
+        risk_color = "var(--warning-text)"
+        risk_bg = "var(--warning-bg)"
+    else:
+        risk_level = "Low"
+        risk_color = "var(--success-text)"
+        risk_bg = "var(--success-bg)"
+
+    # 6. Calculate Individual Asset Risk Scores
+    assets = Asset.query.all()
+    highest_risk_assets = []
+    
+    anomaly_ips = {a.ip_address: a for a in unresolved_anomalies if a.ip_address}
+    anomaly_macs = {a.mac_address.lower(): a for a in unresolved_anomalies if a.mac_address}
+
+    for asset in assets:
+        asset_score = 0
+        crit = (asset.criticality or "Medium").lower()
+        if crit == "critical":
+            asset_score += 70
+        elif crit == "high":
+            asset_score += 50
+        elif crit == "low":
+            asset_score += 10
+        else:  # Medium
+            asset_score += 30
+            
+        if not asset.is_trusted:
+            asset_score += 25
+            
+        has_anomaly = False
+        if asset.ip_address in anomaly_ips:
+            has_anomaly = True
+        if asset.mac_address and asset.mac_address.lower() in anomaly_macs:
+            has_anomaly = True
+            
+        if has_anomaly:
+            asset_score += 25
+            
+        asset_score = min(asset_score, 100)
+        
+        if asset_score >= 70:
+            asset_level = "Critical" if crit == "critical" else "High"
+            asset_color = "var(--error-text)"
+            asset_bg = "var(--error-bg)"
+        elif asset_score >= 35:
+            asset_level = "Medium"
+            asset_color = "var(--warning-text)"
+            asset_bg = "var(--warning-bg)"
+        else:
+            asset_level = "Low"
+            asset_color = "var(--success-text)"
+            asset_bg = "var(--success-bg)"
+            
+        highest_risk_assets.append({
+            "id": asset.id,
+            "name": asset.name or asset.ip_address,
+            "ip_address": asset.ip_address,
+            "mac_address": asset.mac_address or "N/A",
+            "criticality": asset.criticality or "Medium",
+            "is_trusted": asset.is_trusted,
+            "score": asset_score,
+            "level": asset_level,
+            "color": asset_color,
+            "bg": asset_bg
+        })
+        
+    highest_risk_assets.sort(key=lambda x: x["score"], reverse=True)
+    top_highest_risk_assets = highest_risk_assets[:5]
     
     current_date = format_local_datetime(datetime.now(timezone.utc).replace(tzinfo=None))
     
@@ -1632,7 +1767,12 @@ def dashboard():
         "dashboard.html",
         user_stats=user_stats,
         admin_stats=admin_stats,
-        recent_scans=recent_scans,
+        risk_score=risk_score,
+        risk_level=risk_level,
+        risk_color=risk_color,
+        risk_bg=risk_bg,
+        risk_factors=risk_factors,
+        highest_risk_assets=top_highest_risk_assets,
         honeypot_active=honeypot_active,
         smtp_configured=smtp_configured,
         current_date=current_date,
@@ -1795,7 +1935,7 @@ def login_2fa_setup():
         return redirect(url_for("login"))
 
     prov_uri = pyotp.totp.TOTP(setup_2fa_secret).provisioning_uri(
-        name=user.email, issuer_name="PortOjo"
+        name=user.email, issuer_name="Lynceus"
     )
     
     qr_code_base64 = generate_base64_qr(prov_uri)
@@ -2322,7 +2462,7 @@ def export_result_csv(scan_id):
             ""
         ])
 
-    filename = f"portojo_scan_{scan_result.id}.csv"
+    filename = f"Lynceus_scan_{scan_result.id}.csv"
 
     return Response(
         "\ufeff" + output.getvalue(),
@@ -2371,7 +2511,7 @@ def export_result_json(scan_id):
         "result": parsed_result
     }
 
-    filename = f"portojo_scan_{scan_result.id}.json"
+    filename = f"Lynceus_scan_{scan_result.id}.json"
 
     return Response(
         json.dumps(export_payload, indent=4),
@@ -2405,7 +2545,7 @@ def export_result_txt(scan_id):
 
     lines = []
 
-    lines.append("PortOjo Scan Report")
+    lines.append("Lynceus Scan Report")
     lines.append("=" * 60)
     lines.append("")
     lines.append(f"Scan ID: {scan_result.id}")
@@ -2471,7 +2611,7 @@ def export_result_txt(scan_id):
 
     txt_content = "\n".join(lines)
 
-    filename = f"portojo_scan_{scan_result.id}.txt"
+    filename = f"Lynceus_scan_{scan_result.id}.txt"
 
     return Response(
         txt_content,
@@ -2598,7 +2738,7 @@ def get_cves():
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "PortOjo Vulnerability Scanner"}
+            headers={"User-Agent": "Lynceus Vulnerability Scanner"}
         )
         with urllib.request.urlopen(req, timeout=7) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -2986,12 +3126,12 @@ def test_email():
         "alert_recipient": setting.alert_recipient
     }
 
-    subject = "[PortOjo] Email Notification Test"
+    subject = "[Lynceus] Email Notification Test"
     body_html = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; background-color: #fcfcf9;">
-        <h2 style="color: #4a5d4e; margin-bottom: 10px;">PortOjo Email Test</h2>
+        <h2 style="color: #4a5d4e; margin-bottom: 10px;">Lynceus Email Test</h2>
         <p>Hello,</p>
-        <p>This email is a test notification sent from the PortOjo port scanner application. It confirms that your SMTP settings are working correctly.</p>
+        <p>This email is a test notification sent from the Lynceus port scanner application. It confirms that your SMTP settings are working correctly.</p>
         <hr style="border: 0; border-top: 1px solid #ddd; margin: 20px 0;">
         <p style="font-size: 12px; color: #888;">Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>

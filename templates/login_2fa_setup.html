@@ -4,24 +4,29 @@
 
 <div class="auth-panel" style="max-width: 480px; margin: 40px auto;">
     <div style="text-align: center; margin-bottom: 20px;">
-        <img src="{{ url_for('static', filename='images/logos/portojo-logo.svg') }}" alt="PortOjo Logo"
+        <img src="{{ url_for('static', filename='images/logos/Lynceus-logo-dark-green.svg') }}" class="logo-light-theme" alt="Lynceus Logo"
+            style="height: 120px; max-width: 100%;">
+        <img src="{{ url_for('static', filename='images/logos/Lynceus-logo-beige.svg') }}" class="logo-dark-theme" alt="Lynceus Logo"
             style="height: 120px; max-width: 100%;">
     </div>
     <h2>Set Up 2-Factor Authentication</h2>
-    <p style="text-align: center; color: var(--text-secondary); margin-bottom: 20px; font-size: 14px; line-height: 1.5;">
+    <p
+        style="text-align: center; color: var(--text-secondary); margin-bottom: 20px; font-size: 14px; line-height: 1.5;">
         As an Administrator, you must configure Two-Factor Authentication (2FA) to protect your account.
     </p>
 
     <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;">
         <!-- QR Code -->
-        <div style="background: #ffffff; padding: 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--border); margin-bottom: 12px;">
+        <div
+            style="background: #ffffff; padding: 12px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid var(--border); margin-bottom: 12px;">
             <img src="{{ qr_code_base64 }}" alt="Scan QR Code" style="display: block; width: 180px; height: 180px;">
         </div>
-        
+
         <!-- Secret Key display -->
         <div style="width: 100%; text-align: center; font-size: 13px; color: var(--text-secondary);">
             Can't scan the QR code? Enter this key manually:
-            <div style="margin-top: 6px; padding: 8px 12px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 6px; font-family: monospace; font-size: 15px; font-weight: bold; color: var(--primary-color); letter-spacing: 1px; word-break: break-all; user-select: all;">
+            <div
+                style="margin-top: 6px; padding: 8px 12px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 6px; font-family: monospace; font-size: 15px; font-weight: bold; color: var(--primary-color); letter-spacing: 1px; word-break: break-all; user-select: all;">
                 {{ secret_key }}
             </div>
         </div>
@@ -31,7 +36,9 @@
         <label for="otp_code" style="text-align: center; display: block; margin-bottom: 8px; font-weight: 600;">
             Enter the 6-Digit Verification Code
         </label>
-        <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="123456" pattern="[0-9]*" inputmode="numeric" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color); display: block; margin: 0 auto 15px auto; width: 80%;">
+        <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="123456" pattern="[0-9]*"
+            inputmode="numeric" maxlength="6"
+            style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color); display: block; margin: 0 auto 15px auto; width: 80%;">
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
