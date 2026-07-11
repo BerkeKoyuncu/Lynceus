@@ -9,6 +9,7 @@
 </p>
 
 <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Schedule Name</label>
     <input type="text" name="name" placeholder="e.g. Weekly Subnet Audit" required>
 

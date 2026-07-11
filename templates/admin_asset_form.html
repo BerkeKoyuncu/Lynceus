@@ -9,6 +9,7 @@
 
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 30px; max-width: 700px; box-shadow: var(--shadow);">
     <form method="POST" action="{% if asset %}{{ url_for('admin_edit_asset', asset_id=asset.id) }}{% else %}{{ url_for('admin_new_asset') }}{% endif %}" style="max-width: none; margin-top: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
             <!-- Column 1 -->

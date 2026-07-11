@@ -32,6 +32,7 @@
 </p>
 
 <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>IP Address / Custom Target Range</label>
     <input type="text" name="ip_address" placeholder="e.g. 192.168.1.10, 192.168.1.0/24, or 192.168.1.10-40" required>
 

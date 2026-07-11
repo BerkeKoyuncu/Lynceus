@@ -15,6 +15,7 @@
     </p>
 
     <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="otp_code">Verification Code</label>
         <input type="text" id="otp_code" name="otp_code" required autofocus placeholder="••••••" pattern="[0-9]*"
             inputmode="numeric" maxlength="6"

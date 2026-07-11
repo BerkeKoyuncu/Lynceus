@@ -140,6 +140,27 @@
                             <span>Schedules</span>
                         </a>
                     </li>
+                    <li>
+                        <a href="{{ url_for('findings.list_findings') }}"
+                            class="sidebar-link {% if request.endpoint == 'findings.list_findings' %}active{% endif %}">
+                            <i data-lucide="shield-alert" class="sidebar-icon"></i>
+                            <span>Vulnerabilities</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('rules.list_rules') }}"
+                            class="sidebar-link {% if request.endpoint == 'rules.list_rules' %}active{% endif %}">
+                            <i data-lucide="sliders" class="sidebar-icon"></i>
+                            <span>Security Rules</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{{ url_for('topology.view_topology') }}"
+                            class="sidebar-link {% if request.endpoint == 'topology.view_topology' %}active{% endif %}">
+                            <i data-lucide="network" class="sidebar-icon"></i>
+                            <span>Network Topology</span>
+                        </a>
+                    </li>
                     {% if current_user.is_admin %}
                     <li>
                         <a href="{{ url_for('admin_panel', tab='scans') }}"
@@ -155,6 +176,7 @@
                             <span>Security Anomalies</span>
                         </a>
                     </li>
+                    {% endif %}
                     <li>
                         <a href="{{ url_for('admin_assets') }}"
                             class="sidebar-link {% if request.endpoint in ['admin_assets', 'admin_new_asset', 'admin_edit_asset'] %}active{% endif %}">
@@ -162,14 +184,6 @@
                             <span>Asset Inventory</span>
                         </a>
                     </li>
-                    <li>
-                        <a href="{{ url_for('asset_map') }}"
-                            class="sidebar-link {% if request.endpoint == 'asset_map' %}active{% endif %}">
-                            <i data-lucide="network" class="sidebar-icon"></i>
-                            <span>Asset Map</span>
-                        </a>
-                    </li>
-                    {% endif %}
                 </ul>
             </div>
 

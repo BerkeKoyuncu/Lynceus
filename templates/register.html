@@ -12,6 +12,7 @@
     <h2>Register</h2>
 
     <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>Email</label>
         <input type="email" name="email" required>
 

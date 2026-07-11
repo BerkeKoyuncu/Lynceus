@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .rules-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 25px;
+    }
+    .rules-header h2 {
+        margin: 0;
+        font-family: 'Barlow', sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+    }
+    .rules-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    .rule-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .rule-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .rule-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 12px;
+        margin-bottom: 12px;
+    }
+    .rule-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 0;
+    }
+    .rule-meta {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+        margin-top: 4px;
+    }
+    .rule-body {
+        font-size: 13.5px;
+        line-height: 1.5;
+        margin-bottom: 15px;
+    }
+    .rule-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        align-items: center;
+    }
+    .rule-actions form {
+        display: inline-block;
+        margin: 0;
+        vertical-align: middle;
+    }
+    .rule-actions button, .rule-actions .button {
+        width: 100px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        vertical-align: middle;
+        margin: 0;
+        padding: 0;
+    }
+    .severity-badge {
+        display: inline-block;
+        padding: 3px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        border-radius: 4px;
+        text-transform: uppercase;
+    }
+    .severity-Critical { background: var(--error-bg); color: var(--error-text); }
+    .severity-High { background: var(--error-bg); color: var(--error-text); }
+    .severity-Medium { background: var(--warning-bg); color: var(--warning-text); }
+    .severity-Low { background: var(--success-bg); color: var(--success-text); }
+
+    .rule-form-wrapper {
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        margin-bottom: 30px;
+        display: none;
+    }
+    .rule-form-wrapper.open {
+        display: block;
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    .form-group label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    .form-group select, .form-group input, .form-group textarea {
+        padding: 8px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 13px;
+        outline: none;
+    }
+</style>
+
+<div class="rules-header">
+    <div>
+        <h2>Security Policies & Rules</h2>
+        <p class="text-muted">Configure scan triggers, vulnerability alerts, and network configuration rules.</p>
+    </div>
+    <button class="button" onclick="toggleForm('new-rule-form')">Add New Rule</button>
+</div>
+
+<!-- Add Rule Form -->
+<div class="rule-form-wrapper" id="new-rule-form">
+    <h3>Create Custom Security Rule</h3>
+    <form method="POST" action="{{ url_for('rules.add_rule') }}" style="margin-top: 15px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="name">Rule Name</label>
+                <input type="text" name="name" id="name" placeholder="e.g. Reject SNMP Exposure" required>
+            </div>
+            <div class="form-group">
+                <label for="severity">Alert Severity</label>
+                <select name="severity" id="severity">
+                    <option value="Critical">Critical</option>
+                    <option value="High" selected>High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="scope">Subnet Scope (CIDR or *)</label>
+                <input type="text" name="scope" id="scope" value="*" placeholder="e.g. 192.168.1.0/24">
+            </div>
+        </div>
+
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="port_service_condition">Trigger Condition (port:23 or service:telnet)</label>
+                <input type="text" name="port_service_condition" id="port_service_condition" placeholder="e.g. port:161 or service:snmp" required>
+            </div>
+            <div class="form-group">
+                <label for="asset_criticality_condition">Target Asset Criticality</label>
+                <select name="asset_criticality_condition" id="asset_criticality_condition">
+                    <option value="*">All Assets (*)</option>
+                    <option value="Critical">Critical</option>
+                    <option value="Critical,High">Critical & High</option>
+                    <option value="Medium">Medium</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="exception_list">Exclusions (Comma-separated IPs/MACs)</label>
+                <input type="text" name="exception_list" id="exception_list" placeholder="e.g. 192.168.1.100,00:11:22:33:44:55">
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+            <label for="remediation_text">Remediation Guidance Text</label>
+            <textarea name="remediation_text" id="remediation_text" rows="3" placeholder="Explain how to resolve this security issue..." required></textarea>
+        </div>
+
+        <div class="checkbox-group" style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" name="enabled" id="enabled" value="y" checked style="width: auto; cursor: pointer;">
+            <label for="enabled" style="cursor: pointer; font-size: 13.5px;">Enable this security rule immediately</label>
+        </div>
+
+        <button type="submit" class="button">Create Policy Rule</button>
+        <button type="button" class="button" style="background: none; border: 1px solid var(--border); color: var(--text);" onclick="toggleForm('new-rule-form')">Cancel</button>
+    </form>
+</div>
+
+<!-- Rules Grid -->
+<div class="rules-grid">
+    {% for rule in rules %}
+    <div class="rule-card">
+        <div class="rule-card-header">
+            <div>
+                <h4 class="rule-title">{{ rule.name }}</h4>
+                <div class="rule-meta">
+                    Scope: {{ rule.scope }} | Criticality: {{ rule.asset_criticality_condition }} | Condition: {{ rule.port_service_condition }}
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="severity-badge severity-{{ rule.severity }}">{{ rule.severity }}</span>
+                {% if rule.enabled %}
+                <span class="status-badge status-resolved">Enabled</span>
+                {% else %}
+                <span class="status-badge status-open">Disabled</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="rule-body">
+            <strong>Remediation Note:</strong> {{ rule.remediation_text or 'No remediation details provided.' }}
+            {% if rule.exception_list %}
+            <br><span class="text-muted" style="font-size: 11px;">Exceptions: {{ rule.exception_list }}</span>
+            {% endif %}
+        </div>
+        <div class="rule-actions">
+            <form method="POST" action="{{ url_for('rules.toggle_rule', rule_id=rule.id) }}" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="button">
+                    {{ 'Disable' if rule.enabled else 'Enable' }}
+                </button>
+            </form>
+            <button class="button" onclick="toggleForm('edit-form-{{ rule.id }}')">Edit</button>
+            <form method="POST" action="{{ url_for('rules.delete_rule', rule_id=rule.id) }}" onsubmit="return confirm('Are you sure you want to delete this rule?')" style="display: inline; margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="button danger-button" style="background: #991b1b; color: white;">Delete</button>
+            </form>
+        </div>
+
+        <!-- Edit Form Expansion -->
+        <div class="rule-form-wrapper" id="edit-form-{{ rule.id }}" style="margin-top: 15px; background: var(--surface-soft);">
+            <h3>Edit Security Rule</h3>
+            <form method="POST" action="{{ url_for('rules.edit_rule', rule_id=rule.id) }}" style="margin-top: 15px;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="edit-name-{{ rule.id }}">Rule Name</label>
+                        <input type="text" name="name" id="edit-name-{{ rule.id }}" value="{{ rule.name }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-severity-{{ rule.id }}">Alert Severity</label>
+                        <select name="severity" id="edit-severity-{{ rule.id }}">
+                            <option value="Critical" {% if rule.severity == 'Critical' %}selected{% endif %}>Critical</option>
+                            <option value="High" {% if rule.severity == 'High' %}selected{% endif %}>High</option>
+                            <option value="Medium" {% if rule.severity == 'Medium' %}selected{% endif %}>Medium</option>
+                            <option value="Low" {% if rule.severity == 'Low' %}selected{% endif %}>Low</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-scope-{{ rule.id }}">Subnet Scope (CIDR or *)</label>
+                        <input type="text" name="scope" id="edit-scope-{{ rule.id }}" value="{{ rule.scope }}">
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="edit-cond-{{ rule.id }}">Trigger Condition</label>
+                        <input type="text" name="port_service_condition" id="edit-cond-{{ rule.id }}" value="{{ rule.port_service_condition }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-crit-{{ rule.id }}">Target Asset Criticality</label>
+                        <select name="asset_criticality_condition" id="edit-crit-{{ rule.id }}">
+                            <option value="*" {% if rule.asset_criticality_condition == '*' %}selected{% endif %}>All Assets (*)</option>
+                            <option value="Critical" {% if rule.asset_criticality_condition == 'Critical' %}selected{% endif %}>Critical</option>
+                            <option value="Critical,High" {% if rule.asset_criticality_condition == 'Critical,High' %}selected{% endif %}>Critical & High</option>
+                            <option value="Medium" {% if rule.asset_criticality_condition == 'Medium' %}selected{% endif %}>Medium</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-excl-{{ rule.id }}">Exclusions</label>
+                        <input type="text" name="exception_list" id="edit-excl-{{ rule.id }}" value="{{ rule.exception_list or '' }}">
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label for="edit-rem-{{ rule.id }}">Remediation Guidance Text</label>
+                    <textarea name="remediation_text" id="edit-rem-{{ rule.id }}" rows="3" required>{{ rule.remediation_text }}</textarea>
+                </div>
+
+                <div class="checkbox-group" style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" name="enabled" id="edit-enabled-{{ rule.id }}" value="y" {% if rule.enabled %}checked{% endif %} style="width: auto; cursor: pointer;">
+                    <label for="edit-enabled-{{ rule.id }}" style="cursor: pointer; font-size: 13.5px;">Enable this security rule</label>
+                </div>
+
+                <button type="submit" class="button">Save Policy Rule</button>
+                <button type="button" class="button" style="background: none; border: 1px solid var(--border); color: var(--text);" onclick="toggleForm('edit-form-{{ rule.id }}')">Cancel</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function toggleForm(formId) {
+        const form = document.getElementById(formId);
+        if (form) {
+            form.classList.toggle('open');
+        }
+    }
+</script>
+{% endblock %}

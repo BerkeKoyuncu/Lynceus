@@ -162,6 +162,7 @@
 		<h1><a href="https://wordpress.org/">Powered by WordPress</a></h1>
 
 		<form name="loginform" id="loginform" action="#" method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 			<p>
 				<label for="user_login">Username or Email Address<br />
 					<input type="text" name="log" id="user_login" class="input" value="" size="20" autofocus /></label>

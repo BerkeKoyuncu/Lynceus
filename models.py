@@ -6,67 +6,12 @@ import hashlib
 import os
 from cryptography.fernet import Fernet
 
+from services.encryption_service import encrypt_val, decrypt_val, get_flask_secret_key, get_encryption_secret_key
+
 db = SQLAlchemy()
 
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-def get_fernet_key(secret_string: str) -> bytes:
-    # Hash the secret string using SHA-256 to get exactly 32 bytes
-    key_bytes = hashlib.sha256(secret_string.encode('utf-8')).digest()
-    # Base64 urlsafe encode it as required by Fernet
-    return base64.urlsafe_b64encode(key_bytes)
-
-def get_or_create_local_secret(filename):
-    """
-    Retrieves a persisted secret key from a local file.
-    If the file does not exist, generates a cryptographically secure random key
-    and saves it.
-    """
-    secret_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), filename)
-    if os.path.exists(secret_file):
-        try:
-            with open(secret_file, "r", encoding="utf-8") as f:
-                saved_key = f.read().strip()
-                if saved_key:
-                    return saved_key
-        except Exception:
-            pass
-
-    import secrets
-    new_key = secrets.token_hex(32)
-    try:
-        with open(secret_file, "w", encoding="utf-8") as f:
-            f.write(new_key)
-    except Exception:
-        pass
-    return new_key
-
-def get_flask_secret_key():
-    return os.environ.get("SECRET_KEY") or get_or_create_local_secret(".secret_key_flask")
-
-def get_encryption_secret_key():
-    return os.environ.get("OTP_ENCRYPTION_KEY") or get_or_create_local_secret(".secret_key")
-
-def encrypt_val(val: str) -> str:
-    if not val:
-        return val
-    secret = get_encryption_secret_key()
-    fernet = Fernet(get_fernet_key(secret))
-    return fernet.encrypt(val.encode('utf-8')).decode('utf-8')
-
-def decrypt_val(val: str) -> str:
-    if not val:
-        return val
-    # If the value is a Fernet token (typically starts with gAAAA), decrypt it.
-    if val.startswith("gAAAA"):
-        try:
-            secret = get_encryption_secret_key()
-            fernet = Fernet(get_fernet_key(secret))
-            return fernet.decrypt(val.encode('utf-8')).decode('utf-8')
-        except Exception:
-            return val
-    return val
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -156,7 +101,7 @@ class SystemSetting(db.Model):
     smtp_server = db.Column(db.String(100), default="smtp.gmail.com")
     smtp_port = db.Column(db.Integer, default=587)
     smtp_username = db.Column(db.String(100), nullable=True)
-    smtp_password = db.Column(db.String(100), nullable=True)
+    _smtp_password = db.Column("smtp_password", db.String(255), nullable=True)
     smtp_sender = db.Column(db.String(100), nullable=True)
     alert_recipient = db.Column(db.String(100), nullable=True)
     
@@ -176,6 +121,14 @@ class SystemSetting(db.Model):
     scan_exclude_targets = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, default=utc_now)
+
+    @property
+    def smtp_password(self):
+        return decrypt_val(self._smtp_password)
+
+    @smtp_password.setter
+    def smtp_password(self, value):
+        self._smtp_password = encrypt_val(value)
 
     def __repr__(self):
         return f"<SystemSetting User {self.user_id}>"
@@ -238,6 +191,7 @@ class SecurityAnomaly(db.Model):
     ip_address = db.Column(db.String(45), nullable=False)
     mac_address = db.Column(db.String(45), nullable=True)
     description = db.Column(db.Text, nullable=False)
+    confidence_score = db.Column(db.String(20), default="High", nullable=True)  # 'Low', 'Medium', 'High'
     created_at = db.Column(db.DateTime, default=utc_now)
     is_resolved = db.Column(db.Boolean, default=False)
 
@@ -265,3 +219,66 @@ class Asset(db.Model):
 
     def __repr__(self):
         return f"<Asset {self.name or self.ip_address}>"
+
+
+class SecurityFinding(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey("asset.id", ondelete="CASCADE"), nullable=True)
+    ip_address = db.Column(db.String(45), nullable=False)
+    port = db.Column(db.Integer, nullable=False)
+    service = db.Column(db.String(50), nullable=True)
+    version = db.Column(db.String(50), nullable=True)
+    cve = db.Column(db.String(50), nullable=True)
+    cvss = db.Column(db.Float, nullable=True)
+    severity = db.Column(db.String(20), default="Medium")  # 'Low', 'Medium', 'High', 'Critical'
+    evidence = db.Column(db.Text, nullable=True)
+    first_seen = db.Column(db.DateTime, default=utc_now)
+    last_seen = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    status = db.Column(db.String(20), default="open")  # 'open', 'resolved', 'accepted_risk', 'false_positive'
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    due_date = db.Column(db.DateTime, nullable=True)
+    remediation_note = db.Column(db.Text, nullable=True)
+
+    asset = db.relationship("Asset", backref=db.backref("findings", lazy=True, cascade="all, delete-orphan"))
+    assigned_user = db.relationship("User", backref="assigned_findings", foreign_keys=[assigned_user_id])
+
+    def __repr__(self):
+        return f"<SecurityFinding {self.ip_address}:{self.port} - {self.cve or self.service or 'Issue'}>"
+
+
+class AssetObservation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey("asset.id", ondelete="CASCADE"), nullable=False)
+    scan_id = db.Column(db.Integer, db.ForeignKey("scan_result.id", ondelete="CASCADE"), nullable=False)
+    ip_address = db.Column(db.String(45), nullable=False)
+    mac_address = db.Column(db.String(45), nullable=True)
+    hostname = db.Column(db.String(100), nullable=True)
+    vendor = db.Column(db.String(100), nullable=True)
+    operating_system = db.Column(db.String(100), nullable=True)
+    open_ports_hash = db.Column(db.String(64), nullable=True)
+    observed_at = db.Column(db.DateTime, default=utc_now)
+
+    asset = db.relationship("Asset", backref=db.backref("observations", lazy=True, cascade="all, delete-orphan"))
+    scan = db.relationship("ScanResult", backref=db.backref("observations", lazy=True, cascade="all, delete-orphan"))
+
+    def __repr__(self):
+        return f"<AssetObservation {self.ip_address} - Asset {self.asset_id}>"
+
+
+class SecurityRule(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    severity = db.Column(db.String(20), default="Medium")  # 'Low', 'Medium', 'High', 'Critical'
+    scope = db.Column(db.String(100), default="*")  # Subnet CIDR or '*'
+    port_service_condition = db.Column(db.String(255), nullable=True)  # e.g., 'port:23', 'service:telnet'
+    asset_criticality_condition = db.Column(db.String(50), default="*")  # e.g., 'Critical' or '*'
+    exception_list = db.Column(db.Text, nullable=True)  # comma-separated IPs or MACs
+    remediation_text = db.Column(db.Text, nullable=True)
+    enabled = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=utc_now)
+
+    user = db.relationship("User", backref=db.backref("security_rules", lazy=True, cascade="all, delete-orphan"))
+
+    def __repr__(self):
+        return f"<SecurityRule {self.name} ({self.severity})>"

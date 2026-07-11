@@ -69,7 +69,8 @@
 </div>
 
 <!-- Assets Table Container -->
-<form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;"></form>
+<form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 25px; box-shadow: var(--shadow);">
     {% if assets %}
     <div style="overflow-x: auto;">
@@ -174,6 +175,7 @@
                     <td style="text-align: center; vertical-align: middle;">
                         <div style="display: flex; justify-content: center; gap: 8px; align-items: center;">
                             <form method="POST" action="{{ url_for('admin_toggle_asset_trust', asset_id=asset.id) }}" style="margin: 0; display: inline-flex; vertical-align: middle;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="button" style="height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 !important; background: var(--olive); color: white; border: none; box-sizing: border-box;" title="{% if asset.is_trusted %}Mark Untrusted{% else %}Mark Trusted{% endif %}">
                                     <i data-lucide="{% if asset.is_trusted %}shield-x{% else %}shield-check{% endif %}" style="width: 14px; height: 14px; margin: 0 !important; top: 0 !important;"></i>
                                 </button>
@@ -182,6 +184,7 @@
                                 <i data-lucide="edit" style="width: 14px; height: 14px; margin: 0 !important; top: 0 !important;"></i>
                             </a>
                             <form method="POST" action="{{ url_for('admin_delete_asset', asset_id=asset.id) }}" onsubmit="return confirm('Are you sure you want to delete this asset from inventory?')" style="margin: 0; display: inline-flex; vertical-align: middle;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="button btn-danger" style="height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; margin: 0 !important; border: none; box-sizing: border-box;" title="Delete Asset">
                                     <i data-lucide="trash-2" style="width: 14px; height: 14px; margin: 0 !important; top: 0 !important;"></i>
                                 </button>

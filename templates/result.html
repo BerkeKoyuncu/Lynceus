@@ -14,6 +14,7 @@
     <h2 style="margin: 0;">Scan Result</h2>
     {% if scan_result.status in ["completed", "failed", "cancelled"] %}
     <form method="POST" action="{{ url_for('repeat_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button"
             style="background: var(--olive); color: white; display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; font-weight: 700; font-size: 14px;">
             <i data-lucide="refresh-cw" style="width: 14px; height: 14px; margin-right: 2px;"></i> Repeat Scan
@@ -105,6 +106,7 @@
     style="display: flex; align-items: center; gap: 15px; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
     <p style="margin: 0; font-weight: 500; color: var(--text);">Scan is waiting to start...</p>
     <form method="POST" action="{{ url_for('stop_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button btn-danger"
             style="margin: 0; padding: 8px 16px; font-size: 13px; font-weight: 700;">Stop Scan</button>
     </form>
@@ -115,6 +117,7 @@
     style="display: flex; align-items: center; gap: 15px; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
     <p style="margin: 0; font-weight: 500; color: var(--text);">Scan is in progress, please wait...</p>
     <form method="POST" action="{{ url_for('stop_scan', scan_id=scan_result.id) }}" style="margin: 0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button btn-danger"
             style="margin: 0; padding: 8px 16px; font-size: 13px; font-weight: 700;">Stop Scan</button>
     </form>

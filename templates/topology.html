@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/styles/vis-network.min.css" rel="stylesheet" type="text/css" />
+<style>
+    .topology-container {
+        display: grid;
+        grid-template-columns: 3fr 1fr;
+        gap: 20px;
+        height: calc(100vh - 140px);
+        margin-top: 15px;
+    }
+    .topology-graph-panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    #topology-network {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+    }
+    .topology-detail-panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    .legend-panel {
+        position: absolute;
+        bottom: 15px;
+        left: 15px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 10px;
+        font-size: 11.5px;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+    .detail-section h4 {
+        margin: 0 0 5px 0;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+    }
+    .detail-section p {
+        margin: 0;
+        font-size: 13.5px;
+        word-break: break-all;
+    }
+</style>
+
+<div>
+    <h2 style="margin: 0; font-family: 'Barlow', sans-serif; font-weight: 700; letter-spacing: -0.5px;">Network Topology Map</h2>
+    <p class="text-muted" style="margin: 3px 0 0 0;">Physical trace path routing and active device topology map.</p>
+</div>
+
+<div class="topology-container">
+    <div class="topology-graph-panel">
+        <div class="legend-panel">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #2d3748;"></div>
+                <span>Default Gateway</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4a5d4e;"></div>
+                <span>Network Node / Hop</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #2b6cb0;"></div>
+                <span>Trusted Endpoint</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #dd6b20;"></div>
+                <span>Untrusted Device</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #e53e3e;"></div>
+                <span>Active Anomalies</span>
+            </div>
+        </div>
+        <div id="topology-network"></div>
+    </div>
+    
+    <div class="topology-detail-panel" id="detail-panel">
+        <div style="text-align: center; color: var(--text-muted); margin-top: 50px;">
+            <i data-lucide="network" style="width: 48px; height: 48px; stroke-width: 1.5; margin-bottom: 10px;"></i>
+            <h3>No Node Selected</h3>
+            <p style="font-size: 12.5px;">Click on any network hop or device endpoint node in the graph to display its security details.</p>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        fetch("/api/topology")
+            .then(res => res.json())
+            .then(data => {
+                const nodes = new vis.DataSet(data.nodes);
+                const edges = new vis.DataSet(data.edges);
+                
+                const container = document.getElementById('topology-network');
+                const graphData = { nodes: nodes, edges: edges };
+                const options = {
+                    nodes: {
+                        shape: 'dot',
+                        size: 20,
+                        font: {
+                            size: 12,
+                            color: '#1a202c',
+                            face: 'Inter, sans-serif'
+                        },
+                        borderWidth: 2,
+                        shadow: true
+                    },
+                    edges: {
+                        width: 2,
+                        color: { color: '#cbd5e0', highlight: '#4a5d4e' },
+                        arrows: {
+                            to: { enabled: true, scaleFactor: 0.5 }
+                        },
+                        smooth: {
+                            type: 'cubicBezier',
+                            forceDirection: 'vertical',
+                            roundness: 0.4
+                        }
+                    },
+                    physics: {
+                        barnesHut: {
+                            gravitationalConstant: -3000,
+                            centralGravity: 0.3,
+                            springLength: 95,
+                            springConstant: 0.04
+                        },
+                        stabilization: { iterations: 150 }
+                    }
+                };
+                
+                const network = new vis.Network(container, graphData, options);
+                
+                network.on("selectNode", function(params) {
+                    const selectedId = params.nodes[0];
+                    const node = nodes.get(selectedId);
+                    
+                    const detailsDiv = document.getElementById("detail-panel");
+                    let content = `
+                        <div style="border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 5px;">
+                            <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="cpu" style="width: 20px; height: 20px; color: var(--primary);"></i>
+                                ${node.label}
+                            </h3>
+                            <span class="status-badge" style="background: ${node.color.background}; color: white; margin-top: 5px; display: inline-block;">
+                                ${node.title || 'Network Hop'}
+                            </span>
+                        </div>
+                    `;
+                    
+                    if (node.details) {
+                        content += `
+                            <div class="detail-section">
+                                <h4>IP Address</h4>
+                                <p><strong>${node.details.ip || 'N/A'}</strong></p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>MAC Address</h4>
+                                <p><code>${node.details.mac || 'N/A'}</code></p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>MAC Vendor</h4>
+                                <p>${node.details.vendor || 'Unknown'}</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Device Classification</h4>
+                                <p>${node.details.device_type || 'Unknown'}</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Operating System</h4>
+                                <p>${node.details.operating_system || 'Unknown'}</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Asset Criticality</h4>
+                                <p>${node.details.criticality || 'Medium'}</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Trust Status</h4>
+                                <p>${node.details.is_trusted ? 'Trusted Asset' : 'Untrusted Device'}</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Last Observed</h4>
+                                <p>${node.details.last_seen || 'N/A'}</p>
+                            </div>
+                        `;
+                        
+                        if (node.details.asset_id) {
+                            content += `
+                                <div style="margin-top: 15px;">
+                                    <form method="POST" action="/admin/assets/${node.details.asset_id}/toggle-trust">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="button" style="width: 100%;">
+                                            ${node.details.is_trusted ? 'Mark Untrusted' : 'Mark Trusted'}
+                                        </button>
+                                    </form>
+                                    <a href="/admin/assets/${node.details.asset_id}/edit" class="button" style="display: block; text-align: center; margin-top: 8px; background: none; border: 1px solid var(--border); color: var(--text);">
+                                        Edit Inventory
+                                    </a>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        content += `
+                            <div class="detail-section">
+                                <h4>Type</h4>
+                                <p>Transit Hop Point</p>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Role</h4>
+                                <p>Discovered traceroute network interface node.</p>
+                            </div>
+                        `;
+                    }
+                    
+                    detailsDiv.innerHTML = content;
+                    lucide.createIcons();
+                });
+                
+                network.on("deselectNode", function() {
+                    const detailsDiv = document.getElementById("detail-panel");
+                    detailsDiv.innerHTML = `
+                        <div style="text-align: center; color: var(--text-muted); margin-top: 50px;">
+                            <i data-lucide="network" style="width: 48px; height: 48px; stroke-width: 1.5; margin-bottom: 10px;"></i>
+                            <h3>No Node Selected</h3>
+                            <p style="font-size: 12.5px;">Click on any network hop or device endpoint node in the graph to display its security details.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                });
+            });
+    });
+</script>
+{% endblock %}

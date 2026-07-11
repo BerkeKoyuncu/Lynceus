@@ -995,6 +995,7 @@
                         <i data-lucide="edit"></i> Edit Asset
                     </a>
                     <form action="/admin/assets/${host.asset_id}/toggle-trust" method="POST" style="margin: 0; width: 100%;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="inspector-btn inspector-btn-secondary">
                             <i data-lucide="shield-check"></i> ${host.is_trusted ? 'Mark Untrusted' : 'Mark Trusted'}
                         </button>
@@ -1007,6 +1008,7 @@
                 const primaryAnomaly = host.anomalies[0];
                 actionsHtml += `
                     <form action="/admin/anomalies/${primaryAnomaly.id}/resolve" method="POST" style="margin: 0; width: 100%;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="inspector-btn inspector-btn-secondary" style="border-color: var(--error-text); color: var(--error-text);">
                             <i data-lucide="check-circle-2"></i> Resolve Anomaly
                         </button>

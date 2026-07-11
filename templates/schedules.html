@@ -17,7 +17,8 @@
 
 {% if schedules %}
 
-<form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="display: none;"></form>
+<form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="display: none;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 <table>
     <tr>
         <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-schedules" aria-label="Select all schedules"></th>
@@ -54,11 +55,13 @@
         <td>
             <div style="display: flex; gap: 8px; align-items: center;">
                 <form action="{{ url_for('toggle_schedule', schedule_id=schedule.id) }}" method="POST" style="display:inline; margin:0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="cve-btn" style="margin: 0 !important; padding: 4px 8px; font-size: 11px;">
                         {% if schedule.is_active %}Pause{% else %}Resume{% endif %}
                     </button>
                 </form>
                 <form action="{{ url_for('delete_schedule', schedule_id=schedule.id) }}" method="POST" style="display:inline; margin:0;" onsubmit="return confirm('Are you sure you want to delete this schedule?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="cve-btn" style="margin: 0 !important; padding: 4px 8px; font-size: 11px; background: var(--error-bg); color: var(--error-text);">
                         Delete
                     </button>

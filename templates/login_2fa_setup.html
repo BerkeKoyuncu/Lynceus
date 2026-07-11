@@ -33,6 +33,7 @@
     </div>
 
     <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="otp_code" style="text-align: center; display: block; margin-bottom: 8px; font-weight: 600;">
             Enter the 6-Digit Verification Code
         </label>
