@@ -456,16 +456,69 @@ def validate_rule_conditions(port_service_condition, scope, severity, criticalit
     return True, None
 
 
-def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_id):
+def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_id, 
+                                scan_type, requested_ports, audit_credentials=False, 
+                                credential_ids=None, current_open_ports=None):
     """
     After a scan, marks findings that were not observed in this scan as 'not_observed'.
     Only does this if the host was seen online (status='up') during the scan.
-    Findings with status false_positive or accepted_risk are never touched.
     """
     if not host_online:
-        return  # Host offline — don't auto-close findings
+        return
 
-    protected_statuses = {"false_positive", "accepted_risk", "not_observed", "resolved"}
+    if current_open_ports is None:
+        current_open_ports = []
+
+    # Helper to check if a port was scanned
+    def is_port_scanned(port):
+        if scan_type == "ping_sweep":
+            return False
+
+        if requested_ports and requested_ports.strip():
+            tokens = [t.strip().lower() for t in requested_ports.split(",") if t.strip()]
+            for token in tokens:
+                if token.startswith("t:") or token.startswith("u:"):
+                    token = token[2:]
+                if "-" in token:
+                    try:
+                        start, end = token.split("-")
+                        if int(start) <= port <= int(end):
+                            return True
+                    except ValueError:
+                        continue
+                else:
+                    try:
+                        if int(token) == port:
+                            return True
+                    except ValueError:
+                        continue
+            return False
+        else:
+            # Default Nmap scan behavior
+            NMAP_TOP_100 = {
+                7, 9, 13, 21, 22, 23, 25, 37, 53, 79, 80, 81, 88, 110, 111, 113, 119, 123, 
+                135, 139, 143, 179, 199, 389, 443, 444, 445, 465, 513, 514, 515, 540, 554, 
+                587, 631, 646, 873, 990, 993, 995, 1025, 1026, 1027, 1028, 1029, 1110, 
+                1433, 1720, 1723, 1755, 1900, 2000, 2049, 2121, 2717, 3000, 3128, 3306, 
+                3389, 3986, 4899, 5000, 5009, 5051, 5060, 5101, 5190, 5357, 5432, 5631, 
+                5666, 5800, 5900, 6000, 6001, 6667, 8000, 8008, 8080, 8081, 8443, 8888, 
+                9100, 9999, 32768, 49152, 49153, 49154, 49155, 49156, 49157
+            }
+            if scan_type in ["fast", "quick"]:
+                return port in NMAP_TOP_100
+            elif scan_type == "udp":
+                common_udp = {
+                    53, 67, 68, 69, 123, 135, 137, 138, 139, 161, 162, 445, 500, 514, 
+                    520, 631, 1434, 1900, 4500, 5353, 5355
+                }
+                return port in common_udp or port < 1024
+            else:
+                common_high_tcp = {
+                    1433, 1521, 2049, 3000, 3128, 3306, 3389, 4899, 5000, 5432, 
+                    5666, 5900, 6379, 8000, 8080, 8081, 8443, 8888, 9000, 9092, 9100
+                }
+                return port < 1024 or port in common_high_tcp
+
     active_findings = SecurityFinding.query.filter(
         SecurityFinding.asset_id == asset.id,
         SecurityFinding.status.in_(["open", "needs_review"])
@@ -473,7 +526,32 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
 
     for finding in active_findings:
         if finding.fingerprint and finding.fingerprint not in observed_fingerprints:
-            finding.status = "not_observed"
+            # If the port wasn't even scanned, we can't assume anything about it!
+            if not is_port_scanned(finding.port):
+                continue
+
+            # If the port is now closed, we definitely reconcile it
+            if finding.port not in current_open_ports:
+                finding.status = "not_observed"
+                continue
+
+            # Port is still open, check based on source type
+            if finding.source_type == "cve":
+                # Only reconcile if version detection ran in this scan
+                if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
+                    finding.status = "not_observed"
+            elif finding.source_type == "credential_audit":
+                # Only reconcile if credential audit was active and applicable to this service/port
+                svc_lower = (finding.service or "").lower()
+                is_audited_service = (
+                    finding.port in [21, 6379, 80, 8080, 443, 8443] or
+                    "ftp" in svc_lower or "redis" in svc_lower or "http" in svc_lower
+                )
+                if (audit_credentials or credential_ids) and is_audited_service:
+                    finding.status = "not_observed"
+            else:
+                # Other types (rules, etc.) on open ports can be reconciled because rule matching ran
+                finding.status = "not_observed"
 
     db.session.commit()
 

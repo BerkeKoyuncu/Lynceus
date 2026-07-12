@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
-from datetime import datetime, timezone
+from datetime import datetime
 
 from models import db, SecurityFinding, User
 from routes.admin import admin_required
@@ -54,12 +54,12 @@ def update_finding(finding_id):
     remediation_note = request.form.get("remediation_note")
     acceptance_expiry_raw = request.form.get("acceptance_expiry", "").strip()
 
-    # not_observed is system-managed — not allowed as a manual status
-    valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]
-    if status not in valid_statuses:
-        flash("Invalid status selected.", "error")
-        return redirect(url_for("findings.list_findings", status=finding.status))
-    finding.status = status
+    if status is not None:
+        valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]
+        if status not in valid_statuses:
+            flash("Invalid status selected.", "error")
+            return redirect(url_for("findings.list_findings", status=finding.status))
+        finding.status = status
 
     # Validate assigned user exists
     if assigned_user_id:
@@ -90,7 +90,7 @@ def update_finding(finding_id):
         finding.remediation_note = remediation_note.strip()
 
     # Handle acceptance_expiry — only meaningful when status is accepted_risk
-    if status == "accepted_risk":
+    if finding.status == "accepted_risk":
         if acceptance_expiry_raw:
             try:
                 finding.acceptance_expiry = datetime.strptime(acceptance_expiry_raw, "%Y-%m-%d")

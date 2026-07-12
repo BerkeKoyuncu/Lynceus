@@ -63,15 +63,17 @@ def evaluate_host_anomalies(host, scan_id):
     hostname = host.get("hostname")
     ports = host.get("ports", [])
     
-    # 1. Look for existing asset
-    asset_match = None
-    if mac:
-        asset_match = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
-    if not asset_match:
-        asset_match = Asset.query.filter_by(ip_address=ip).first()
+    # Check if a new rogue device was identified in Pass 1 (fallback for direct/test calls)
+    is_new_rogue = host.get("is_new_rogue")
+    if is_new_rogue is None:
+        asset_check = None
+        if mac:
+            asset_check = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
+        if not asset_check:
+            asset_check = Asset.query.filter_by(ip_address=ip).first()
+        is_new_rogue = (asset_check is None)
 
-    # If no asset match exists, it is a completely new device (Rogue Device)
-    if not asset_match:
+    if is_new_rogue:
         desc = f"New unknown device detected on the network: IP {ip}, MAC {mac or 'N/A'} ({vendor or 'Unknown'})."
         if not _anomaly_exists("rogue_device", ip, mac):
             anomaly = SecurityAnomaly(
@@ -89,6 +91,16 @@ def evaluate_host_anomalies(host, scan_id):
             "confidence_score": "Medium"
         }
 
+    # 1. Look for existing asset
+    asset_match = None
+    if mac:
+        asset_match = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
+    if not asset_match:
+        asset_match = Asset.query.filter_by(ip_address=ip).first()
+
+    if not asset_match:
+        return None
+
     # Evaluate anomalies FIRST before saving the current observation
     anomaly_result = None
 
@@ -97,10 +109,11 @@ def evaluate_host_anomalies(host, scan_id):
         old_mac = asset_match.mac_address.lower()
         
         # Query observation history: has the new MAC been seen on this IP before?
+        # Note: We filter out observations from the current scan session to compare against history!
         past_matching_observations = AssetObservation.query.filter_by(
             ip_address=ip,
             mac_address=mac
-        ).count()
+        ).filter(AssetObservation.scan_id != scan_id).count()
         
         # Check if the old MAC is still active on another IP in the current scan session
         # We check if there's an observation for the old MAC in this scan_id
@@ -109,11 +122,12 @@ def evaluate_host_anomalies(host, scan_id):
             mac_address=old_mac
         ).filter(AssetObservation.ip_address != ip).first()
 
-        # Check for rapid randomization/flapping in the last 48 hours
+        # Check for rapid randomization/flapping in the last 48 hours (excluding current scan)
         two_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=2)
         unique_macs_on_ip = db.session.query(AssetObservation.mac_address).filter(
             AssetObservation.ip_address == ip,
-            AssetObservation.observed_at >= two_days_ago
+            AssetObservation.observed_at >= two_days_ago,
+            AssetObservation.scan_id != scan_id
         ).distinct().count()
 
         confidence = "High"
@@ -196,17 +210,5 @@ def evaluate_host_anomalies(host, scan_id):
             "description": desc,
             "confidence_score": confidence
         }
-        
-    # Record observation history at the very end
-    record_observation(
-        asset_id=asset_match.id,
-        scan_id=scan_id,
-        ip_address=ip,
-        mac_address=mac,
-        hostname=hostname,
-        vendor=vendor,
-        operating_system=host.get("operating_system"),
-        open_ports=ports
-    )
         
     return anomaly_result

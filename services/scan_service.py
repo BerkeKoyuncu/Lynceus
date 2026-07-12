@@ -12,7 +12,7 @@ from flask import current_app
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, Asset, ScanCredential, SecurityFinding, SecurityAnomaly
 from scanner import run_nmap_scan
-from services.anomaly_service import evaluate_host_anomalies
+from services.anomaly_service import evaluate_host_anomalies, record_observation
 from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules, reconcile_findings_for_scan
 from services.email_service import send_notification_email_async
 
@@ -96,15 +96,17 @@ def is_version_affected(user_ver, match_obj, api_product):
             
     return True
 
-def fetch_cves_for_query(query, cpe_list=None):
+def fetch_cves_for_query(product, version=None, cpe_list=None):
     """
-    Queries the CIRCL CVE API for a service query and returns up to 15 CVE details.
-    Uses CPE list to extract accurate vendor/product fields if available.
+    Queries the CIRCL CVE API for a service and version, using CPE list to extract accurate vendor/product fields if available.
     """
-    if not query or query == "-":
+    if not product or product == "-":
         return []
+        
+    version_clean = version.strip() if version else ""
+    product_clean = product.lower().strip()
     
-    cache_key = (query.lower(), tuple(cpe_list) if cpe_list else ())
+    cache_key = (product_clean, version_clean, tuple(cpe_list) if cpe_list else ())
     if cache_key in CVE_CACHE:
         return CVE_CACHE[cache_key]
 
@@ -131,31 +133,15 @@ def fetch_cves_for_query(query, cpe_list=None):
                     cpe_version = parts[4] if len(parts) > 4 else None
                     break
 
-    version = ""
+    # Prioritize CPE version if available and valid
+    if cpe_version and cpe_version not in ["*", "-"]:
+        target_version = cpe_version
+    else:
+        target_version = version_clean
+
     if cpe_vendor and cpe_product:
         vendor, api_product = cpe_vendor, cpe_product
-        parts = query.split()
-        if len(parts) > 1:
-            version = " ".join(parts[1:])
-        if not version and cpe_version and cpe_version not in ["*", "-"]:
-            version = cpe_version
     else:
-        parts = query.split()
-        if len(parts) == 0:
-            return []
-        elif len(parts) == 1:
-            product = parts[0]
-            version = ""
-        else:
-            two_word_prod = f"{parts[0]} {parts[1]}".lower()
-            if two_word_prod in ["apache httpd", "microsoft iis", "vsftpd project", "werkzeug httpd"]:
-                product = two_word_prod
-                version = " ".join(parts[2:])
-            else:
-                product = parts[0]
-                version = " ".join(parts[1:])
-
-        product_clean = product.lower().strip()
         vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
 
     cpe_success = False
@@ -178,35 +164,18 @@ def fetch_cves_for_query(query, cpe_list=None):
 
     # Fallback to string query parsing if CPE-based search failed/empty and we initially used CPE
     if not cpe_success and cpe_list:
-        parts = query.split()
-        if len(parts) > 0:
-            if len(parts) == 1:
-                product = parts[0]
-                version = ""
-            else:
-                two_word_prod = f"{parts[0]} {parts[1]}".lower()
-                if two_word_prod in ["apache httpd", "microsoft iis", "vsftpd project", "werkzeug httpd"]:
-                    product = two_word_prod
-                    version = " ".join(parts[2:])
-                else:
-                    product = parts[0]
-                    version = " ".join(parts[1:])
-
-            product_clean = product.lower().strip()
-            vendor_fb, api_product_fb = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
-            if vendor_fb != vendor or api_product_fb != api_product:
-                vendor, api_product = vendor_fb, api_product_fb
-                url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
-                try:
-                    req = urllib.request.Request(
-                        url,
-                        headers={"User-Agent": "Lynceus Vulnerability Scanner"}
-                    )
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        data = json.loads(response.read().decode("utf-8"))
-                    all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
-                except Exception:
-                    pass
+        vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
+        url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Lynceus Vulnerability Scanner"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
+        except Exception:
+            pass
 
     try:
         seen_cves = set()
@@ -243,7 +212,7 @@ def fetch_cves_for_query(query, cpe_list=None):
             # Check if version is affected
             is_affected = True
             is_definite = False
-            if version:
+            if target_version:
                 is_affected = False
                 cpe_nodes = cve_record.get("containers", {}).get("cna", {}).get("cpeApplicability", [])
                 cpe_found = False
@@ -254,7 +223,7 @@ def fetch_cves_for_query(query, cpe_list=None):
                             cpe_uri = match.get("criteria", "")
                             if api_product in cpe_uri.lower():
                                 cpe_found = True
-                                if is_version_affected(version, match, api_product):
+                                if is_version_affected(target_version, match, api_product):
                                     is_affected = True
                                     break
                         if is_affected:
@@ -432,10 +401,13 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
             resp = urllib.request.urlopen(req, timeout=2)
             if resp.code == 200:
                 return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
                 continue
-            return {"status": "vulnerable", "message": f"Weak credentials (potential match): {username}:{password}"}
+            return {
+                "status": "skipped",
+                "message": f"Credential verification returned HTTP status {error.code}.",
+            }
         except Exception:
             continue
     return {"status": "safe", "message": "Authentication required, but common passwords failed"}
@@ -732,7 +704,6 @@ def execute_scan(app, scan_id, audit_credentials=False):
         seed_default_rules(rule_owner_id)
 
         # Retrieve global exclusions from the admin settings
-        admin_user = User.query.filter_by(is_admin=True).first()
         admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
         
         global_excludes = ""
@@ -781,6 +752,9 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 pass
 
         if nmap_result["success"]:
+            # Pass 1: Match/create assets and save observations for all scanned hosts.
+            # This ensures all host observation records are in the database before Pass 2
+            # evaluates anomalies (such as MAC spoofing checks).
             for host in hosts:
                 ip = host.get("address")
                 mac = host.get("mac_address")
@@ -794,26 +768,9 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 if not asset_match:
                     asset_match = Asset.query.filter_by(ip_address=ip).first()
 
-                # Perform Anomaly checks (comparative history evaluation)
-                anomaly_res = evaluate_host_anomalies(host, scan_result.id)
-                if anomaly_res:
-                    host["mac_anomaly"] = anomaly_res
-
-                if asset_match:
-                    asset_match.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
-                    if asset_match.ip_address != ip:
-                        asset_match.ip_address = ip
-                    if mac and not asset_match.mac_address:
-                        asset_match.mac_address = mac.strip().lower()
-                    if vendor and not asset_match.mac_vendor:
-                        asset_match.mac_vendor = vendor
-                    if hostname and (not asset_match.name or asset_match.name.startswith("Device ")):
-                        asset_match.name = hostname
-                    if asset_match.device_type == "Unknown" or not asset_match.device_type:
-                        asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
-                else:
-                    # Create as Untrusted Asset
-                    new_asset = Asset(
+                if not asset_match:
+                    # Create as Untrusted Asset immediately so it has an ID
+                    asset_match = Asset(
                         name=hostname or f"Device {ip}",
                         ip_address=ip,
                         mac_address=mac.strip().lower() if mac else None,
@@ -825,8 +782,43 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         notes=f"Automatically registered during network scan. Vendor: {vendor or 'Unknown'}",
                         is_trusted=False
                     )
-                    db.session.add(new_asset)
+                    db.session.add(asset_match)
                     db.session.commit()
+                    host["is_new_rogue"] = True
+                else:
+                    host["is_new_rogue"] = False
+                    # Update fields that we need for mapping/identification
+                    asset_match.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+                    if asset_match.ip_address != ip:
+                        asset_match.ip_address = ip
+                    if mac and not asset_match.mac_address:
+                        asset_match.mac_address = mac.strip().lower()
+                    if vendor and not asset_match.mac_vendor:
+                        asset_match.mac_vendor = vendor
+                    if hostname and (not asset_match.name or asset_match.name.startswith("Device ")):
+                        asset_match.name = hostname
+                    if asset_match.device_type == "Unknown" or not asset_match.device_type:
+                        asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
+                    db.session.commit()
+
+                # Save current scan snapshot observation
+                record_observation(
+                    asset_id=asset_match.id,
+                    scan_id=scan_result.id,
+                    ip_address=ip,
+                    mac_address=mac,
+                    hostname=hostname,
+                    vendor=vendor,
+                    operating_system=host.get("operating_system"),
+                    open_ports=host.get("ports", [])
+                )
+
+            # Pass 2: Evaluate security anomalies.
+            # Observations for all hosts in the current scan exist, making evaluation sequence-independent.
+            for host in hosts:
+                anomaly_res = evaluate_host_anomalies(host, scan_result.id)
+                if anomaly_res:
+                    host["mac_anomaly"] = anomaly_res
 
             db.session.commit()
 
@@ -964,8 +956,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     lookup_key = product.lower().strip() if product else service.lower().strip()
 
                     if lookup_key and lookup_key != "-":
-                        query = f"{lookup_key} {raw_version}".strip()
-                        cves = fetch_cves_for_query(query, cpe_list=cpe_list)
+                        cves = fetch_cves_for_query(lookup_key, version=raw_version, cpe_list=cpe_list)
                         if cves:
                             evaluate_cve_findings(
                                 asset=asset,
@@ -991,7 +982,18 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 if asset:
                     host_online = ip in online_ips or host.get("status") == "up"
-                    reconcile_findings_for_scan(asset, host_online, scan_fps, scan_result.id)
+                    current_open_ports = [int(p.get("port") or 0) for p in host.get("ports", [])]
+                    reconcile_findings_for_scan(
+                        asset=asset,
+                        host_online=host_online,
+                        observed_fingerprints=scan_fps,
+                        scan_id=scan_result.id,
+                        scan_type=scan_result.scan_type,
+                        requested_ports=scan_result.ports,
+                        audit_credentials=scan_result.audit_credentials,
+                        credential_ids=scan_result.credential_ids,
+                        current_open_ports=current_open_ports
+                    )
 
         result_payload = {
             "command": nmap_result.get("command", "N/A"),
