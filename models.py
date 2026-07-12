@@ -53,6 +53,10 @@ class ScanResult(db.Model):
     scheduler_claim_token = db.Column(db.String(36), nullable=True)
     scheduler_started_at = db.Column(db.DateTime, nullable=True)
     scheduler_heartbeat_at = db.Column(db.DateTime, nullable=True)
+    scheduler_progress_at = db.Column(db.DateTime, nullable=True)
+    scheduler_worker_id = db.Column(db.String(36), nullable=True)
+    scheduler_worker_host = db.Column(db.String(255), nullable=True)
+    scheduler_process_id = db.Column(db.Integer, nullable=True)
     scheduler_attempt_count = db.Column(db.Integer, nullable=False, default=0)
     scheduler_max_attempts = db.Column(db.Integer, nullable=False, default=3)
 

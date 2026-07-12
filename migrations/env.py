@@ -127,6 +127,12 @@ def _repair_pre_c7_blocked_ip_drift(connection):
         target_revision = context.get_revision_argument()
     except (KeyError, CommandError):
         return
+    if isinstance(target_revision, (tuple, list)):
+        if len(target_revision) != 1:
+            return
+        target_revision = target_revision[0]
+    if target_revision == SAFE_DOWNGRADE_FLOOR:
+        return
     script = ScriptDirectory.from_config(config)
     if not _is_ancestor(script, SAFE_DOWNGRADE_FLOOR, target_revision):
         return

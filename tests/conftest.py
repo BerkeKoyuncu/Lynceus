@@ -1,6 +1,6 @@
 import pytest
 from app import create_app
-from models import db, User, SystemSetting
+from models import db, ScanDispatchLock, User, SystemSetting
 
 @pytest.fixture
 def app():
@@ -14,6 +14,7 @@ def app():
     
     with app.app_context():
         db.create_all()
+        db.session.add(ScanDispatchLock(id=1))
         # Seed test admin and user
         admin = User(
             email="admin@test.com",

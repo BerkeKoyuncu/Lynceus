@@ -8,7 +8,11 @@ from app import (
     create_app,
 )
 from models import db, ScanDispatchLock, ScanResult, ScanSchedule, User
-from services.scan_service import scheduler_claim_is_current
+from services.scan_service import (
+    _execute_scan_body,
+    scheduler_claim_is_current,
+    scheduler_progress_checkpoint,
+)
 
 
 def test_due_schedule_can_only_be_claimed_once(app):
@@ -253,15 +257,21 @@ def test_scheduler_backlog_respects_concurrency_capacity_and_order(app, monkeypa
 
 def test_expired_running_lease_is_requeued_with_new_worker_token(app, monkeypatch):
     started = []
+    events = []
 
     class FakeThread:
         def __init__(self, target, args, daemon):
             self.args = args
 
         def start(self):
+            events.append("retry-started")
             started.append(self.args)
 
     monkeypatch.setattr("app.threading.Thread", FakeThread)
+    monkeypatch.setattr(
+        "scanner.stop_scan_process",
+        lambda scan_id: events.append(("old-process-stopped", scan_id)) or True,
+    )
     app.config["MAX_CONCURRENT_SCANS"] = 1
     app.config["SCHEDULER_LEASE_SECONDS"] = 30
     with app.app_context():
@@ -308,6 +318,56 @@ def test_expired_running_lease_is_requeued_with_new_worker_token(app, monkeypatc
         assert job.scheduler_attempt_count == 2
         assert started[0][1] == job.id
         assert started[0][3] == job.scheduler_claim_token
+        assert events == [("old-process-stopped", job.id), "retry-started"]
+
+
+def test_fresh_heartbeat_cannot_hide_scan_runtime_deadline(app, monkeypatch):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stopped = []
+    monkeypatch.setattr("scanner.stop_scan_process", lambda scan_id: stopped.append(scan_id) or True)
+    monkeypatch.setattr(
+        "app.threading.Thread",
+        type(
+            "FakeThread",
+            (),
+            {
+                "__init__": lambda self, target, args, daemon: setattr(self, "args", args),
+                "start": lambda self: None,
+            },
+        ),
+    )
+    app.config.update({
+        "MAX_CONCURRENT_SCANS": 1,
+        "SCHEDULER_LEASE_SECONDS": 30,
+        "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 300,
+        "MAX_SCAN_RUNTIME_SECONDS": 600,
+    })
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.60",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.60/32",
+            status="running",
+            scheduled_for=now - timedelta(hours=1),
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="over-runtime",
+            scheduler_claimed_at=now - timedelta(hours=1),
+            scheduler_started_at=now - timedelta(seconds=601),
+            scheduler_heartbeat_at=now,
+            scheduler_progress_at=now,
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == [job.id]
+        assert stopped == [job.id]
+        db.session.refresh(job)
+        assert job.scheduler_claim_token != "over-runtime"
 
 
 def test_heartbeat_interval_must_be_safely_below_lease():
@@ -330,6 +390,23 @@ def test_invalid_scheduler_config_has_clear_error():
             "TESTING": True,
             "START_SCHEDULER": False,
             "MAX_CONCURRENT_SCANS": "many",
+        })
+
+
+def test_progress_timeout_and_runtime_config_are_ordered():
+    import pytest
+
+    with pytest.raises(RuntimeError, match="PROGRESS_TIMEOUT_SECONDS"):
+        create_app({
+            "TESTING": True,
+            "SCHEDULER_LEASE_SECONDS": 120,
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 60,
+        })
+    with pytest.raises(RuntimeError, match="MAX_SCAN_RUNTIME_SECONDS"):
+        create_app({
+            "TESTING": True,
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 900,
+            "MAX_SCAN_RUNTIME_SECONDS": 600,
         })
 
 
@@ -462,3 +539,115 @@ def test_old_worker_loses_write_fence_after_claim_token_changes(app):
 
         assert scheduler_claim_is_current(job.id, "old-token") is False
         assert scheduler_claim_is_current(job.id, "new-token") is True
+
+
+def test_progress_checkpoint_fences_later_host_work(app, monkeypatch):
+    observations = []
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.70",
+            subnet_mask="31",
+            scan_type="fast",
+            network_cidr="192.0.2.70/31",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="first-token",
+            scheduler_started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+        monkeypatch.setattr("services.scan_service.seed_default_rules", lambda owner_id: None)
+        monkeypatch.setattr(
+            "services.scan_service.run_nmap_scan",
+            lambda **kwargs: {
+                "success": True,
+                "command": "nmap test",
+                "output": "",
+                "scanned_endpoints": [],
+                "hosts": [
+                    {"address": "192.0.2.70", "ports": [], "status": "up"},
+                    {"address": "192.0.2.71", "ports": [], "status": "up"},
+                ],
+            },
+        )
+
+        def record_once(**kwargs):
+            observations.append(kwargs["ip_address"])
+            ScanResult.query.filter_by(id=job_id).update(
+                {ScanResult.scheduler_claim_token: "replacement-token"},
+                synchronize_session=False,
+            )
+            db.session.commit()
+
+        monkeypatch.setattr("services.scan_service.record_observation", record_once)
+        _execute_scan_body(
+            app,
+            job_id,
+            scheduler_claim_token="first-token",
+            already_started=True,
+        )
+
+        assert observations == ["192.0.2.70"]
+        assert scheduler_progress_checkpoint(job_id, "first-token") is False
+
+
+def test_missing_dispatch_lock_is_a_schema_error(app):
+    import pytest
+
+    with app.app_context():
+        db.session.delete(db.session.get(ScanDispatchLock, 1))
+        db.session.commit()
+        with pytest.raises(RuntimeError, match="scan_dispatch_lock row 1 is missing"):
+            _dispatch_pending_scheduled_scans(app)
+
+
+def test_flask_run_starts_dispatcher_but_not_schedule_creator(monkeypatch):
+    import app as app_module
+
+    started = []
+    monkeypatch.setenv("FLASK_RUN_FROM_CLI", "true")
+    monkeypatch.delenv("FLASK_DEBUG", raising=False)
+    monkeypatch.delenv("WERKZEUG_RUN_MAIN", raising=False)
+    monkeypatch.setattr(app_module, "start_scheduler", lambda flask_app: started.append("scheduler"))
+    monkeypatch.setattr(app_module, "start_scan_dispatcher", lambda flask_app: started.append("dispatcher"))
+
+    create_app({
+        "TESTING": False,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "START_SCHEDULER": True,
+        "SEED_DEMO_DATA": False,
+    })
+
+    assert started == ["dispatcher"]
+
+
+def test_manual_scan_post_only_queues_even_if_dispatch_lock_is_missing(app, client):
+    with app.app_context():
+        user = User.query.first()
+        user_id = user.id
+        db.session.delete(db.session.get(ScanDispatchLock, 1))
+        db.session.commit()
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+
+    response = client.post(
+        "/scan",
+        data={
+            "ip_address": "192.0.2.80",
+            "subnet_mask": "32",
+            "scan_type": "fast",
+            "timing_template": "4",
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        job = ScanResult.query.filter_by(input_ip="192.0.2.80").one()
+        assert job.status == "pending"
+        assert job.scheduler_dispatch_state == "queued"

@@ -59,11 +59,20 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         scan_indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(scan_result)").fetchall()
         }
+        scan_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(scan_result)").fetchall()
+        }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "f2c7a4b9d105"
+        assert revision == "a8d4f1c6b902"
         assert "ix_scan_result_scheduler_queue" in scan_indexes
         assert "ix_scan_result_scheduled_for" in scan_indexes
+        assert {
+            "scheduler_progress_at",
+            "scheduler_worker_id",
+            "scheduler_worker_host",
+            "scheduler_process_id",
+        }.issubset(scan_columns)
     finally:
         _cleanup_database(fd, path)
 
@@ -152,7 +161,51 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         connection.close()
         assert rows == [(20, "198.51.100.20", "first")]
-        assert revision == "f2c7a4b9d105"
+        assert revision == "a8d4f1c6b902"
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_upgrade_to_same_b5_revision_does_not_mutate_drifted_data():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade(revision="b5a93e3d9370")
+
+        connection = sqlite3.connect(path)
+        connection.execute("DROP TABLE honeypot_blocked_ip")
+        connection.execute(
+            "CREATE TABLE honeypot_blocked_ip ("
+            "id INTEGER PRIMARY KEY, ip_address VARCHAR(45), "
+            "reason VARCHAR(255), created_at DATETIME)"
+        )
+        connection.execute(
+            "INSERT INTO honeypot_blocked_ip VALUES "
+            "(30, '203.0.113.30', 'first', '2026-07-12 10:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO honeypot_blocked_ip VALUES "
+            "(31, '203.0.113.30', 'duplicate', '2026-07-12 11:00:00')"
+        )
+        connection.commit()
+        connection.close()
+
+        with app.app_context():
+            upgrade(revision="b5a93e3d9370")
+
+        connection = sqlite3.connect(path)
+        rows = connection.execute(
+            "SELECT id, ip_address, reason FROM honeypot_blocked_ip ORDER BY id"
+        ).fetchall()
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
+        connection.close()
+        assert rows == [
+            (30, "203.0.113.30", "first"),
+            (31, "203.0.113.30", "duplicate"),
+        ]
+        assert revision == "b5a93e3d9370"
     finally:
         _cleanup_database(fd, path)
 

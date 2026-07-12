@@ -232,10 +232,6 @@ def scan():
         db.session.add(scan_result)
         db.session.commit()
 
-        app = current_app._get_current_object()
-        from app import _dispatch_pending_scheduled_scans
-        _dispatch_pending_scheduled_scans(app)
-
         return redirect(url_for("scan.result", scan_id=scan_result.id))
 
     admin_user = User.query.filter_by(is_admin=True).first()
@@ -327,11 +323,7 @@ def repeat_scan(scan_id):
     db.session.add(scan_result)
     db.session.commit()
     
-    app = current_app._get_current_object()
-    from app import _dispatch_pending_scheduled_scans
-    _dispatch_pending_scheduled_scans(app)
-    
-    flash("Repeated scan initiated.", "success")
+    flash("Repeated scan queued.", "success")
     return redirect(url_for("scan.result", scan_id=scan_result.id))
 
 @scan_bp.route("/history")

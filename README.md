@@ -313,14 +313,26 @@ are dispatched oldest-first only when capacity is available. Claims use unique
 tokens, workers refresh a heartbeat lease, and an interrupted scheduled scan is
 retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). This is process-crash
 recovery, not host-level Nmap resume: a retried attempt starts its scan again.
+Before a local expired attempt is retried, all Nmap subprocesses registered for
+that scan are stopped. Worker instance, host, and process identifiers are stored
+with each claim so cross-process recovery can be diagnosed.
 
 Manual, repeated, and scheduled scans all use this persisted queue. A database
 dispatcher lock serializes capacity reservation across web/scheduler processes,
 so the concurrency limit is global for a shared database.
 
 Lease tuning is available through `SCHEDULER_LEASE_SECONDS` (default `120`) and
-`SCHEDULER_HEARTBEAT_SECONDS` (default `20`). For larger installations, use a
-dedicated external worker queue instead of increasing in-process concurrency.
+`SCHEDULER_HEARTBEAT_SECONDS` (default `20`). The heartbeat represents worker
+process liveness; `scheduler_progress_at` is updated by the main scan workflow.
+`SCHEDULER_PROGRESS_TIMEOUT_SECONDS` defaults to `900`, while the absolute
+`MAX_SCAN_RUNTIME_SECONDS` deadline defaults to `3600`. A live heartbeat cannot
+extend either progress timeout or the absolute execution deadline. For larger
+installations, use a dedicated external worker queue instead of increasing
+in-process concurrency.
+
+The queue dispatcher also runs under `flask run`; schedule occurrence creation
+remains disabled there. Scan POST routes only commit a queued job and return, so
+HTTP requests never wait for the global dispatcher lock.
 
 For online upgrades starting at `b5a93e3d9370`, the Alembic environment includes
 a narrowly scoped pre-`c7...` compatibility repair. It removes null/blank and

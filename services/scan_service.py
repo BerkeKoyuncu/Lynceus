@@ -968,6 +968,31 @@ def scheduler_claim_is_current(scan_id, claim_token):
         ).first() is not None
 
 
+def scheduler_progress_checkpoint(scan_id, claim_token):
+    """Fence one work unit and persist main-worker progress atomically."""
+    if not claim_token:
+        return True
+    with db.session.no_autoflush:
+        updated = ScanResult.query.filter(
+            ScanResult.id == scan_id,
+            ScanResult.status == "running",
+            ScanResult.scheduler_dispatch_state == "started",
+            ScanResult.scheduler_claim_token == claim_token,
+        ).update(
+            {
+                ScanResult.scheduler_progress_at: datetime.now(timezone.utc).replace(
+                    tzinfo=None
+                )
+            },
+            synchronize_session=False,
+        )
+    if updated != 1:
+        db.session.rollback()
+        return False
+    db.session.commit()
+    return True
+
+
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
     if scheduler_claim_token:
@@ -984,6 +1009,7 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                     ScanResult.scheduler_dispatch_state: "started",
                     ScanResult.scheduler_started_at: now,
                     ScanResult.scheduler_heartbeat_at: now,
+                    ScanResult.scheduler_progress_at: now,
                 },
                 synchronize_session=False,
             )
@@ -1080,6 +1106,9 @@ def _execute_scan_body(
             scan_id=scan_result.id
         )
 
+        if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+            return
+
         db.session.refresh(scan_result)
         if (
             scheduler_claim_token
@@ -1123,6 +1152,8 @@ def _execute_scan_body(
             # No updates to existing asset details (like IP or MAC) are written to DB yet,
             # preserving the baseline state needed for accurate anomaly detection.
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 ip = host.get("address")
                 mac = host.get("mac_address")
                 vendor = host.get("mac_vendor")
@@ -1178,6 +1209,8 @@ def _execute_scan_body(
             # Evaluates anomalies using pre-scan snapshots, making it sequence-independent
             # and preserving correct IP change detection logic.
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 anomaly_res = evaluate_host_anomalies(host, scan_result.id)
                 if anomaly_res:
                     host["mac_anomaly"] = anomaly_res
@@ -1186,6 +1219,8 @@ def _execute_scan_body(
                 return
             # Pass 3: Update Asset details in DB with the newly scanned values.
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 asset_id = host.get("_asset_id")
                 if asset_id:
                     asset_match = db.session.get(Asset, asset_id)
@@ -1294,6 +1329,8 @@ def _execute_scan_body(
                     pass
 
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 ports_list = host.get("ports", [])
@@ -1332,6 +1369,8 @@ def _execute_scan_body(
         # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
         if nmap_result["success"]:
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 ip = host.get("address")
                 asset_match = Asset.query.filter_by(ip_address=ip).first()
                 if asset_match:
@@ -1349,6 +1388,8 @@ def _execute_scan_body(
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 if not asset:
@@ -1409,6 +1450,8 @@ def _execute_scan_body(
             online_ips = {h.get("address") for h in hosts if h.get("status") == "up"}
             scanned_endpoints = nmap_result.get("scanned_endpoints", [])
             for host in hosts:
+                if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                    return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 if asset:
@@ -1451,6 +1494,8 @@ def _execute_scan_body(
 
         # Clear internal runtime parameters to prevent JSON serialization errors (tuple keys, sets, etc.)
         for host in hosts:
+            if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                return
             host.pop("_asset_id", None)
             host.pop("_expected_ip", None)
             host.pop("_expected_mac", None)
