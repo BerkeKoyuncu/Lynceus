@@ -61,7 +61,7 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "e6b3c9d0f417"
+        assert revision == "f2c7a4b9d105"
         assert "ix_scan_result_scheduler_queue" in scan_indexes
         assert "ix_scan_result_scheduled_for" in scan_indexes
     finally:
@@ -114,6 +114,45 @@ def test_e6_deduplicates_drifted_blocked_ips_before_unique_constraint():
             (12, "192.0.2.41", "distinct"),
         ]
         assert unique_indexes
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade(revision="b5a93e3d9370")
+
+        connection = sqlite3.connect(path)
+        connection.execute("DROP TABLE honeypot_blocked_ip")
+        connection.execute(
+            "CREATE TABLE honeypot_blocked_ip ("
+            "id INTEGER PRIMARY KEY, ip_address VARCHAR(45), "
+            "reason VARCHAR(255), created_at DATETIME)"
+        )
+        connection.execute(
+            "INSERT INTO honeypot_blocked_ip VALUES "
+            "(20, '198.51.100.20', 'first', '2026-07-12 10:00:00')"
+        )
+        connection.execute(
+            "INSERT INTO honeypot_blocked_ip VALUES "
+            "(21, '198.51.100.20', 'duplicate', '2026-07-12 11:00:00')"
+        )
+        connection.commit()
+        connection.close()
+
+        with app.app_context():
+            upgrade()
+
+        connection = sqlite3.connect(path)
+        rows = connection.execute(
+            "SELECT id, ip_address, reason FROM honeypot_blocked_ip"
+        ).fetchall()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        connection.close()
+        assert rows == [(20, "198.51.100.20", "first")]
+        assert revision == "f2c7a4b9d105"
     finally:
         _cleanup_database(fd, path)
 

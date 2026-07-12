@@ -956,6 +956,18 @@ def _scheduler_heartbeat_loop(app, scan_id, claim_token, stop_event):
                 pass
 
 
+def scheduler_claim_is_current(scan_id, claim_token):
+    if not claim_token:
+        return True
+    with db.session.no_autoflush:
+        return db.session.query(ScanResult.id).filter(
+            ScanResult.id == scan_id,
+            ScanResult.status == "running",
+            ScanResult.scheduler_dispatch_state == "started",
+            ScanResult.scheduler_claim_token == claim_token,
+        ).first() is not None
+
+
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
     if scheduler_claim_token:
@@ -998,6 +1010,12 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
     finally:
         if heartbeat_stop is not None:
             heartbeat_stop.set()
+        try:
+            from app import _dispatch_pending_scheduled_scans
+            with app.app_context():
+                _dispatch_pending_scheduled_scans(app)
+        except Exception:
+            pass
 
 
 def _execute_scan_body(
@@ -1027,7 +1045,7 @@ def _execute_scan_body(
                 return
         elif not already_started:
             scan_result.status = "running"
-            if scan_result.schedule_id is not None:
+            if scan_result.scheduler_dispatch_state is not None:
                 scan_result.scheduler_dispatch_state = "started"
                 scan_result.scheduler_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.session.commit()
@@ -1098,6 +1116,8 @@ def _execute_scan_body(
                 pass
 
         if nmap_result["success"]:
+            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+                return
             # Pass 1: Match/create assets and save pre-scan snapshots on host dicts,
             # then write observations for all scanned hosts.
             # No updates to existing asset details (like IP or MAC) are written to DB yet,
@@ -1152,6 +1172,8 @@ def _execute_scan_body(
                     open_ports=host.get("ports", [])
                 )
 
+            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+                return
             # Pass 2: Evaluate security anomalies.
             # Evaluates anomalies using pre-scan snapshots, making it sequence-independent
             # and preserving correct IP change detection logic.
@@ -1160,6 +1182,8 @@ def _execute_scan_body(
                 if anomaly_res:
                     host["mac_anomaly"] = anomaly_res
 
+            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+                return
             # Pass 3: Update Asset details in DB with the newly scanned values.
             for host in hosts:
                 asset_id = host.get("_asset_id")
@@ -1185,6 +1209,8 @@ def _execute_scan_body(
 
             db.session.commit()
 
+            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+                return
             # Send Email Alert for anomalies if found
             anomalies_found = [h["mac_anomaly"] for h in hosts if "mac_anomaly" in h]
             if anomalies_found:
@@ -1244,6 +1270,8 @@ def _execute_scan_body(
                         }
                         send_notification_email_async(setting_dict, subject, body_html)
 
+        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            return
         # 4. Credential Audits (run BEFORE rule evaluation so rules can read audit results)
         if (audit_credentials or scan_result.credential_ids) and nmap_result["success"]:
             custom_ftp = []
@@ -1299,6 +1327,8 @@ def _execute_scan_body(
                             create_credential_audit_finding(asset, ip, port_info, audit_res, scan_id=scan_result.id)
                 host["_audited_endpoints"] = audited_endpoints
 
+        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            return
         # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
         if nmap_result["success"]:
             for host in hosts:
@@ -1314,6 +1344,8 @@ def _execute_scan_body(
                         scan_id=scan_result.id,
                     )
 
+        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            return
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
             for host in hosts:
@@ -1362,6 +1394,8 @@ def _execute_scan_body(
                 host["_cve_failed_ports"] = cve_failed_ports
                 host["_confirmed_unaffected_cves"] = confirmed_unaffected_cves
 
+        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            return
         # 7. Finding lifecycle reconciliation — mark unobserved findings 'not_observed'
         if nmap_result["success"]:
             # Collect all fingerprints written in this scan across all pipelines
@@ -1457,7 +1491,7 @@ def _execute_scan_body(
             else:
                 scan_result.result_data = serialized_result
                 scan_result.status = "completed"
-                if scan_result.schedule_id is not None:
+                if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "completed"
                 db.session.commit()
             
@@ -1484,6 +1518,6 @@ def _execute_scan_body(
             else:
                 scan_result.result_data = serialized_result
                 scan_result.status = "failed"
-                if scan_result.schedule_id is not None:
+                if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "failed"
             db.session.commit()

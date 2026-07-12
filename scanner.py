@@ -486,7 +486,7 @@ def execute_nmap_subprocess(command, scan_id=None):
     )
     if scan_id is not None:
         with active_processes_lock:
-            active_processes[scan_id] = proc
+            active_processes.setdefault(scan_id, set()).add(proc)
     try:
         stdout, stderr = proc.communicate(timeout=600)
         returncode = proc.returncode
@@ -497,19 +497,24 @@ def execute_nmap_subprocess(command, scan_id=None):
     finally:
         if scan_id is not None:
             with active_processes_lock:
-                active_processes.pop(scan_id, None)
+                processes = active_processes.get(scan_id)
+                if processes:
+                    processes.discard(proc)
+                    if not processes:
+                        active_processes.pop(scan_id, None)
     return returncode, stdout, stderr
 
 def stop_scan_process(scan_id):
     with active_processes_lock:
-        proc = active_processes.get(scan_id)
-        if proc:
-            try:
-                proc.kill()
-                return True
-            except Exception:
-                pass
-    return False
+        processes = list(active_processes.get(scan_id, set()))
+    stopped = False
+    for proc in processes:
+        try:
+            proc.kill()
+            stopped = True
+        except Exception:
+            pass
+    return stopped
 
 
 def extract_scanned_endpoints_from_xml(xml_output):

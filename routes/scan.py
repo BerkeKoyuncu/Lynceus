@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash, current_app, Response
 from flask_login import login_required, current_user
 from datetime import datetime, timezone, timedelta
-import threading
 import re
 import json
 import csv
@@ -9,7 +8,6 @@ import io
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, ScanCredential
 from scanner import calculate_network, validate_scan_target
-from services.scan_service import execute_scan
 
 scan_bp = Blueprint("scan", __name__)
 
@@ -225,18 +223,18 @@ def scan():
             credential_ids=credential_ids_str,
             timing_template=timing_template,
             audit_credentials=audit_credentials,
-            status="pending"
+            status="pending",
+            scheduled_for=datetime.now(timezone.utc).replace(tzinfo=None),
+            scheduler_dispatch_state="queued",
+            scheduler_attempt_count=0,
+            scheduler_max_attempts=current_app.config["SCHEDULER_MAX_ATTEMPTS"],
         )
         db.session.add(scan_result)
         db.session.commit()
 
         app = current_app._get_current_object()
-        scan_thread = threading.Thread(
-            target=execute_scan,
-            args=(app, scan_result.id, audit_credentials)
-        )
-        scan_thread.daemon = True
-        scan_thread.start()
+        from app import _dispatch_pending_scheduled_scans
+        _dispatch_pending_scheduled_scans(app)
 
         return redirect(url_for("scan.result", scan_id=scan_result.id))
 
@@ -271,7 +269,7 @@ def stop_scan(scan_id):
 
     if scan_result.status in ["pending", "running"]:
         scan_result.status = "cancelled"
-        if scan_result.schedule_id is not None:
+        if scan_result.scheduler_dispatch_state is not None:
             scan_result.scheduler_dispatch_state = "cancelled"
         db.session.commit()
         
@@ -320,18 +318,18 @@ def repeat_scan(scan_id):
         credential_ids=old_scan.credential_ids,
         timing_template=old_scan.timing_template,
         audit_credentials=old_scan.audit_credentials,
-        status="pending"
+        status="pending",
+        scheduled_for=datetime.now(timezone.utc).replace(tzinfo=None),
+        scheduler_dispatch_state="queued",
+        scheduler_attempt_count=0,
+        scheduler_max_attempts=current_app.config["SCHEDULER_MAX_ATTEMPTS"],
     )
     db.session.add(scan_result)
     db.session.commit()
     
     app = current_app._get_current_object()
-    scan_thread = threading.Thread(
-        target=execute_scan,
-        args=(app, scan_result.id, old_scan.audit_credentials)
-    )
-    scan_thread.daemon = True
-    scan_thread.start()
+    from app import _dispatch_pending_scheduled_scans
+    _dispatch_pending_scheduled_scans(app)
     
     flash("Repeated scan initiated.", "success")
     return redirect(url_for("scan.result", scan_id=scan_result.id))

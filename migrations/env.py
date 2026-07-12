@@ -7,6 +7,7 @@ from alembic import context
 from alembic.script import ScriptDirectory
 from alembic.script.revision import RangeNotAncestorError
 from alembic.util import CommandError
+import sqlalchemy as sa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -118,6 +119,46 @@ def _enforce_safe_offline_downgrade_floor():
         )
 
 
+def _repair_pre_c7_blocked_ip_drift(connection):
+    """Compatibility bridge for b5 databases that cannot enter c7 safely."""
+    if context.get_context().get_current_revision() != SAFE_DOWNGRADE_FLOOR:
+        return
+    try:
+        target_revision = context.get_revision_argument()
+    except (KeyError, CommandError):
+        return
+    script = ScriptDirectory.from_config(config)
+    if not _is_ancestor(script, SAFE_DOWNGRADE_FLOOR, target_revision):
+        return
+
+    inspector = sa.inspect(connection)
+    if "honeypot_blocked_ip" not in inspector.get_table_names():
+        return
+    unique_constraints = inspector.get_unique_constraints("honeypot_blocked_ip")
+    indexes = inspector.get_indexes("honeypot_blocked_ip")
+    has_ip_unique = any(
+        constraint.get("column_names") == ["ip_address"]
+        for constraint in unique_constraints
+    ) or any(
+        index.get("unique") is True
+        and index.get("column_names") == ["ip_address"]
+        for index in indexes
+    )
+    if has_ip_unique:
+        return
+
+    connection.execute(sa.text(
+        "DELETE FROM honeypot_blocked_ip "
+        "WHERE ip_address IS NULL OR TRIM(ip_address) = ''"
+    ))
+    connection.execute(sa.text(
+        "DELETE FROM honeypot_blocked_ip WHERE id NOT IN ("
+        "SELECT keep_id FROM ("
+        "SELECT MIN(id) AS keep_id FROM honeypot_blocked_ip GROUP BY ip_address"
+        ") AS deduplicated)"
+    ))
+
+
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
 
@@ -175,6 +216,7 @@ def run_migrations_online():
         _enforce_safe_downgrade_floor()
 
         with context.begin_transaction():
+            _repair_pre_c7_blocked_ip_drift(connection)
             context.run_migrations()
 
 

@@ -13,7 +13,7 @@ from functools import wraps
 import click
 from sqlalchemy import and_, func, or_
 
-from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset
+from models import db, User, ScanResult, ScanDispatchLock, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset
 from services.encryption_service import get_flask_secret_key
 from services.scan_service import execute_scan
 from services.email_service import send_notification_email_async
@@ -73,6 +73,30 @@ def get_client_ip():
             return x_forwarded_for.split(',')[0].strip()
     return request.remote_addr
 
+
+def _validate_scheduler_config(app):
+    minimums = {
+        "MAX_CONCURRENT_SCANS": 1,
+        "SCHEDULER_LEASE_SECONDS": 30,
+        "SCHEDULER_HEARTBEAT_SECONDS": 5,
+        "SCHEDULER_MAX_ATTEMPTS": 1,
+    }
+    for name, minimum in minimums.items():
+        try:
+            value = int(app.config[name])
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(f"{name} must be an integer.") from error
+        app.config[name] = max(minimum, value)
+
+    if (
+        app.config["SCHEDULER_HEARTBEAT_SECONDS"] * 3
+        > app.config["SCHEDULER_LEASE_SECONDS"]
+    ):
+        raise RuntimeError(
+            "SCHEDULER_LEASE_SECONDS must be at least three times "
+            "SCHEDULER_HEARTBEAT_SECONDS."
+        )
+
 def create_app(config=None):
     app = Flask(__name__)
     
@@ -88,21 +112,14 @@ def create_app(config=None):
     app.config["START_SCHEDULER"] = (
         os.environ.get("START_SCHEDULER", "false").lower() in {"true", "1", "yes"}
     )
-    app.config["MAX_CONCURRENT_SCANS"] = max(
-        1, int(os.environ.get("MAX_CONCURRENT_SCANS", "4"))
-    )
-    app.config["SCHEDULER_LEASE_SECONDS"] = max(
-        30, int(os.environ.get("SCHEDULER_LEASE_SECONDS", "120"))
-    )
-    app.config["SCHEDULER_HEARTBEAT_SECONDS"] = max(
-        5, int(os.environ.get("SCHEDULER_HEARTBEAT_SECONDS", "20"))
-    )
-    app.config["SCHEDULER_MAX_ATTEMPTS"] = max(
-        1, int(os.environ.get("SCHEDULER_MAX_ATTEMPTS", "3"))
-    )
+    app.config["MAX_CONCURRENT_SCANS"] = os.environ.get("MAX_CONCURRENT_SCANS", "4")
+    app.config["SCHEDULER_LEASE_SECONDS"] = os.environ.get("SCHEDULER_LEASE_SECONDS", "120")
+    app.config["SCHEDULER_HEARTBEAT_SECONDS"] = os.environ.get("SCHEDULER_HEARTBEAT_SECONDS", "20")
+    app.config["SCHEDULER_MAX_ATTEMPTS"] = os.environ.get("SCHEDULER_MAX_ATTEMPTS", "3")
 
     if config:
         app.config.update(config)
+    _validate_scheduler_config(app)
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -454,6 +471,8 @@ def create_app(config=None):
         and not is_cli
     ):
         start_scheduler(app)
+    if not app.config.get("TESTING", False) and not is_cli:
+        start_scan_dispatcher(app)
 
     with app.app_context():
         if app.config.get("SEED_DEMO_DATA"):
@@ -525,9 +544,7 @@ def _claim_scheduled_scan(schedule, now):
     return scan.id
 
 
-def _dispatch_pending_scheduled_scans(app, now=None):
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    lease_seconds = app.config["SCHEDULER_LEASE_SECONDS"]
+def _recover_expired_scan_jobs(now, lease_seconds):
     retry_before = now - timedelta(seconds=lease_seconds)
     eligible = or_(
         ScanResult.scheduler_dispatch_state == "queued",
@@ -539,9 +556,8 @@ def _dispatch_pending_scheduled_scans(app, now=None):
             ),
         ),
     )
-
+    changed = False
     expired_running = ScanResult.query.filter(
-        ScanResult.schedule_id.isnot(None),
         ScanResult.status == "running",
         ScanResult.scheduler_dispatch_state == "started",
         or_(
@@ -550,12 +566,13 @@ def _dispatch_pending_scheduled_scans(app, now=None):
         ),
     ).all()
     for job in expired_running:
+        changed = True
         if job.scheduler_attempt_count >= job.scheduler_max_attempts:
             job.status = "failed"
             job.scheduler_dispatch_state = "failed"
             job.result_data = json.dumps({
                 "command": "N/A",
-                "output": "Scheduled scan exceeded its maximum recovery attempts.",
+                "output": "Scan exceeded its maximum recovery attempts.",
                 "hosts": [],
             })
         else:
@@ -565,26 +582,37 @@ def _dispatch_pending_scheduled_scans(app, now=None):
             job.scheduler_claimed_at = None
             job.scheduler_started_at = None
             job.scheduler_heartbeat_at = None
-    if expired_running:
-        db.session.commit()
 
     exhausted = ScanResult.query.filter(
-        ScanResult.schedule_id.isnot(None),
         ScanResult.status == "pending",
         eligible,
         ScanResult.scheduler_attempt_count >= ScanResult.scheduler_max_attempts,
     ).all()
     for job in exhausted:
+        changed = True
         job.status = "failed"
         job.scheduler_dispatch_state = "failed"
         job.result_data = json.dumps({
             "command": "N/A",
-            "output": "Scheduled scan exceeded its maximum dispatch attempts.",
+            "output": "Scan exceeded its maximum dispatch attempts.",
             "hosts": [],
         })
-    if exhausted:
-        db.session.commit()
+    return eligible, retry_before, changed
 
+
+def _dispatch_pending_scheduled_scans(app, now=None):
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    dispatch_lock = db.session.get(ScanDispatchLock, 1)
+    if dispatch_lock is None:
+        dispatch_lock = ScanDispatchLock(id=1)
+        db.session.add(dispatch_lock)
+        db.session.flush()
+    ScanDispatchLock.query.filter(ScanDispatchLock.id == 1).update(
+        {ScanDispatchLock.touched_at: now}, synchronize_session=False
+    )
+
+    lease_seconds = app.config["SCHEDULER_LEASE_SECONDS"]
+    eligible, retry_before, _ = _recover_expired_scan_jobs(now, lease_seconds)
     running_count = ScanResult.query.filter(ScanResult.status == "running").count()
     live_claims = ScanResult.query.filter(
         ScanResult.status == "pending",
@@ -593,15 +621,17 @@ def _dispatch_pending_scheduled_scans(app, now=None):
     ).count()
     capacity = app.config["MAX_CONCURRENT_SCANS"] - running_count - live_claims
     if capacity <= 0:
+        db.session.commit()
         return []
 
     candidates = ScanResult.query.filter(
-        ScanResult.schedule_id.isnot(None),
         ScanResult.status == "pending",
         eligible,
         ScanResult.scheduler_attempt_count < ScanResult.scheduler_max_attempts,
     ).order_by(
-        ScanResult.scheduled_for.asc(), ScanResult.created_at.asc()
+        ScanResult.scheduled_for.asc(),
+        ScanResult.created_at.asc(),
+        ScanResult.id.asc(),
     ).limit(capacity).all()
 
     dispatched = []
@@ -624,18 +654,21 @@ def _dispatch_pending_scheduled_scans(app, now=None):
             synchronize_session=False,
         )
         if claimed != 1:
-            db.session.rollback()
             continue
         audit_credentials = bool(candidate.audit_credentials)
         scan_id = candidate.id
-        db.session.commit()
+        dispatched.append((scan_id, audit_credentials, claim_token))
+
+    db.session.commit()
+    dispatched_ids = []
+    for scan_id, audit_credentials, claim_token in dispatched:
         threading.Thread(
             target=execute_scan,
             args=(app, scan_id, audit_credentials, claim_token),
             daemon=True,
         ).start()
-        dispatched.append(scan_id)
-    return dispatched
+        dispatched_ids.append(scan_id)
+    return dispatched_ids
 
 
 def start_scheduler(app):
@@ -655,13 +688,27 @@ def start_scheduler(app):
                         
                         for schedule in due_schedules:
                             _claim_scheduled_scan(schedule, now)
-                        _dispatch_pending_scheduled_scans(app, now)
             except Exception as e:
                 import sys
                 print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)
             time.sleep(30)
 
     threading.Thread(target=run_scheduler_loop, daemon=True).start()
+
+
+def start_scan_dispatcher(app):
+    def run_dispatcher_loop():
+        time.sleep(1)
+        while True:
+            try:
+                with app.app_context():
+                    _dispatch_pending_scheduled_scans(app)
+            except Exception as error:
+                import sys
+                print(f"[Dispatcher Error]: {error}", file=sys.stderr)
+            time.sleep(5)
+
+    threading.Thread(target=run_dispatcher_loop, daemon=True).start()
 
 def seed_mock_security_data():
     try:
@@ -772,49 +819,22 @@ def seed_mock_security_data():
 def cleanup_stale_scans():
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     stale_threshold = now - timedelta(minutes=30)
-    lease_threshold = now - timedelta(
-        seconds=current_app.config["SCHEDULER_LEASE_SECONDS"]
+    _, _, recovered_jobs = _recover_expired_scan_jobs(
+        now, current_app.config["SCHEDULER_LEASE_SECONDS"]
     )
-    recoverable_jobs = ScanResult.query.filter(
-        ScanResult.schedule_id.isnot(None),
-        ScanResult.scheduler_attempt_count < ScanResult.scheduler_max_attempts,
-        or_(
-            and_(
-                ScanResult.status == "pending",
-                ScanResult.scheduler_dispatch_state.in_(["queued", "claimed"]),
-                ScanResult.created_at < stale_threshold,
-            ),
-            and_(
-                ScanResult.status == "running",
-                ScanResult.scheduler_dispatch_state == "started",
-                or_(
-                    ScanResult.scheduler_heartbeat_at.is_(None),
-                    ScanResult.scheduler_heartbeat_at <= lease_threshold,
-                ),
-            ),
-        ),
-    ).all()
-    for job in recoverable_jobs:
-        job.status = "pending"
-        job.scheduler_dispatch_state = "queued"
-        job.scheduler_claim_token = None
-        job.scheduler_claimed_at = None
-        job.scheduler_started_at = None
-        job.scheduler_heartbeat_at = None
 
     stale_scans = ScanResult.query.filter(
         ScanResult.status.in_(["pending", "running"]),
         ScanResult.created_at < stale_threshold,
         or_(
             ScanResult.status == "running",
-            ScanResult.schedule_id.is_(None),
             ScanResult.scheduler_dispatch_state.is_(None),
             ScanResult.scheduler_dispatch_state.notin_(["queued", "claimed"]),
         ),
     ).all()
     for scan in stale_scans:
         scan.status = "failed"
-        if scan.schedule_id is not None:
+        if scan.scheduler_dispatch_state is not None:
             scan.scheduler_dispatch_state = "failed"
         result_payload = {
             "command": "N/A",
@@ -822,7 +842,7 @@ def cleanup_stale_scans():
             "hosts": []
         }
         scan.result_data = json.dumps(result_payload, indent=4)
-    if stale_scans or recoverable_jobs:
+    if stale_scans or recovered_jobs:
         db.session.commit()
 
 if __name__ == "__main__":

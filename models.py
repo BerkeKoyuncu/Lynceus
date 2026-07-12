@@ -93,6 +93,11 @@ class ScanResult(db.Model):
         return f"<ScanResult {self.network_cidr} - {self.scan_type}>"
 
 
+class ScanDispatchLock(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    touched_at = db.Column(db.DateTime, nullable=True)
+
+
 class ScanSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)

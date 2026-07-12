@@ -314,9 +314,18 @@ tokens, workers refresh a heartbeat lease, and an interrupted scheduled scan is
 retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). This is process-crash
 recovery, not host-level Nmap resume: a retried attempt starts its scan again.
 
+Manual, repeated, and scheduled scans all use this persisted queue. A database
+dispatcher lock serializes capacity reservation across web/scheduler processes,
+so the concurrency limit is global for a shared database.
+
 Lease tuning is available through `SCHEDULER_LEASE_SECONDS` (default `120`) and
 `SCHEDULER_HEARTBEAT_SECONDS` (default `20`). For larger installations, use a
 dedicated external worker queue instead of increasing in-process concurrency.
+
+For online upgrades starting at `b5a93e3d9370`, the Alembic environment includes
+a narrowly scoped pre-`c7...` compatibility repair. It removes null/blank and
+duplicate blocked-IP rows only when the legacy table lacks its unique constraint,
+allowing a drifted `b5 → head` upgrade without rewriting published revisions.
 
 > **Existing databases managed by a previous `db.create_all()` setup:**
 > Stamping tells Alembic that your database is already at a given revision. **It does not modify any tables** — it only updates the `alembic_version` marker. Only stamp after verifying that your existing schema exactly matches the baseline. If columns or tables are missing, stamping will hide the discrepancy and future migrations will fail.
