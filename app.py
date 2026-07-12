@@ -638,16 +638,34 @@ def _recover_expired_scan_jobs(
     ).all()
     for job in hard_runtime_jobs:
         changed = True
-        if (
+        is_local_owner = (
             job.scheduler_worker_id == worker_id
             and job.scheduler_process_id == os.getpid()
-        ):
-            from scanner import stop_scan_process
-            stop_scan_process(job.id)
-        _fail_scheduler_job(
-            job,
-            "Scan exceeded MAX_SCAN_RUNTIME_SECONDS and was not retried.",
         )
+        stopped = False
+        if is_local_owner:
+            from scanner import stop_scan_process
+            stopped = stop_scan_process(job.id)
+
+        if is_local_owner and not stopped:
+            message = (
+                "Scan exceeded MAX_SCAN_RUNTIME_SECONDS, but the local Nmap "
+                "process could not be confirmed terminated. It was not retried."
+            )
+            current_app.logger.critical(
+                "Hard runtime termination failed for scan %s", job.id
+            )
+        elif not is_local_owner:
+            message = (
+                "Scan exceeded MAX_SCAN_RUNTIME_SECONDS, but its worker process "
+                "is not locally controllable. It was not retried."
+            )
+            current_app.logger.critical(
+                "Hard runtime scan %s belongs to another worker process", job.id
+            )
+        else:
+            message = "Scan exceeded MAX_SCAN_RUNTIME_SECONDS and was not retried."
+        _fail_scheduler_job(job, message)
 
     stalled_jobs = running_jobs.filter(
         or_(

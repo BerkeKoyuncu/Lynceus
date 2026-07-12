@@ -67,7 +67,7 @@ def test_stop_scan_kills_every_active_attempt():
     assert second.killed is True
     assert first.waited is True
     assert second.waited is True
-    scanner.active_processes.clear()
+    assert 99 not in scanner.active_processes
 
 
 def test_stop_scan_requires_every_process_to_terminate():
@@ -87,4 +87,36 @@ def test_stop_scan_requires_every_process_to_terminate():
     assert healthy.waited is True
     assert stuck.killed is True
     assert stuck.waited is True
+    assert scanner.active_processes[100] == {stuck}
     scanner.active_processes.clear()
+
+
+def test_sequential_nmap_fallbacks_refresh_progress(monkeypatch):
+    host_xml = (
+        '<?xml version="1.0"?><nmaprun><host><status state="up"/>'
+        '<address addr="192.0.2.10" addrtype="ipv4"/><ports/></host></nmaprun>'
+    )
+    results = iter([
+        (1, "", "permission denied: raw socket requires privilege"),
+        (0, host_xml, ""),
+    ])
+    phases = []
+    monkeypatch.setattr(scanner, "find_nmap_executable", lambda: "nmap")
+    monkeypatch.setattr(
+        scanner,
+        "execute_nmap_subprocess",
+        lambda command, scan_id=None: next(results),
+    )
+
+    result = scanner.run_nmap_scan(
+        "192.0.2.10",
+        "syn",
+        scan_id=200,
+        progress_callback=lambda phase: phases.append(phase) or True,
+    )
+
+    assert result["success"] is True
+    assert phases == [
+        "starting-primary-scan",
+        "starting-privilege-fallback-scan",
+    ]

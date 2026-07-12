@@ -974,12 +974,25 @@ _progress_checkpoint_retry_after = {}
 _progress_checkpoint_lock = threading.Lock()
 
 
+def _independent_scheduler_claim_is_current(scan_id, claim_token):
+    ownership_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
+    try:
+        return ownership_session.query(ScanResult.id).filter(
+            ScanResult.id == scan_id,
+            ScanResult.status == "running",
+            ScanResult.scheduler_dispatch_state == "started",
+            ScanResult.scheduler_claim_token == claim_token,
+        ).first() is not None
+    except Exception:
+        return False
+    finally:
+        ownership_session.close()
+
+
 def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
     """Fence work and throttle progress writes outside the business session."""
     if not claim_token:
         return True
-    if not scheduler_claim_is_current(scan_id, claim_token):
-        return False
 
     key = (scan_id, claim_token)
     monotonic_now = time.monotonic()
@@ -988,9 +1001,9 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
         last_update = _progress_checkpoint_times.get(key)
         retry_after = _progress_checkpoint_retry_after.get(key)
     if retry_after is not None and monotonic_now < retry_after:
-        return True
+        return _independent_scheduler_claim_is_current(scan_id, claim_token)
     if not force and last_update is not None and monotonic_now - last_update < interval:
-        return True
+        return _independent_scheduler_claim_is_current(scan_id, claim_token)
 
     progress_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
     try:
@@ -1014,7 +1027,7 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
         # business session. Back off before another host/port retries it.
         with _progress_checkpoint_lock:
             _progress_checkpoint_retry_after[key] = monotonic_now + min(interval, 5)
-        return scheduler_claim_is_current(scan_id, claim_token)
+        return _independent_scheduler_claim_is_current(scan_id, claim_token)
     finally:
         progress_session.close()
 
@@ -1139,13 +1152,19 @@ def _execute_scan_body(
             
         combined_excludes_str = ",".join(combined_excludes) if combined_excludes else None
 
+        def report_nmap_progress(_phase):
+            return scheduler_progress_checkpoint(
+                scan_id, scheduler_claim_token, force=True
+            )
+
         nmap_result = run_nmap_scan(
             target=scan_result.network_cidr,
             scan_type=scan_result.scan_type,
             ports=scan_result.ports,
             exclude_targets=combined_excludes_str,
             timing_template=scan_result.timing_template,
-            scan_id=scan_result.id
+            scan_id=scan_result.id,
+            progress_callback=report_nmap_progress,
         )
 
         if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, force=True):

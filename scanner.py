@@ -512,6 +512,7 @@ def stop_scan_process(scan_id):
         return False
 
     all_stopped = True
+    confirmed_stopped = []
     for proc in processes:
         try:
             if proc.poll() is None:
@@ -519,8 +520,18 @@ def stop_scan_process(scan_id):
             proc.wait(timeout=5)
             if proc.poll() is None:
                 all_stopped = False
+            else:
+                confirmed_stopped.append(proc)
         except Exception:
             all_stopped = False
+
+    if confirmed_stopped:
+        with active_processes_lock:
+            registered = active_processes.get(scan_id)
+            if registered is not None:
+                registered.difference_update(confirmed_stopped)
+                if not registered:
+                    active_processes.pop(scan_id, None)
     return all_stopped
 
 
@@ -555,7 +566,20 @@ def extract_scanned_endpoints_from_xml(xml_output):
     return endpoints
 
 
-def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_template="4", scan_id=None):
+def _notify_scan_progress(progress_callback, phase):
+    if progress_callback is not None and progress_callback(phase) is False:
+        raise RuntimeError("Scan ownership was lost before the next scan phase.")
+
+
+def run_nmap_scan(
+    target,
+    scan_type,
+    ports=None,
+    exclude_targets=None,
+    timing_template="4",
+    scan_id=None,
+    progress_callback=None,
+):
     """
     Runs an Nmap scan and returns structured results.
     """
@@ -683,6 +707,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
     command += ["-oX", "-", target]
 
     try:
+        _notify_scan_progress(progress_callback, "starting-primary-scan")
         returncode, stdout, stderr = execute_nmap_subprocess(command, scan_id)
         completed_process = CompletedProcessDummy(returncode, stdout, stderr)
 
@@ -706,6 +731,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
 
             command += ["-oX", "-", target]
 
+            _notify_scan_progress(progress_callback, "starting-privilege-fallback-scan")
             returncode_fb, stdout_fb, stderr_fb = execute_nmap_subprocess(command, scan_id)
             completed_process = CompletedProcessDummy(returncode_fb, stdout_fb, stderr_fb)
             stdout = completed_process.stdout
@@ -749,6 +775,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
                     fallback_command.append("-Pn")
                 
                 try:
+                    _notify_scan_progress(progress_callback, "starting-single-host-fallback-scan")
                     retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id)
                     fallback_process = CompletedProcessDummy(retcode, f_stdout, f_stderr)
                     
@@ -770,7 +797,9 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             else:
                 # Subnet: Run Python-based host discovery first to find online hosts
                 try:
+                    _notify_scan_progress(progress_callback, "starting-host-discovery")
                     active_ips = discover_active_hosts(target)
+                    _notify_scan_progress(progress_callback, "completed-host-discovery")
                     if active_ips:
                         target_list = ",".join(active_ips)
                         fallback_command = []
@@ -786,6 +815,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
                         if "-Pn" not in fallback_command:
                             fallback_command.append("-Pn")
                             
+                        _notify_scan_progress(progress_callback, "starting-subnet-fallback-scan")
                         retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id)
                         fallback_process = CompletedProcessDummy(retcode, f_stdout, f_stderr)
                         

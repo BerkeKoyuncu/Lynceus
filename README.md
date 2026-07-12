@@ -315,6 +315,9 @@ retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). Recovery is limited to a
 stalled attempt whose local Nmap processes can all be positively stopped by the
 same worker process; process restarts and cross-worker failures fail closed.
 A retried attempt starts its scan again rather than resuming Nmap state.
+Post-processing stalls also fail closed when no active Nmap process can be
+positively stopped; retrying partially applied asset/finding work would require
+attempt-specific staging and idempotent application.
 Before a local expired attempt is retried, all Nmap subprocesses registered for
 that scan are stopped. Worker instance, host, and process identifiers are stored
 with each claim. An attempt owned by another process, or one whose local process
@@ -337,8 +340,13 @@ process liveness; `scheduler_progress_at` is updated by the main scan workflow.
 independent transaction and are throttled by
 `SCHEDULER_PROGRESS_INTERVAL_SECONDS` (default `10`), so they do not commit scan
 business data. The progress timeout must exceed Nmap's 600-second subprocess
-timeout. A live heartbeat cannot extend either progress timeout or the absolute
-execution deadline, and a hard runtime timeout fails immediately without retry.
+timeout. Primary and fallback Nmap phases refresh progress through a fenced
+callback before each subprocess, so sequential healthy fallbacks do not consume
+one shared 600-second progress window. Ownership checks and progress writes both
+use independent short-lived database sessions. A live heartbeat cannot extend
+either progress timeout or the absolute execution deadline. A hard runtime
+timeout fails immediately without retry and reports when local process
+termination could not be confirmed.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so

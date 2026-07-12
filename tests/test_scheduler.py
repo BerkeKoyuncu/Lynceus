@@ -450,6 +450,75 @@ def test_fresh_heartbeat_cannot_hide_scan_runtime_deadline(app, monkeypatch):
         assert "not retried" in job.result_data
 
 
+def test_hard_runtime_reports_failed_process_termination(app, monkeypatch, caplog):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr("scanner.stop_scan_process", lambda scan_id: False)
+    app.config["MAX_SCAN_RUNTIME_SECONDS"] = 600
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.62",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.62/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="runtime-stop-failed",
+            scheduler_started_at=now - timedelta(seconds=601),
+            scheduler_heartbeat_at=now,
+            scheduler_progress_at=now,
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == []
+        db.session.refresh(job)
+        assert job.status == "failed"
+        assert "could not be confirmed terminated" in job.result_data
+        assert "Hard runtime termination failed" in caplog.text
+
+
+def test_post_processing_stall_fails_closed_without_retry(app, monkeypatch):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr("scanner.stop_scan_process", lambda scan_id: False)
+    app.config.update({
+        "SCHEDULER_LEASE_SECONDS": 30,
+        "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 60,
+    })
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.63",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.63/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="post-processing-stall",
+            scheduler_started_at=now - timedelta(minutes=2),
+            scheduler_heartbeat_at=now,
+            scheduler_progress_at=now - timedelta(minutes=2),
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == []
+        db.session.refresh(job)
+        assert job.status == "failed"
+        assert "could not be safely stopped" in job.result_data
+        assert job.scheduler_attempt_count == 1
+
+
 def test_heartbeat_interval_must_be_safely_below_lease():
     import pytest
 
@@ -708,6 +777,39 @@ def test_progress_checkpoint_does_not_commit_business_session(app):
         assert persisted.scheduler_progress_at is not None
 
 
+def test_progress_ownership_check_does_not_use_business_session(app, monkeypatch):
+    import services.scan_service as scan_service
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.74",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.74/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="independent-ownership-token",
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        monkeypatch.setattr(
+            scan_service,
+            "scheduler_claim_is_current",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("business session ownership check was used")
+            ),
+        )
+        assert scheduler_progress_checkpoint(
+            job.id, job.scheduler_claim_token, force=True
+        )
+        scan_service._clear_scheduler_progress_checkpoint(
+            job.id, job.scheduler_claim_token
+        )
+
+
 def test_failed_progress_write_is_throttled(app, monkeypatch):
     import services.scan_service as scan_service
 
@@ -728,6 +830,11 @@ def test_failed_progress_write_is_throttled(app, monkeypatch):
         scan_service,
         "sessionmaker",
         lambda **kwargs: lambda: FailingProgressSession(),
+    )
+    monkeypatch.setattr(
+        scan_service,
+        "_independent_scheduler_claim_is_current",
+        lambda scan_id, claim_token: True,
     )
 
     with app.app_context():
