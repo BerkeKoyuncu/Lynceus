@@ -83,11 +83,9 @@ def create_app(config=None):
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["TRUST_PROXY"] = os.environ.get("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
     app.config["SEED_DEMO_DATA"] = os.environ.get("SEED_DEMO_DATA", "False").lower() in ("true", "1", "yes")
-    env_start = os.environ.get("START_SCHEDULER")
-    if env_start is not None:
-        app.config["START_SCHEDULER"] = env_start.lower() in {"true", "1", "yes"}
-    else:
-        app.config["START_SCHEDULER"] = True
+    app.config["START_SCHEDULER"] = (
+        os.environ.get("START_SCHEDULER", "false").lower() in {"true", "1", "yes"}
+    )
 
     if config:
         app.config.update(config)

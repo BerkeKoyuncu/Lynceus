@@ -489,7 +489,8 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                                 scan_type, requested_ports, audit_credentials=False, 
                                 credential_ids=None, current_open_ports=None,
                                 cve_failed_ports=None, audited_endpoints=None,
-                                scanned_endpoints=None, endpoint_states=None):
+                                scanned_endpoints=None, endpoint_states=None,
+                                current_ports_info=None):
     """
     After a scan, marks findings that were not observed in this scan as 'not_observed'.
     Only does this if the host was seen online (status='up') during the scan.
@@ -626,7 +627,12 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                     # Only reconcile if version detection ran in this scan and CVE search succeeded
                     if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
                         if finding.port not in cve_failed_ports:
-                            finding.status = "not_observed"
+                            port_info = current_ports_info.get((finding_protocol, finding.port)) if current_ports_info else None
+                            if port_info:
+                                current_version = port_info.get("version_display") or port_info.get("version") or ""
+                                # Only auto-close if the version has changed (indicating an upgrade occurred)
+                                if current_version and finding.version and current_version != finding.version:
+                                    finding.status = "not_observed"
                 elif finding.source_type == "credential_audit":
                     # Only reconcile if the audit completed successfully and marked the port as "safe"
                     audit_status = audited_endpoints.get((finding_protocol, finding.port))
@@ -635,9 +641,13 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                 else:
                     # Other types (rules, etc.) on open ports can be reconciled because rule matching ran
                     finding.status = "not_observed"
-            else:
-                # If state is explicitly "closed" or if the endpoint was scanned but not reported (meaning closed)
+            elif state == "closed":
+                # If state is explicitly "closed"
                 finding.status = "not_observed"
+            else:
+                # If state is None (e.g., port fell under extraports and is not explicitly open/closed in ports list),
+                # do NOT change the status to not_observed.
+                continue
 
     db.session.commit()
 

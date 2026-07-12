@@ -578,7 +578,7 @@ def check_and_send_scan_alert(scan_result):
     
     for host in current_hosts:
         ip = host.get("address")
-        curr_ports = host.get("ports", [])
+        curr_ports = [p for p in host.get("ports", []) if p.get("state") == "open"]
         
         if ip not in map_prev:
             if curr_ports:
@@ -592,6 +592,7 @@ def check_and_send_scan_alert(scan_result):
             prev_ports = {
                 ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p
                 for p in map_prev[ip].get("ports", [])
+                if p.get("state") == "open"
             }
             host_added_ports = []
             for p in curr_ports:
@@ -759,7 +760,14 @@ def execute_scan(app, scan_id, audit_credentials=False):
             try:
                 prev_data = json.loads(previous_scan.result_data)
                 for h in prev_data.get("hosts", []):
-                    prev_hosts_map[h["address"]] = [int(p.get("port") or 0) for p in h.get("ports", [])]
+                    prev_hosts_map[h["address"]] = {
+                        (
+                            (p.get("protocol") or "tcp").lower(),
+                            int(p.get("port") or 0)
+                        )
+                        for p in h.get("ports", [])
+                        if p.get("state") == "open"
+                    }
             except Exception:
                 pass
 
@@ -937,6 +945,8 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 ports_list = host.get("ports", [])
                 audited_endpoints = {}
                 for port_info in ports_list:
+                    if port_info.get("state") != "open":
+                        continue
                     p_num = int(port_info.get("port") or 0)
                     service = (port_info.get("service") or "").lower()
                     protocol = (port_info.get("protocol") or "tcp").lower()
@@ -981,6 +991,8 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     continue
                 cve_failed_ports = set()
                 for port_info in host.get("ports", []):
+                    if port_info.get("state") != "open":
+                        continue
                     # Use 'product' for VENDOR_PRODUCT_MAP lookup (e.g. 'OpenSSH' not 'ssh')
                     product = port_info.get("product") or ""
                     service = port_info.get("service") or ""
@@ -1033,6 +1045,10 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p.get("state")
                         for p in host.get("ports", [])
                     }
+                    current_ports_info = {
+                        ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p
+                        for p in host.get("ports", [])
+                    }
                     cve_failed_ports = host.get("_cve_failed_ports", set())
                     audited_endpoints = host.get("_audited_endpoints", {})
                     reconcile_findings_for_scan(
@@ -1048,7 +1064,8 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         cve_failed_ports=cve_failed_ports,
                         audited_endpoints=audited_endpoints,
                         scanned_endpoints=scanned_endpoints,
-                        endpoint_states=endpoint_states
+                        endpoint_states=endpoint_states,
+                        current_ports_info=current_ports_info
                     )
 
         # Clear internal runtime parameters to prevent JSON serialization errors (tuple keys, sets, etc.)

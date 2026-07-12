@@ -582,3 +582,165 @@ def test_migration_upgrade_downgrade():
             os.unlink(db_path)
         except OSError:
             pass
+
+def test_migration_with_legacy_data():
+    import tempfile
+    import os
+    import sqlite3
+    from app import create_app
+    from flask_migrate import upgrade as run_upgrade
+
+    db_fd, db_path = tempfile.mkstemp()
+    try:
+        app = create_app({
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}",
+            "START_SCHEDULER": False
+        })
+        
+        with app.app_context():
+            # 1. Upgrade to revision 81e56a4fa655
+            run_upgrade(revision="81e56a4fa655")
+            
+        # 2. Open raw sqlite connection to populate legacy data with old schemas and nulls
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Drop baseline-created tables and recreate them using legacy schemas to allow NULLs & legacy columns
+        cursor.execute("DROP TABLE IF EXISTS asset")
+        cursor.execute("""
+            CREATE TABLE asset (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(100),
+                ip_address VARCHAR(45) NOT NULL,
+                ip_assignment_type VARCHAR(20) NULL,
+                is_trusted BOOLEAN
+            )
+        """)
+
+        cursor.execute("DROP TABLE IF EXISTS honeypot_log")
+        cursor.execute("""
+            CREATE TABLE honeypot_log (
+                id INTEGER PRIMARY KEY,
+                ip_address VARCHAR(45) NULL,
+                path VARCHAR(255) NULL,
+                method VARCHAR(10) NULL,
+                timestamp DATETIME NULL,
+                user_agent TEXT NULL
+            )
+        """)
+
+        cursor.execute("DROP TABLE IF EXISTS honeypot_blocked_ip")
+        cursor.execute("""
+            CREATE TABLE honeypot_blocked_ip (
+                id INTEGER PRIMARY KEY,
+                ip_address VARCHAR(45) NULL,
+                blocked_at DATETIME NULL,
+                expires_at DATETIME NULL
+            )
+        """)
+
+        cursor.execute("DROP TABLE IF EXISTS security_anomaly")
+        cursor.execute("""
+            CREATE TABLE security_anomaly (
+                id INTEGER PRIMARY KEY,
+                anomaly_type VARCHAR(50) NULL,
+                ip_address VARCHAR(45) NULL,
+                description TEXT NULL
+            )
+        """)
+
+        cursor.execute("DROP TABLE IF EXISTS scan_schedule")
+        cursor.execute("""
+            CREATE TABLE scan_schedule (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                input_ip VARCHAR(45) NOT NULL,
+                subnet_mask VARCHAR(45) NOT NULL,
+                network_cidr VARCHAR(50) NOT NULL,
+                frequency VARCHAR(20) NOT NULL,
+                next_run DATETIME NULL
+            )
+        """)
+
+        cursor.execute("DROP TABLE IF EXISTS security_finding")
+        cursor.execute("""
+            CREATE TABLE security_finding (
+                id INTEGER PRIMARY KEY,
+                asset_id INTEGER,
+                ip_address VARCHAR(45) NOT NULL,
+                port INTEGER NOT NULL,
+                service VARCHAR(50),
+                severity VARCHAR(20),
+                status VARCHAR(20),
+                scan_id INTEGER,
+                protocol VARCHAR(10) NULL
+            )
+        """)
+
+        # Insert a legacy user
+        cursor.execute("INSERT INTO user (id, email, password_hash, is_admin) VALUES (10, 'legacy@test.com', 'hash', 0)")
+        
+        # Insert legacy asset with null ip_assignment_type
+        cursor.execute("INSERT INTO asset (id, name, ip_address, ip_assignment_type, is_trusted) VALUES (1, 'Legacy Asset', '192.168.1.5', NULL, 1)")
+        
+        # Insert legacy scan results (TCP and UDP)
+        cursor.execute("INSERT INTO scan_result (id, user_id, input_ip, subnet_mask, scan_type, status, network_cidr) VALUES (20, 10, '192.168.1.0', '24', 'udp', 'completed', '192.168.1.0/24')")
+        cursor.execute("INSERT INTO scan_result (id, user_id, input_ip, subnet_mask, scan_type, status, network_cidr) VALUES (21, 10, '192.168.1.0', '24', 'service_version', 'completed', '192.168.1.0/24')")
+
+        # Insert legacy findings on those scans with NULL protocol
+        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id, protocol) VALUES (101, 1, '192.168.1.5', 53, 'domain', 'Medium', 'open', 20, NULL)")
+        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id, protocol) VALUES (102, 1, '192.168.1.5', 80, 'http', 'Low', 'open', 21, NULL)")
+
+        # Insert legacy honeypot log with old schema
+        cursor.execute("INSERT INTO honeypot_log (id, ip_address, path, method, timestamp) VALUES (1, NULL, NULL, 'GET', '2026-07-12 12:00:00')")
+        
+        # Insert legacy blocked ip
+        cursor.execute("INSERT INTO honeypot_blocked_ip (id, ip_address, blocked_at) VALUES (1, NULL, '2026-07-12 13:00:00')")
+
+        # Insert legacy anomaly with null fields
+        cursor.execute("INSERT INTO security_anomaly (id, anomaly_type, ip_address, description) VALUES (1, NULL, NULL, NULL)")
+
+        conn.commit()
+        conn.close()
+        
+        # 3. Upgrade to head (this triggers backfills and constraint changes)
+        with app.app_context():
+            run_upgrade()
+            
+        # 4. Verify the migrated records
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Verify asset assignment type became DHCP
+        cursor.execute("SELECT ip_assignment_type FROM asset WHERE id = 1")
+        assert cursor.fetchone()[0] == "DHCP"
+        
+        # Verify honeypot_log ip_address/path backfilled and timestamp copied to created_at
+        cursor.execute("SELECT ip_address, path, created_at FROM honeypot_log WHERE id = 1")
+        row_hl = cursor.fetchone()
+        assert row_hl[0] == "0.0.0.0"
+        assert row_hl[1] == "/"
+        assert row_hl[2] is not None
+        
+        # Verify legacy scan findings got correct protocol backfilled
+        cursor.execute("SELECT protocol FROM security_finding WHERE id = 101")
+        assert cursor.fetchone()[0] == "udp"
+        cursor.execute("SELECT protocol FROM security_finding WHERE id = 102")
+        assert cursor.fetchone()[0] == "tcp"
+
+        # Verify anomaly anomaly_type was lowercased to rogue_device
+        cursor.execute("SELECT anomaly_type, ip_address, description FROM security_anomaly WHERE id = 1")
+        row_anom = cursor.fetchone()
+        assert row_anom[0] == "rogue_device"
+        assert row_anom[1] == "0.0.0.0"
+        assert row_anom[2] == "Legacy anomaly record"
+
+        conn.close()
+    finally:
+        os.close(db_fd)
+        try:
+            os.unlink(db_path)
+        except OSError:
+            pass
