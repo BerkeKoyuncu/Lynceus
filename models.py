@@ -42,6 +42,14 @@ class ScanResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    schedule_id = db.Column(
+        db.Integer,
+        db.ForeignKey("scan_schedule.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    scheduled_for = db.Column(db.DateTime, nullable=True)
+    scheduler_dispatch_state = db.Column(db.String(20), nullable=True)
+    scheduler_claimed_at = db.Column(db.DateTime, nullable=True)
 
     input_ip = db.Column(db.String(45), nullable=False)
     subnet_mask = db.Column(db.String(45), nullable=False)
@@ -62,6 +70,12 @@ class ScanResult(db.Model):
     result_data = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, default=utc_now)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "schedule_id", "scheduled_for", name="uq_scan_result_schedule_occurrence"
+        ),
+    )
 
     def __repr__(self):
         return f"<ScanResult {self.network_cidr} - {self.scan_type}>"

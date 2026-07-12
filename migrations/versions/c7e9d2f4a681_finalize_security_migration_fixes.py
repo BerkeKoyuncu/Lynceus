@@ -77,6 +77,13 @@ def upgrade():
             "DELETE FROM honeypot_blocked_ip "
             "WHERE ip_address IS NULL OR TRIM(ip_address) = ''"
         )
+        if not has_ip_unique:
+            op.execute(
+                "DELETE FROM honeypot_blocked_ip WHERE id NOT IN ("
+                "SELECT keep_id FROM ("
+                "SELECT MIN(id) AS keep_id FROM honeypot_blocked_ip GROUP BY ip_address"
+                ") AS deduplicated)"
+            )
         op.execute(
             "UPDATE honeypot_blocked_ip SET reason = 'Blocked by Honeypot' "
             "WHERE reason IS NULL OR TRIM(reason) = ''"

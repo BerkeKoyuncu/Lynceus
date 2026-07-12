@@ -92,14 +92,16 @@ def test_redis_rule_finding_is_preserved_when_audit_is_skipped(app):
                 "credential_audit": {"status": "skipped", "message": "timeout"},
             }],
         }
-        evaluate_rules_for_host(host, asset, admin.id, scan_id=999)
+        original_scan_id = finding.scan_id
+        preserved = evaluate_rules_for_host(host, asset, admin.id, scan_id=999)
         db.session.refresh(finding)
-        assert finding.scan_id == 999
+        assert finding.scan_id == original_scan_id
+        assert preserved == {fingerprint}
 
         reconcile_findings_for_scan(
             asset=asset,
             host_online=True,
-            observed_fingerprints={fingerprint},
+            observed_fingerprints=preserved,
             scan_id=999,
             scan_type="detailed",
             requested_ports="6379",

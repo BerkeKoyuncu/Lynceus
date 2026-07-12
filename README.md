@@ -307,6 +307,11 @@ Downgrades below `b5a93e3d9370` are intentionally blocked because older
 honeypot downgrade steps are destructive. Restore a database backup/export when
 you need to return to an older release; do not bypass this migration floor.
 
+Revision `d4f8a1c6e902` stores scheduled occurrences as recoverable jobs. A job
+committed before a scheduler process exits remains queued (or reclaimable after
+its short dispatch lease), so another scheduler instance can start it without
+creating a duplicate occurrence.
+
 > **Existing databases managed by a previous `db.create_all()` setup:**
 > Stamping tells Alembic that your database is already at a given revision. **It does not modify any tables** — it only updates the `alembic_version` marker. Only stamp after verifying that your existing schema exactly matches the baseline. If columns or tables are missing, stamping will hide the discrepancy and future migrations will fail.
 >

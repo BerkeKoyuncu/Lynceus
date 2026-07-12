@@ -135,8 +135,8 @@ def calculate_finding_fingerprint(ip_address, port, service, source_type, source
     return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
 
 
-def _preserve_inconclusive_rule_finding(asset_id, ip, port, protocol, rule_id, scan_id):
-    existing = SecurityFinding.query.filter(
+def _inconclusive_rule_fingerprints(asset_id, ip, port, protocol, rule_id):
+    existing_findings = SecurityFinding.query.filter(
         SecurityFinding.asset_id == asset_id,
         SecurityFinding.ip_address == ip,
         SecurityFinding.port == port,
@@ -144,12 +144,12 @@ def _preserve_inconclusive_rule_finding(asset_id, ip, port, protocol, rule_id, s
         SecurityFinding.source_type == "rule",
         SecurityFinding.source_rule_id == rule_id,
         SecurityFinding.status.in_(["open", "needs_review"]),
-    ).first()
-    if existing:
-        # scan_id contributes to the observed fingerprint set. Avoid changing
-        # last_seen/evidence because this evaluation was inconclusive.
-        existing.scan_id = scan_id
-        db.session.commit()
+    ).all()
+    return {
+        finding.fingerprint
+        for finding in existing_findings
+        if finding.fingerprint
+    }
 
 def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None):
     """
@@ -159,6 +159,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
     ip = host.get("address")
     mac = host.get("mac_address", "").strip().lower() if host.get("mac_address") else ""
     ports = [p for p in host.get("ports", []) if p.get("state") == "open"]
+    preserved_fingerprints = set()
     
     # Load all active security rules for the user
     rules = SecurityRule.query.filter_by(user_id=user_id, enabled=True).all()
@@ -302,8 +303,10 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                         matched = False
                         continue
                     else:
-                        _preserve_inconclusive_rule_finding(
-                            asset.id, ip, p_num, matched_protocol, rule.id, scan_id
+                        preserved_fingerprints.update(
+                            _inconclusive_rule_fingerprints(
+                                asset.id, ip, p_num, matched_protocol, rule.id
+                            )
                         )
                         # Missing/skipped audits are inconclusive, so preserve an
                         # active finding without creating a new one.
@@ -320,8 +323,10 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                         # Evaluation was inconclusive. Preserve an existing finding
                         # by recording it as observed in this scan; reconciliation
                         # must not interpret an external-service failure as safety.
-                        _preserve_inconclusive_rule_finding(
-                            asset.id, ip, p_num, matched_protocol, rule.id, scan_id
+                        preserved_fingerprints.update(
+                            _inconclusive_rule_fingerprints(
+                                asset.id, ip, p_num, matched_protocol, rule.id
+                            )
                         )
                         matched = False
                     else:
@@ -387,6 +392,8 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                 )
                 db.session.add(new_finding)
             db.session.commit()
+
+    return preserved_fingerprints
 
 def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
     """

@@ -39,6 +39,7 @@ def test_ftp_530_is_an_explicit_authentication_rejection(monkeypatch):
     "reply",
     [
         "530 Account disabled by policy",
+        "530 Authentication failed because TLS is required",
         "534 Authentication failed because TLS is required",
         "534 Policy requires SSL",
         "550 Requested action not taken",
@@ -77,6 +78,33 @@ def test_redis_timeout_returns_skipped(monkeypatch):
     assert audit_redis("192.0.2.1")["status"] == "skipped"
 
 
+def test_redis_auth_uses_resp_for_passwords_with_spaces(monkeypatch):
+    sent = []
+
+    class RedisSocket:
+        def settimeout(self, timeout):
+            pass
+
+        def connect(self, address):
+            pass
+
+        def sendall(self, payload):
+            sent.append(payload)
+
+        def recv(self, size):
+            return b"-WRONGPASS invalid username-password pair\r\n"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(socket, "socket", lambda *args, **kwargs: RedisSocket())
+    result = audit_redis(
+        "192.0.2.1", custom_passwords=["pass word"], use_defaults=False
+    )
+    assert result["status"] == "safe"
+    assert sent == [b"*2\r\n$4\r\nAUTH\r\n$9\r\npass word\r\n"]
+
+
 def test_http_basic_timeout_during_credentials_returns_skipped(monkeypatch):
     calls = 0
 
@@ -84,7 +112,13 @@ def test_http_basic_timeout_during_credentials_returns_skipped(monkeypatch):
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise urllib.error.HTTPError("http://example", 401, "Unauthorized", {}, None)
+            raise urllib.error.HTTPError(
+                "http://example",
+                401,
+                "Unauthorized",
+                {"WWW-Authenticate": 'Basic realm="test"'},
+                None,
+            )
         raise socket.timeout("timed out")
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
@@ -96,13 +130,41 @@ def test_http_basic_timeout_during_credentials_returns_skipped(monkeypatch):
 
 def test_http_basic_is_safe_only_after_explicit_rejections(monkeypatch):
     def reject(*args, **kwargs):
-        raise urllib.error.HTTPError("http://example", 401, "Unauthorized", {}, None)
+        raise urllib.error.HTTPError(
+            "http://example",
+            401,
+            "Unauthorized",
+            {"WWW-Authenticate": 'Basic realm="test"'},
+            None,
+        )
 
     monkeypatch.setattr(urllib.request, "urlopen", reject)
     result = audit_http_basic(
         "192.0.2.1", custom_credentials=[("admin", "bad")], use_defaults=False
     )
     assert result["status"] == "safe"
+
+
+def test_http_basic_non_basic_401_is_skipped_without_sending_credentials(monkeypatch):
+    calls = 0
+
+    def reject(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise urllib.error.HTTPError(
+            "http://example",
+            401,
+            "Unauthorized",
+            {"WWW-Authenticate": 'Digest realm="test"'},
+            None,
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", reject)
+    result = audit_http_basic(
+        "192.0.2.1", custom_credentials=[("admin", "secret")], use_defaults=False
+    )
+    assert result["status"] == "skipped"
+    assert calls == 1
 
 
 def test_http_basic_closes_successful_response(monkeypatch):

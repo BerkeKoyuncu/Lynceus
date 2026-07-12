@@ -95,6 +95,29 @@ def _enforce_safe_downgrade_floor():
         )
 
 
+def _enforce_safe_offline_downgrade_floor():
+    try:
+        starting_revision = context.get_starting_revision_argument()
+        target_revision = context.get_revision_argument()
+    except (KeyError, CommandError):
+        return
+    if starting_revision is None:
+        # Offline upgrades do not have an explicit starting revision.
+        return
+
+    script = ScriptDirectory.from_config(config)
+    is_downgrade = _is_ancestor(script, target_revision, starting_revision)
+    target_is_below_floor = (
+        target_revision != SAFE_DOWNGRADE_FLOOR
+        and _is_ancestor(script, target_revision, SAFE_DOWNGRADE_FLOOR)
+    )
+    if is_downgrade and target_is_below_floor:
+        raise CommandError(
+            'Offline downgrades below b5a93e3d9370 are blocked because they '
+            'would generate destructive honeypot migration SQL.'
+        )
+
+
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
 
@@ -111,6 +134,8 @@ def run_migrations_offline():
     context.configure(
         url=url, target_metadata=get_metadata(), literal_binds=True
     )
+
+    _enforce_safe_offline_downgrade_floor()
 
     with context.begin_transaction():
         context.run_migrations()

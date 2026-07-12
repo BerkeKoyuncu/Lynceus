@@ -76,12 +76,20 @@ def _parse_comparable_version(value):
     return tuple(parsed)
 
 
-def _cpe_product(criteria):
+def _cpe_identity(criteria):
     parts = (criteria or "").split(":")
     if len(parts) > 5 and parts[:3] == ["cpe", "2.3", "a"]:
-        return parts[4].replace("\\", "").lower()
+        return (
+            "a",
+            parts[3].replace("\\", "").lower(),
+            parts[4].replace("\\", "").lower(),
+        )
     if len(parts) > 4 and parts[0] == "cpe" and parts[1].startswith("/a"):
-        return parts[3].replace("\\", "").lower()
+        return (
+            "a",
+            parts[2].replace("\\", "").lower(),
+            parts[3].replace("\\", "").lower(),
+        )
     return None
 
 
@@ -109,9 +117,10 @@ def _has_unsupported_cpe_logic(value):
     return False
 
 
-def _cpe_version_state(user_version, match_obj, api_product):
+def _cpe_version_state(user_version, match_obj, api_vendor, api_product):
     """Return affected/unaffected/unknown for one product CPE match."""
-    if _cpe_product(match_obj.get("criteria")) != api_product.lower():
+    expected_identity = ("a", api_vendor.lower(), api_product.lower())
+    if _cpe_identity(match_obj.get("criteria")) != expected_identity:
         return "unknown"
     if match_obj.get("vulnerable", True) is not True:
         return "unknown"
@@ -334,7 +343,8 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                 cpe_nodes = cve_record.get("containers", {}).get("cna", {}).get("cpeApplicability", [])
                 product_matches = [
                     match for match in _iter_cpe_matches(cpe_nodes)
-                    if _cpe_product(match.get("criteria")) == api_product.lower()
+                    if _cpe_identity(match.get("criteria"))
+                    == ("a", vendor.lower(), api_product.lower())
                 ]
 
                 if product_matches:
@@ -343,7 +353,9 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                         states = ["unknown"]
                     else:
                         states = [
-                            _cpe_version_state(target_version, match, api_product)
+                            _cpe_version_state(
+                                target_version, match, vendor, api_product
+                            )
                             for match in product_matches
                         ]
                     if "affected" in states:
@@ -455,6 +467,16 @@ def _is_ftp_auth_rejection(error):
     reply_code = re.match(r"^(\d{3})\b", message)
     if reply_code and reply_code.group(1) != "530":
         return False
+    policy_markers = (
+        "tls",
+        "ssl",
+        "policy",
+        "account disabled",
+        "account expired",
+        "not allowed",
+    )
+    if any(marker in message for marker in policy_markers):
+        return False
     return any(
         phrase in message
         for phrase in (
@@ -506,6 +528,15 @@ def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
         return {"status": "safe", "message": "FTP rejected all tested credentials"}
     return {"status": "skipped", "message": "No FTP credentials were available to test"}
 
+def _redis_command(*parts):
+    encoded_parts = [str(part).encode("utf-8") for part in parts]
+    chunks = [f"*{len(encoded_parts)}\r\n".encode()]
+    for part in encoded_parts:
+        chunks.append(f"${len(part)}\r\n".encode())
+        chunks.append(part + b"\r\n")
+    return b"".join(chunks)
+
+
 def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
     passwords = []
     if custom_passwords:
@@ -525,7 +556,7 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
                 if b"+PONG" in resp:
                     return {"status": "vulnerable", "message": "No password set (Unauthenticated access)."}
             else:
-                s.sendall(f"AUTH {pwd}\r\n".encode())
+                s.sendall(_redis_command("AUTH", pwd))
                 resp = s.recv(1024)
                 if b"+OK" in resp:
                     return {"status": "vulnerable", "message": "A weak Redis password was successfully authenticated."}
@@ -549,6 +580,7 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
     import urllib.request
     import urllib.error
     import base64
+    import re
     
     url = f"{'https' if is_ssl else 'http'}://{ip}:{port}/"
     try:
@@ -560,6 +592,12 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
         try:
             if e.code != 401:
                 return {"status": "skipped", "message": f"Returned status {e.code}"}
+            authenticate_header = (e.headers or {}).get("WWW-Authenticate", "")
+            if not re.search(r"(?:^|,)\s*basic(?:\s|$)", authenticate_header, re.I):
+                return {
+                    "status": "skipped",
+                    "message": "The endpoint does not advertise HTTP Basic authentication.",
+                }
         finally:
             e.close()
     except Exception as e:
@@ -907,6 +945,8 @@ def execute_scan(app, scan_id, audit_credentials=False):
             return
 
         scan_result.status = "running"
+        if scan_result.schedule_id is not None:
+            scan_result.scheduler_dispatch_state = "started"
         db.session.commit()
 
         # Determine rule owner: always use admin (global/admin-managed Model A)
@@ -1178,7 +1218,13 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 asset_match = Asset.query.filter_by(ip_address=ip).first()
                 if asset_match:
                     prev_ports = prev_hosts_map.get(ip)
-                    evaluate_rules_for_host(host, asset_match, rule_owner_id, prev_ports=prev_ports, scan_id=scan_result.id)
+                    host["_preserved_rule_fingerprints"] = evaluate_rules_for_host(
+                        host,
+                        asset_match,
+                        rule_owner_id,
+                        prev_ports=prev_ports,
+                        scan_id=scan_result.id,
+                    )
 
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
@@ -1264,7 +1310,9 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     reconcile_findings_for_scan(
                         asset=asset,
                         host_online=host_online,
-                        observed_fingerprints=scan_fps,
+                        observed_fingerprints=(
+                            scan_fps | host.get("_preserved_rule_fingerprints", set())
+                        ),
                         scan_id=scan_result.id,
                         scan_type=scan_result.scan_type,
                         requested_ports=scan_result.ports,
@@ -1287,6 +1335,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
             host.pop("_audited_endpoints", None)
             host.pop("_cve_failed_ports", None)
             host.pop("_confirmed_unaffected_cves", None)
+            host.pop("_preserved_rule_fingerprints", None)
             host.pop("is_new_rogue", None)
 
         result_payload = {

@@ -10,6 +10,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
 from functools import wraps
 import click
+from sqlalchemy import and_, or_
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset
 from services.encryption_service import get_flask_secret_key
@@ -465,7 +466,7 @@ def _next_schedule_run(now, frequency):
 
 
 def _claim_scheduled_scan(schedule, now):
-    """Atomically claim one due occurrence and create its scan."""
+    """Atomically claim one occurrence and persist a recoverable queued job."""
     due_at = schedule.next_run
     claimed = ScanSchedule.query.filter(
         ScanSchedule.id == schedule.id,
@@ -499,11 +500,61 @@ def _claim_scheduled_scan(schedule, now):
         "timing_template": schedule.timing_template,
         "audit_credentials": schedule.audit_credentials,
         "status": "pending",
+        "schedule_id": schedule.id,
+        "scheduled_for": due_at,
+        "scheduler_dispatch_state": "queued",
     }
     scan = ScanResult(**scan_values)
     db.session.add(scan)
     db.session.commit()
-    return scan.id, bool(scan_values["audit_credentials"])
+    return scan.id
+
+
+def _dispatch_pending_scheduled_scans(app, now=None):
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    retry_before = now - timedelta(minutes=1)
+    eligible = or_(
+        ScanResult.scheduler_dispatch_state == "queued",
+        and_(
+            ScanResult.scheduler_dispatch_state == "claimed",
+            or_(
+                ScanResult.scheduler_claimed_at.is_(None),
+                ScanResult.scheduler_claimed_at <= retry_before,
+            ),
+        ),
+    )
+    candidates = ScanResult.query.filter(
+        ScanResult.schedule_id.isnot(None),
+        ScanResult.status == "pending",
+        eligible,
+    ).all()
+
+    dispatched = []
+    for candidate in candidates:
+        claimed = ScanResult.query.filter(
+            ScanResult.id == candidate.id,
+            ScanResult.status == "pending",
+            eligible,
+        ).update(
+            {
+                ScanResult.scheduler_dispatch_state: "claimed",
+                ScanResult.scheduler_claimed_at: now,
+            },
+            synchronize_session=False,
+        )
+        if claimed != 1:
+            db.session.rollback()
+            continue
+        audit_credentials = bool(candidate.audit_credentials)
+        scan_id = candidate.id
+        db.session.commit()
+        threading.Thread(
+            target=execute_scan,
+            args=(app, scan_id, audit_credentials),
+            daemon=True,
+        ).start()
+        dispatched.append(scan_id)
+    return dispatched
 
 
 def start_scheduler(app):
@@ -522,15 +573,8 @@ def start_scheduler(app):
                         ).all()
                         
                         for schedule in due_schedules:
-                            claim = _claim_scheduled_scan(schedule, now)
-                            if claim is None:
-                                continue
-                            scan_id, audit_credentials = claim
-                            threading.Thread(
-                                target=execute_scan,
-                                args=(app, scan_id, audit_credentials),
-                                daemon=True
-                            ).start()
+                            _claim_scheduled_scan(schedule, now)
+                        _dispatch_pending_scheduled_scans(app, now)
             except Exception as e:
                 import sys
                 print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)
@@ -646,9 +690,25 @@ def seed_mock_security_data():
 
 def cleanup_stale_scans():
     stale_threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30)
+    recoverable_jobs = ScanResult.query.filter(
+        ScanResult.status == "pending",
+        ScanResult.schedule_id.isnot(None),
+        ScanResult.scheduler_dispatch_state.in_(["queued", "claimed"]),
+        ScanResult.created_at < stale_threshold,
+    ).all()
+    for job in recoverable_jobs:
+        job.scheduler_dispatch_state = "queued"
+        job.scheduler_claimed_at = None
+
     stale_scans = ScanResult.query.filter(
         ScanResult.status.in_(["pending", "running"]),
-        ScanResult.created_at < stale_threshold
+        ScanResult.created_at < stale_threshold,
+        or_(
+            ScanResult.status == "running",
+            ScanResult.schedule_id.is_(None),
+            ScanResult.scheduler_dispatch_state.is_(None),
+            ScanResult.scheduler_dispatch_state.notin_(["queued", "claimed"]),
+        ),
     ).all()
     for scan in stale_scans:
         scan.status = "failed"
@@ -658,7 +718,7 @@ def cleanup_stale_scans():
             "hosts": []
         }
         scan.result_data = json.dumps(result_payload, indent=4)
-    if stale_scans:
+    if stale_scans or recoverable_jobs:
         db.session.commit()
 
 if __name__ == "__main__":

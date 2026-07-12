@@ -53,8 +53,19 @@ def test_confirmed_cve_version_comparison_handles_ambiguous_versions_safely():
         "criteria": "cpe:2.3:a:vendor:product:*:*:*:*:*:*:*:*",
         "versionEndExcluding": "1.2.4",
     }
-    assert _cpe_version_state("1.0.0", exact, "product") == "affected"
-    assert _cpe_version_state("1.2.4-rc1", bounded, "product") == "unknown"
+    assert _cpe_version_state("1.0.0", exact, "vendor", "product") == "affected"
+    assert _cpe_version_state("1.2.4-rc1", bounded, "vendor", "product") == "unknown"
+
+
+def test_cve_unaffected_confirmation_requires_vendor_and_product_match():
+    other_vendor = {
+        "criteria": "cpe:2.3:a:other_vendor:product:*:*:*:*:*:*:*:*",
+        "versionEndExcluding": "2.0",
+    }
+    assert (
+        _cpe_version_state("3.0", other_vendor, "expected_vendor", "product")
+        == "unknown"
+    )
 
 def test_evaluate_cve_findings(app):
     with app.app_context():

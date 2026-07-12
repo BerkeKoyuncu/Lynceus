@@ -1,7 +1,12 @@
 from datetime import datetime, timedelta, timezone
 import threading
 
-from app import _claim_scheduled_scan, create_app
+from app import (
+    _claim_scheduled_scan,
+    _dispatch_pending_scheduled_scans,
+    cleanup_stale_scans,
+    create_app,
+)
 from models import db, ScanResult, ScanSchedule, User
 
 
@@ -85,3 +90,91 @@ def test_concurrent_scheduler_workers_create_one_scan(tmp_path):
     assert sum(result is not None for result in results) == 1
     with app.app_context():
         assert ScanResult.query.count() == 1
+
+
+def test_scheduler_job_is_recoverable_if_process_dies_before_thread_start(
+    app, monkeypatch
+):
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, args, daemon):
+            self.args = args
+
+        def start(self):
+            started.append(self.args[1])
+
+    monkeypatch.setattr("app.threading.Thread", FakeThread)
+    with app.app_context():
+        user = User.query.first()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        schedule = ScanSchedule(
+            user_id=user.id,
+            name="Recoverable scan",
+            input_ip="203.0.113.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="203.0.113.0/24",
+            frequency="daily",
+            next_run=now - timedelta(minutes=1),
+            is_active=True,
+        )
+        db.session.add(schedule)
+        db.session.commit()
+
+        scan_id = _claim_scheduled_scan(schedule, now)
+        job = db.session.get(ScanResult, scan_id)
+        assert job.status == "pending"
+        assert job.scheduler_dispatch_state == "queued"
+
+        assert _dispatch_pending_scheduled_scans(app, now) == [scan_id]
+        db.session.refresh(job)
+        assert job.scheduler_dispatch_state == "claimed"
+        assert started == [scan_id]
+
+        # The fake thread never starts execute_scan. After the lease expires,
+        # another scheduler process can safely dispatch the same persisted job.
+        retry_at = now + timedelta(minutes=2)
+        assert _dispatch_pending_scheduled_scans(app, retry_at) == [scan_id]
+        assert started == [scan_id, scan_id]
+
+
+def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
+    with app.app_context():
+        user = User.query.first()
+        old_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="203.0.113.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="203.0.113.0/24",
+            status="pending",
+            schedule_id=1,
+            scheduled_for=old_time,
+            scheduler_dispatch_state="claimed",
+            scheduler_claimed_at=old_time,
+            created_at=old_time,
+        )
+        # The FK target is needed on databases that enforce foreign keys.
+        schedule = ScanSchedule(
+            id=1,
+            user_id=user.id,
+            name="Cleanup recovery",
+            input_ip="203.0.113.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="203.0.113.0/24",
+            frequency="daily",
+            next_run=old_time + timedelta(days=1),
+            is_active=True,
+        )
+        db.session.add(schedule)
+        db.session.add(job)
+        db.session.commit()
+
+        cleanup_stale_scans()
+        db.session.refresh(job)
+        assert job.status == "pending"
+        assert job.scheduler_dispatch_state == "queued"
+        assert job.scheduler_claimed_at is None
