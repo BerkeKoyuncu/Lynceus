@@ -296,6 +296,17 @@ python -m flask --app app db upgrade
 
 This creates all required tables from scratch on a fresh database, and is safe to re-run on an existing one.
 
+Revision `c7e9d2f4a681` is intentionally newer than `b5a93e3d9370`, so databases
+already stamped at `b5...` still execute the final cleanup. It removes blocked-IP
+rows whose address is null/blank and reasserts the current constraints. If an
+older migration run already dropped legacy `timestamp` or `blocked_at` values,
+those values cannot be reconstructed by a later revision; restore them from a
+backup/export before upgrading when they must be retained.
+
+Downgrades below `b5a93e3d9370` are intentionally blocked because older
+honeypot downgrade steps are destructive. Restore a database backup/export when
+you need to return to an older release; do not bypass this migration floor.
+
 > **Existing databases managed by a previous `db.create_all()` setup:**
 > Stamping tells Alembic that your database is already at a given revision. **It does not modify any tables** — it only updates the `alembic_version` marker. Only stamp after verifying that your existing schema exactly matches the baseline. If columns or tables are missing, stamping will hide the discrepancy and future migrations will fail.
 >

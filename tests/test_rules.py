@@ -1,5 +1,10 @@
 from models import db, User, SecurityRule, SecurityFinding, Asset
-from services.rule_service import seed_default_rules, evaluate_rules_for_host
+from services.rule_service import (
+    calculate_finding_fingerprint,
+    evaluate_rules_for_host,
+    reconcile_findings_for_scan,
+    seed_default_rules,
+)
 
 def test_seed_default_rules(app):
     with app.app_context():
@@ -47,3 +52,59 @@ def test_evaluate_rules_for_host(app):
         assert finding is not None
         assert finding.severity in ["High", "Critical"]
         assert "telnet" in finding.service
+
+
+def test_redis_rule_finding_is_preserved_when_audit_is_skipped(app):
+    with app.app_context():
+        admin = User.query.filter_by(is_admin=True).first()
+        seed_default_rules(admin.id)
+        rule = SecurityRule.query.filter_by(
+            user_id=admin.id, name="Redis Unauthenticated Access"
+        ).one()
+        asset = Asset(name="Redis", ip_address="192.0.2.10", criticality="High")
+        db.session.add(asset)
+        db.session.flush()
+        fingerprint = calculate_finding_fingerprint(
+            asset.ip_address, 6379, "redis", "rule", rule.id
+        )
+        finding = SecurityFinding(
+            asset_id=asset.id,
+            ip_address=asset.ip_address,
+            port=6379,
+            protocol="tcp",
+            service="redis",
+            severity="Critical",
+            status="open",
+            source_type="rule",
+            source_rule_id=rule.id,
+            fingerprint=fingerprint,
+        )
+        db.session.add(finding)
+        db.session.commit()
+
+        host = {
+            "address": asset.ip_address,
+            "ports": [{
+                "port": 6379,
+                "protocol": "tcp",
+                "state": "open",
+                "service": "redis",
+                "credential_audit": {"status": "skipped", "message": "timeout"},
+            }],
+        }
+        evaluate_rules_for_host(host, asset, admin.id, scan_id=999)
+        db.session.refresh(finding)
+        assert finding.scan_id == 999
+
+        reconcile_findings_for_scan(
+            asset=asset,
+            host_online=True,
+            observed_fingerprints={fingerprint},
+            scan_id=999,
+            scan_type="detailed",
+            requested_ports="6379",
+            current_open_ports=[("tcp", 6379)],
+            endpoint_states={("tcp", 6379): "open"},
+        )
+        db.session.refresh(finding)
+        assert finding.status == "open"

@@ -454,6 +454,58 @@ def create_app(config=None):
 
     return app
 
+def _next_schedule_run(now, frequency):
+    intervals = {
+        "hourly": timedelta(hours=1),
+        "daily": timedelta(days=1),
+        "weekly": timedelta(weeks=1),
+        "monthly": timedelta(days=30),
+    }
+    return now + intervals.get(frequency, timedelta(days=1))
+
+
+def _claim_scheduled_scan(schedule, now):
+    """Atomically claim one due occurrence and create its scan."""
+    due_at = schedule.next_run
+    claimed = ScanSchedule.query.filter(
+        ScanSchedule.id == schedule.id,
+        ScanSchedule.is_active.is_(True),
+        ScanSchedule.next_run == due_at,
+        ScanSchedule.next_run <= now,
+    ).update(
+        {
+            ScanSchedule.last_run: now,
+            ScanSchedule.next_run: _next_schedule_run(now, schedule.frequency),
+        },
+        synchronize_session=False,
+    )
+    if claimed != 1:
+        db.session.rollback()
+        return None
+
+    # Reload under the claim transaction so a configuration edit committed
+    # before our UPDATE is reflected in this occurrence.
+    db.session.refresh(schedule)
+    schedule.next_run = _next_schedule_run(now, schedule.frequency)
+    scan_values = {
+        "user_id": schedule.user_id,
+        "input_ip": schedule.input_ip,
+        "subnet_mask": schedule.subnet_mask,
+        "scan_type": schedule.scan_type,
+        "ports": schedule.ports,
+        "network_cidr": schedule.network_cidr,
+        "exclude_targets": schedule.exclude_targets,
+        "credential_ids": schedule.credential_ids,
+        "timing_template": schedule.timing_template,
+        "audit_credentials": schedule.audit_credentials,
+        "status": "pending",
+    }
+    scan = ScanResult(**scan_values)
+    db.session.add(scan)
+    db.session.commit()
+    return scan.id, bool(scan_values["audit_credentials"])
+
+
 def start_scheduler(app):
     def run_scheduler_loop():
         time.sleep(5)
@@ -470,41 +522,15 @@ def start_scheduler(app):
                         ).all()
                         
                         for schedule in due_schedules:
-                            scan = ScanResult(
-                                user_id=schedule.user_id,
-                                input_ip=schedule.input_ip,
-                                subnet_mask=schedule.subnet_mask,
-                                scan_type=schedule.scan_type,
-                                ports=schedule.ports,
-                                network_cidr=schedule.network_cidr,
-                                exclude_targets=schedule.exclude_targets,
-                                credential_ids=schedule.credential_ids,
-                                timing_template=schedule.timing_template,
-                                audit_credentials=schedule.audit_credentials,
-                                status="pending"
-                            )
-                            db.session.add(scan)
-                            db.session.commit()
-                            
-                            background_app = app
+                            claim = _claim_scheduled_scan(schedule, now)
+                            if claim is None:
+                                continue
+                            scan_id, audit_credentials = claim
                             threading.Thread(
                                 target=execute_scan,
-                                args=(background_app, scan.id, schedule.audit_credentials),
+                                args=(app, scan_id, audit_credentials),
                                 daemon=True
                             ).start()
-                            
-                            schedule.last_run = now
-                            if schedule.frequency == "hourly":
-                                schedule.next_run = now + timedelta(hours=1)
-                            elif schedule.frequency == "daily":
-                                schedule.next_run = now + timedelta(days=1)
-                            elif schedule.frequency == "weekly":
-                                schedule.next_run = now + timedelta(weeks=1)
-                            elif schedule.frequency == "monthly":
-                                schedule.next_run = now + timedelta(days=30)
-                            else:
-                                schedule.next_run = now + timedelta(days=1)
-                            db.session.commit()
             except Exception as e:
                 import sys
                 print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)

@@ -1,7 +1,12 @@
 import urllib.request
 import json
 import threading
-from services.scan_service import is_version_affected, fetch_cves_for_query, CVE_CACHE
+from services.scan_service import (
+    CVE_CACHE,
+    _cpe_version_state,
+    fetch_cves_for_query,
+    is_version_affected,
+)
 from services.rule_service import evaluate_cve_findings, reconcile_findings_for_scan
 from services.anomaly_service import evaluate_host_anomalies
 from models import db, SecurityFinding, Asset, User, ScanResult
@@ -40,6 +45,16 @@ def test_is_version_affected():
 
     # 5. Invalid version string
     assert is_version_affected("invalid-version-string", match_1, "http_server") is False
+
+
+def test_confirmed_cve_version_comparison_handles_ambiguous_versions_safely():
+    exact = {"criteria": "cpe:2.3:a:vendor:product:1.0:*:*:*:*:*:*:*"}
+    bounded = {
+        "criteria": "cpe:2.3:a:vendor:product:*:*:*:*:*:*:*:*",
+        "versionEndExcluding": "1.2.4",
+    }
+    assert _cpe_version_state("1.0.0", exact, "product") == "affected"
+    assert _cpe_version_state("1.2.4-rc1", bounded, "product") == "unknown"
 
 def test_evaluate_cve_findings(app):
     with app.app_context():
@@ -217,6 +232,140 @@ def test_cve_api_failure_preserves_existing_finding(app):
         
         db.session.refresh(finding)
         assert finding.status == "open"  # Preserved because lookup failed
+
+
+def test_cve_version_string_change_does_not_prove_remediation(app):
+    with app.app_context():
+        asset = Asset(name="CVE banner test", ip_address="192.0.2.20", is_trusted=True)
+        db.session.add(asset)
+        db.session.flush()
+        finding = SecurityFinding(
+            asset_id=asset.id,
+            ip_address=asset.ip_address,
+            port=22,
+            protocol="tcp",
+            service="ssh",
+            version="OpenSSH 8.9p1 Ubuntu 3ubuntu0.6",
+            cve="CVE-2024-TEST",
+            severity="High",
+            status="open",
+            source_type="cve",
+            fingerprint="cve-banner-change",
+        )
+        db.session.add(finding)
+        db.session.commit()
+
+        reconcile_findings_for_scan(
+            asset=asset,
+            host_online=True,
+            observed_fingerprints=set(),
+            scan_id=999,
+            scan_type="service_version",
+            requested_ports="22",
+            current_open_ports=[("tcp", 22)],
+            endpoint_states={("tcp", 22): "open"},
+            current_ports_info={("tcp", 22): {
+                "version_display": "OpenSSH 8.9p1 Ubuntu 3ubuntu0.7"
+            }},
+        )
+        db.session.refresh(finding)
+        assert finding.status == "open"
+
+
+def test_cve_closes_only_when_explicitly_confirmed_unaffected(app):
+    with app.app_context():
+        asset = Asset(name="Patched CVE test", ip_address="192.0.2.21", is_trusted=True)
+        db.session.add(asset)
+        db.session.flush()
+        finding = SecurityFinding(
+            asset_id=asset.id,
+            ip_address=asset.ip_address,
+            port=443,
+            protocol="tcp",
+            service="https",
+            cve="CVE-2024-TEST",
+            severity="High",
+            status="open",
+            source_type="cve",
+            fingerprint="cve-confirmed-unaffected",
+        )
+        db.session.add(finding)
+        db.session.commit()
+
+        reconcile_findings_for_scan(
+            asset=asset,
+            host_online=True,
+            observed_fingerprints=set(),
+            scan_id=999,
+            scan_type="service_version",
+            requested_ports="443",
+            current_open_ports=[("tcp", 443)],
+            endpoint_states={("tcp", 443): "open"},
+            confirmed_unaffected_cves={("tcp", 443): {"CVE-2024-TEST"}},
+        )
+        db.session.refresh(finding)
+        assert finding.status == "not_observed"
+
+
+def test_cve_fetch_returns_and_caches_explicit_unaffected_evidence(monkeypatch):
+    record = {
+        "containers": {
+            "cna": {
+                "descriptions": [{"lang": "en", "value": "Apache issue"}],
+                "cpeApplicability": [{
+                    "nodes": [{
+                        "cpeMatch": [{
+                            "criteria": "cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*",
+                            "vulnerable": True,
+                            "versionEndExcluding": "2.4.50",
+                        }]
+                    }]
+                }],
+            }
+        }
+    }
+    payload = json.dumps({
+        "results": {"nvd": [["CVE-2024-TEST", record]], "cvelistv5": []}
+    }).encode()
+    calls = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return payload
+
+    def urlopen(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return Response()
+
+    CVE_CACHE.clear()
+    clock = [0]
+    monkeypatch.setattr("services.scan_service._cache_time", lambda: clock[0])
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    arguments = (
+        "Apache httpd",
+        "2.4.50",
+        ["cpe:2.3:a:apache:http_server:2.4.50:*:*:*:*:*:*:*"],
+    )
+    first = fetch_cves_for_query(*arguments)
+    first["confirmed_unaffected_cves"].append("CVE-CACHE-POISON")
+    second = fetch_cves_for_query(*arguments)
+
+    assert first["product_confirmed"] is True
+    assert first["version_confirmed"] is True
+    assert second["confirmed_unaffected_cves"] == ["CVE-2024-TEST"]
+    assert calls == 1
+
+    clock[0] = 301
+    third = fetch_cves_for_query(*arguments)
+    assert third["confirmed_unaffected_cves"] == ["CVE-2024-TEST"]
+    assert calls == 2
 
 def test_cve_api_failure_is_not_cached():
     # Make a query with a product name that raises an error or fails
@@ -571,8 +720,8 @@ def test_migration_upgrade_downgrade():
             # Run upgrade to head
             upgrade()
             
-            # Run downgrade by one step (to 3f235f89c673)
-            downgrade(revision="-1")
+            # The new data-only revision downgrades explicitly to its b5 parent.
+            downgrade(revision="b5a93e3d9370")
             
             # Run upgrade back to head
             upgrade()
@@ -724,7 +873,7 @@ def test_migration_with_legacy_data():
         row_hl = cursor.fetchone()
         assert row_hl[0] == "0.0.0.0"
         assert row_hl[1] == "/"
-        assert row_hl[2] is not None
+        assert row_hl[2] == "2026-07-12 12:00:00"
 
         # Invalid NULL blocked-IP rows are removed without colliding with an
         # existing unique 0.0.0.0 record.

@@ -1,6 +1,8 @@
 import os
+import copy
 import json
 import socket
+import time
 import urllib.request
 import urllib.error
 import smtplib
@@ -44,12 +46,106 @@ VENDOR_PRODUCT_MAP = {
 }
 
 CVE_CACHE = {}
+CVE_CACHE_TTL_SECONDS = 300
+
+
+def _cache_time():
+    return time.monotonic()
 
 def parse_version(v_str):
     import re
     # Extract digit sequences
     nums = re.findall(r'\d+', v_str)
     return tuple(int(x) for x in nums) if nums else ()
+
+
+def _parse_comparable_version(value):
+    """Parse only the leading product version, excluding distro/banner suffixes."""
+    import re
+
+    text = (value or "").replace("\\", "")
+    match = re.search(r"\d+(?:\.\d+)*(?:p\d+)?", text, re.IGNORECASE)
+    if not match:
+        return ()
+    suffix = text[match.end():].lstrip()
+    if re.match(r"^[-_.]?(?:alpha|beta|rc|pre|preview|dev|snapshot)\d*\b", suffix, re.IGNORECASE):
+        return ()
+    parsed = [int(part) for part in re.findall(r"\d+", match.group(0))]
+    while len(parsed) > 1 and parsed[-1] == 0:
+        parsed.pop()
+    return tuple(parsed)
+
+
+def _cpe_product(criteria):
+    parts = (criteria or "").split(":")
+    if len(parts) > 5 and parts[:3] == ["cpe", "2.3", "a"]:
+        return parts[4].replace("\\", "").lower()
+    if len(parts) > 4 and parts[0] == "cpe" and parts[1].startswith("/a"):
+        return parts[3].replace("\\", "").lower()
+    return None
+
+
+def _iter_cpe_matches(value):
+    if isinstance(value, dict):
+        if "criteria" in value:
+            yield value
+        for nested in value.values():
+            yield from _iter_cpe_matches(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _iter_cpe_matches(nested)
+
+
+def _has_unsupported_cpe_logic(value):
+    if isinstance(value, dict):
+        if value.get("negate") is True:
+            return True
+        operator = value.get("operator")
+        if operator is not None and str(operator).upper() != "OR":
+            return True
+        return any(_has_unsupported_cpe_logic(nested) for nested in value.values())
+    if isinstance(value, list):
+        return any(_has_unsupported_cpe_logic(nested) for nested in value)
+    return False
+
+
+def _cpe_version_state(user_version, match_obj, api_product):
+    """Return affected/unaffected/unknown for one product CPE match."""
+    if _cpe_product(match_obj.get("criteria")) != api_product.lower():
+        return "unknown"
+    if match_obj.get("vulnerable", True) is not True:
+        return "unknown"
+
+    user_parsed = _parse_comparable_version(user_version)
+    if not user_parsed:
+        return "unknown"
+
+    parts = match_obj.get("criteria", "").split(":")
+    cpe_version = parts[5] if len(parts) > 5 and parts[1] == "2.3" else None
+    if parts and len(parts) > 4 and parts[1].startswith("/a"):
+        cpe_version = parts[4]
+    if cpe_version and cpe_version not in {"*", "-"}:
+        cpe_parsed = _parse_comparable_version(cpe_version)
+        if not cpe_parsed:
+            return "unknown"
+        return "affected" if user_parsed == cpe_parsed else "unaffected"
+
+    boundaries = {
+        "versionEndIncluding": lambda boundary: user_parsed <= boundary,
+        "versionEndExcluding": lambda boundary: user_parsed < boundary,
+        "versionStartIncluding": lambda boundary: user_parsed >= boundary,
+        "versionStartExcluding": lambda boundary: user_parsed > boundary,
+    }
+    parsed_boundaries = {}
+    for key in boundaries:
+        if key in match_obj:
+            parsed_boundaries[key] = _parse_comparable_version(match_obj[key])
+            if not parsed_boundaries[key]:
+                return "unknown"
+    for key, boundary in parsed_boundaries.items():
+        if not boundaries[key](boundary):
+            return "unaffected"
+    return "affected"
 
 def is_version_affected(user_ver, match_obj, api_product):
     cpe_uri = match_obj.get("criteria", "")
@@ -109,7 +205,18 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     
     cache_key = (product_clean, version_clean, tuple(cpe_list) if cpe_list else ())
     if cache_key in CVE_CACHE:
-        return {"success": True, "cves": CVE_CACHE[cache_key]}
+        cached = CVE_CACHE[cache_key]
+        if isinstance(cached, dict) and "result" in cached and "expires_at" in cached:
+            if cached["expires_at"] > _cache_time():
+                return copy.deepcopy(cached["result"])
+            CVE_CACHE.pop(cache_key, None)
+            cached = None
+        if cached is None:
+            pass
+        elif isinstance(cached, dict):
+            return copy.deepcopy(cached)
+        else:
+            return {"success": True, "cves": copy.deepcopy(cached)}
 
     cpe_vendor = None
     cpe_product = None
@@ -186,6 +293,9 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     try:
         seen_cves = set()
         filtered_cves = []
+        confirmed_unaffected_cves = set()
+        inconclusive_cves = set()
+        product_confirmed = False
 
         for item in all_items:
             if not isinstance(item, list) or len(item) < 2:
@@ -215,31 +325,36 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                 if cvss_score is not None:
                     break
 
-            # Check if version is affected
+            # Check if version is affected. Only explicit, parseable CPE range
+            # evidence may be emitted as confirmed-unaffected.
             is_affected = True
             is_definite = False
             if target_version:
                 is_affected = False
                 cpe_nodes = cve_record.get("containers", {}).get("cna", {}).get("cpeApplicability", [])
-                cpe_found = False
+                product_matches = [
+                    match for match in _iter_cpe_matches(cpe_nodes)
+                    if _cpe_product(match.get("criteria")) == api_product.lower()
+                ]
 
-                for node in cpe_nodes:
-                    for subnode in node.get("nodes", []):
-                        for match in subnode.get("cpeMatch", []):
-                            cpe_uri = match.get("criteria", "")
-                            if api_product in cpe_uri.lower():
-                                cpe_found = True
-                                if is_version_affected(target_version, match, api_product):
-                                    is_affected = True
-                                    break
-                        if is_affected:
-                            break
-                    if is_affected:
-                        break
-
-                if cpe_found:
-                    if is_affected:
+                if product_matches:
+                    product_confirmed = True
+                    if _has_unsupported_cpe_logic(cpe_nodes):
+                        states = ["unknown"]
+                    else:
+                        states = [
+                            _cpe_version_state(target_version, match, api_product)
+                            for match in product_matches
+                        ]
+                    if "affected" in states:
+                        is_affected = True
                         is_definite = True
+                    elif states and all(state == "unaffected" for state in states):
+                        if cve_id not in inconclusive_cves:
+                            confirmed_unaffected_cves.add(cve_id)
+                    else:
+                        inconclusive_cves.add(cve_id)
+                        confirmed_unaffected_cves.discard(cve_id)
                 else:
                     # CPE not found, check description as fallback
                     if api_product in summary.lower():
@@ -247,11 +362,14 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                         is_definite = False
                     else:
                         is_affected = False
+                    inconclusive_cves.add(cve_id)
+                    confirmed_unaffected_cves.discard(cve_id)
             else:
                 is_affected = True
                 is_definite = False
 
             if is_affected:
+                confirmed_unaffected_cves.discard(cve_id)
                 seen_cves.add(cve_id)
                 filtered_cves.append({
                     "id": cve_id,
@@ -262,8 +380,20 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
 
         filtered_cves.sort(key=lambda x: x["cvss"] if x["cvss"] is not None else -1, reverse=True)
         filtered_cves = filtered_cves[:15]
-        CVE_CACHE[cache_key] = filtered_cves
-        return {"success": True, "cves": filtered_cves}
+        result = {
+            "success": True,
+            "lookup_success": True,
+            "product_confirmed": product_confirmed,
+            "version_confirmed": product_confirmed and bool(_parse_comparable_version(target_version)),
+            "cves": filtered_cves,
+            "affected_cves": [cve["id"] for cve in filtered_cves],
+            "confirmed_unaffected_cves": sorted(confirmed_unaffected_cves),
+        }
+        CVE_CACHE[cache_key] = {
+            "expires_at": _cache_time() + CVE_CACHE_TTL_SECONDS,
+            "result": copy.deepcopy(result),
+        }
+        return copy.deepcopy(result)
     except Exception as e:
         return {"success": False, "cves": [], "error": str(e)}
 
@@ -318,6 +448,27 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
         db.session.add(new_finding)
     db.session.commit()
 
+def _is_ftp_auth_rejection(error):
+    import re
+
+    message = str(error).strip().lower()
+    reply_code = re.match(r"^(\d{3})\b", message)
+    if reply_code and reply_code.group(1) != "530":
+        return False
+    return any(
+        phrase in message
+        for phrase in (
+            "login incorrect",
+            "cannot log in",
+            "not logged in",
+            "authentication failed",
+            "authentication failure",
+            "invalid password",
+            "invalid credentials",
+        )
+    )
+
+
 def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
     credentials = []
     if custom_credentials:
@@ -337,10 +488,12 @@ def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
             ftp = ftplib.FTP()
             ftp.connect(ip, port, timeout=2)
             ftp.login(username, password)
-            ftp.quit()
             return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
-        except ftplib.error_perm:
-            rejected += 1
+        except ftplib.error_perm as error:
+            if _is_ftp_auth_rejection(error):
+                rejected += 1
+            else:
+                return {"status": "skipped", "message": f"FTP credential audit could not complete: {error}"}
         except (OSError, EOFError, ftplib.Error) as error:
             return {"status": "skipped", "message": f"FTP credential audit could not complete: {error}"}
         finally:
@@ -370,13 +523,11 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
                 s.sendall(b"PING\r\n")
                 resp = s.recv(1024)
                 if b"+PONG" in resp:
-                    s.close()
                     return {"status": "vulnerable", "message": "No password set (Unauthenticated access)."}
             else:
                 s.sendall(f"AUTH {pwd}\r\n".encode())
                 resp = s.recv(1024)
                 if b"+OK" in resp:
-                    s.close()
                     return {"status": "vulnerable", "message": "A weak Redis password was successfully authenticated."}
             if resp.startswith((b"-NOAUTH", b"-WRONGPASS")) or b"invalid password" in resp.lower():
                 rejected += 1
@@ -386,7 +537,10 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
             return {"status": "skipped", "message": f"Redis credential audit could not complete: {error}"}
         finally:
             if s is not None:
-                s.close()
+                try:
+                    s.close()
+                except OSError:
+                    pass
     if passwords and rejected == len(passwords):
         return {"status": "safe", "message": "Redis rejected all tested passwords"}
     return {"status": "skipped", "message": "No Redis passwords were available to test"}
@@ -399,11 +553,15 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
     url = f"{'https' if is_ssl else 'http'}://{ip}:{port}/"
     try:
         req = urllib.request.Request(url, method="GET")
-        urllib.request.urlopen(req, timeout=2)
+        response = urllib.request.urlopen(req, timeout=2)
+        response.close()
         return {"status": "safe", "message": "No authentication required"}
     except urllib.error.HTTPError as e:
-        if e.code != 401:
-            return {"status": "skipped", "message": f"Returned status {e.code}"}
+        try:
+            if e.code != 401:
+                return {"status": "skipped", "message": f"Returned status {e.code}"}
+        finally:
+            e.close()
     except Exception as e:
         return {"status": "skipped", "message": f"Connection failed: {str(e)}"}
         
@@ -421,6 +579,7 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
             ("root", "")
         ])
     
+    rejected = 0
     for username, password in credentials:
         try:
             req = urllib.request.Request(url, method="GET")
@@ -429,18 +588,33 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
             req.add_header("Authorization", f"Basic {auth_b64}")
             
             resp = urllib.request.urlopen(req, timeout=2)
-            if resp.code == 200:
+            status_code = resp.code
+            resp.close()
+            if 200 <= status_code < 300:
                 return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
-        except urllib.error.HTTPError as error:
-            if error.code == 401:
-                continue
             return {
                 "status": "skipped",
-                "message": f"Credential verification returned HTTP status {error.code}.",
+                "message": f"Credential verification returned HTTP status {status_code}.",
             }
-        except Exception:
-            continue
-    return {"status": "safe", "message": "Authentication required, but common passwords failed"}
+        except urllib.error.HTTPError as error:
+            try:
+                if error.code == 401:
+                    rejected += 1
+                    continue
+                return {
+                    "status": "skipped",
+                    "message": f"Credential verification returned HTTP status {error.code}.",
+                }
+            finally:
+                error.close()
+        except Exception as error:
+            return {
+                "status": "skipped",
+                "message": f"HTTP credential audit could not complete: {error}",
+            }
+    if credentials and rejected == len(credentials):
+        return {"status": "safe", "message": "HTTP Basic rejected all tested credentials"}
+    return {"status": "skipped", "message": "No HTTP Basic credentials were available to test"}
 
 def detect_device_type(hostname, mac_vendor, ports_list):
     """
@@ -1014,6 +1188,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 if not asset:
                     continue
                 cve_failed_ports = set()
+                confirmed_unaffected_cves = {}
                 for port_info in host.get("ports", []):
                     if port_info.get("state") != "open":
                         continue
@@ -1023,6 +1198,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     raw_version = port_info.get("version") or ""
                     cpe_list = port_info.get("cpe") or []
                     p_num = int(port_info.get("port") or 0)
+                    protocol = (port_info.get("protocol") or "tcp").lower()
 
                     # Build lookup key: prefer product name, fall back to service name
                     lookup_key = product.lower().strip() if product else service.lower().strip()
@@ -1030,6 +1206,14 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     if lookup_key and lookup_key != "-":
                         cves_res = fetch_cves_for_query(lookup_key, version=raw_version, cpe_list=cpe_list)
                         if cves_res.get("success"):
+                            if (
+                                cves_res.get("lookup_success") is True
+                                and cves_res.get("product_confirmed") is True
+                                and cves_res.get("version_confirmed") is True
+                            ):
+                                confirmed_unaffected_cves[(protocol, p_num)] = set(
+                                    cves_res.get("confirmed_unaffected_cves", [])
+                                )
                             cves = cves_res.get("cves", [])
                             if cves:
                                 evaluate_cve_findings(
@@ -1040,8 +1224,9 @@ def execute_scan(app, scan_id, audit_credentials=False):
                                     scan_id=scan_result.id
                                 )
                         else:
-                            cve_failed_ports.add(p_num)
+                            cve_failed_ports.add((protocol, p_num))
                 host["_cve_failed_ports"] = cve_failed_ports
+                host["_confirmed_unaffected_cves"] = confirmed_unaffected_cves
 
         # 7. Finding lifecycle reconciliation — mark unobserved findings 'not_observed'
         if nmap_result["success"]:
@@ -1074,6 +1259,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         for p in host.get("ports", [])
                     }
                     cve_failed_ports = host.get("_cve_failed_ports", set())
+                    confirmed_unaffected_cves = host.get("_confirmed_unaffected_cves", {})
                     audited_endpoints = host.get("_audited_endpoints", {})
                     reconcile_findings_for_scan(
                         asset=asset,
@@ -1086,6 +1272,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         credential_ids=scan_result.credential_ids,
                         current_open_ports=current_open_endpoints,
                         cve_failed_ports=cve_failed_ports,
+                        confirmed_unaffected_cves=confirmed_unaffected_cves,
                         audited_endpoints=audited_endpoints,
                         scanned_endpoints=scanned_endpoints,
                         endpoint_states=endpoint_states,
@@ -1099,6 +1286,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
             host.pop("_expected_mac", None)
             host.pop("_audited_endpoints", None)
             host.pop("_cve_failed_ports", None)
+            host.pop("_confirmed_unaffected_cves", None)
             host.pop("is_new_rogue", None)
 
         result_payload = {

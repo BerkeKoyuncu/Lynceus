@@ -4,6 +4,9 @@ from logging.config import fileConfig
 from flask import current_app
 
 from alembic import context
+from alembic.script import ScriptDirectory
+from alembic.script.revision import RangeNotAncestorError
+from alembic.util import CommandError
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -38,6 +41,7 @@ def get_engine_url():
 # target_metadata = mymodel.Base.metadata
 config.set_main_option('sqlalchemy.url', get_engine_url())
 target_db = current_app.extensions['migrate'].db
+SAFE_DOWNGRADE_FLOOR = 'b5a93e3d9370'
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -49,6 +53,46 @@ def get_metadata():
     if hasattr(target_db, 'metadatas'):
         return target_db.metadatas[None]
     return target_db.metadata
+
+
+def _is_ancestor(script, ancestor, descendant):
+    if ancestor == descendant:
+        return True
+    if ancestor is None:
+        return True
+    try:
+        list(script.iterate_revisions(descendant, ancestor))
+        return True
+    except RangeNotAncestorError:
+        return False
+
+
+def _enforce_safe_downgrade_floor():
+    current_revision = context.get_context().get_current_revision()
+    try:
+        target_revision = context.get_revision_argument()
+    except (KeyError, CommandError):
+        # Read-only commands such as `db current` have no destination revision.
+        return
+    if isinstance(target_revision, (tuple, list)):
+        if len(target_revision) != 1:
+            return
+        target_revision = target_revision[0]
+    if current_revision is None:
+        return
+
+    script = ScriptDirectory.from_config(config)
+    is_downgrade = _is_ancestor(script, target_revision, current_revision)
+    target_is_below_floor = (
+        target_revision != SAFE_DOWNGRADE_FLOOR
+        and _is_ancestor(script, target_revision, SAFE_DOWNGRADE_FLOOR)
+    )
+    if is_downgrade and target_is_below_floor:
+        raise CommandError(
+            'Downgrades below b5a93e3d9370 are blocked because historical '
+            'honeypot downgrade steps can destroy timestamp data. Restore a '
+            'backup/export instead of crossing this migration floor.'
+        )
 
 
 def run_migrations_offline():
@@ -102,6 +146,8 @@ def run_migrations_online():
             target_metadata=get_metadata(),
             **conf_args
         )
+
+        _enforce_safe_downgrade_floor()
 
         with context.begin_transaction():
             context.run_migrations()

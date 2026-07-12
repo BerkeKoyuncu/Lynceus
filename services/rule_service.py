@@ -134,6 +134,23 @@ def calculate_finding_fingerprint(ip_address, port, service, source_type, source
     raw_str = f"{ip_address}:{proto}:{port}:{service or ''}:{source_type}:{source_id_or_cve or ''}"
     return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
 
+
+def _preserve_inconclusive_rule_finding(asset_id, ip, port, protocol, rule_id, scan_id):
+    existing = SecurityFinding.query.filter(
+        SecurityFinding.asset_id == asset_id,
+        SecurityFinding.ip_address == ip,
+        SecurityFinding.port == port,
+        SecurityFinding.protocol == protocol,
+        SecurityFinding.source_type == "rule",
+        SecurityFinding.source_rule_id == rule_id,
+        SecurityFinding.status.in_(["open", "needs_review"]),
+    ).first()
+    if existing:
+        # scan_id contributes to the observed fingerprint set. Avoid changing
+        # last_seen/evidence because this evaluation was inconclusive.
+        existing.scan_id = scan_id
+        db.session.commit()
+
 def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None):
     """
     Evaluates active security rules against a scanned host's details.
@@ -275,13 +292,21 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                         continue
 
                     audit_res = pinfo.get("credential_audit")
-                    if audit_res and audit_res.get("status") == "vulnerable":
+                    audit_status = audit_res.get("status") if audit_res else None
+                    if audit_status == "vulnerable":
                         evidence = (
                             f"Redis authentication weakness confirmed on port {p_num}: "
                             f"{audit_res.get('message')}"
                         )
+                    elif audit_status == "safe":
+                        matched = False
+                        continue
                     else:
-                        # Not audited or audited safe — don't create a Critical finding
+                        _preserve_inconclusive_rule_finding(
+                            asset.id, ip, p_num, matched_protocol, rule.id, scan_id
+                        )
+                        # Missing/skipped audits are inconclusive, so preserve an
+                        # active finding without creating a new one.
                         matched = False
                         continue
                 
@@ -295,17 +320,9 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                         # Evaluation was inconclusive. Preserve an existing finding
                         # by recording it as observed in this scan; reconciliation
                         # must not interpret an external-service failure as safety.
-                        existing_tls = SecurityFinding.query.filter_by(
-                            asset_id=asset.id,
-                            ip_address=ip,
-                            port=p_num,
-                            protocol=matched_protocol,
-                            source_type="rule",
-                            source_rule_id=rule.id,
-                        ).first()
-                        if existing_tls:
-                            existing_tls.scan_id = scan_id
-                            db.session.commit()
+                        _preserve_inconclusive_rule_finding(
+                            asset.id, ip, p_num, matched_protocol, rule.id, scan_id
+                        )
                         matched = False
                     else:
                         matched = False  # Certificate was evaluated and is not expiring
@@ -506,7 +523,8 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                                 credential_ids=None, current_open_ports=None,
                                 cve_failed_ports=None, audited_endpoints=None,
                                 scanned_endpoints=None, endpoint_states=None,
-                                current_ports_info=None):
+                                current_ports_info=None,
+                                confirmed_unaffected_cves=None):
     """
     After a scan, marks findings that were not observed in this scan as 'not_observed'.
     Only does this if the host was seen online (status='up') during the scan.
@@ -519,6 +537,9 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
         
     if cve_failed_ports is None:
         cve_failed_ports = set()
+
+    if confirmed_unaffected_cves is None:
+        confirmed_unaffected_cves = {}
         
     if audited_endpoints is None:
         audited_endpoints = {}
@@ -642,14 +663,14 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                 if finding.source_type == "cve":
                     # Only reconcile if version detection ran in this scan and CVE search succeeded
                     if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
-                        if finding.port not in cve_failed_ports:
-                            port_info = current_ports_info.get((finding_protocol, finding.port)) if current_ports_info else None
-                            if port_info:
-                                # A changed banner/version string is not proof that the
-                                # CVE's affected-version boundary is no longer matched.
-                                # Keep the finding active until CVE evaluation positively
-                                # identifies the new endpoint as unaffected.
-                                pass
+                        endpoint = (finding_protocol, finding.port)
+                        if endpoint not in cve_failed_ports and finding.port not in cve_failed_ports:
+                            unaffected = {
+                                cve_id.upper()
+                                for cve_id in confirmed_unaffected_cves.get(endpoint, set())
+                            }
+                            if finding.cve and finding.cve.upper() in unaffected:
+                                finding.status = "not_observed"
                 elif finding.source_type == "credential_audit":
                     # Only reconcile if the audit completed successfully and marked the port as "safe"
                     audit_status = audited_endpoints.get((finding_protocol, finding.port))
