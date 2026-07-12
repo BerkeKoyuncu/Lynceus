@@ -470,6 +470,7 @@ def sanitize_exclusion_string(exclude_str):
 import threading
 
 active_processes = {}
+active_process_attempt_tokens = {}
 active_processes_lock = threading.Lock()
 active_scan_process_tokens = {}
 NMAP_SUBPROCESS_TIMEOUT_SECONDS = 600
@@ -489,9 +490,13 @@ class CompletedProcessDummy:
 
 def allow_scan_process_start(scan_id, process_token):
     if scan_id is None or process_token is None:
-        return
+        return False
     with active_processes_lock:
+        existing_token = active_scan_process_tokens.get(scan_id)
+        if existing_token is not None and existing_token != process_token:
+            return False
         active_scan_process_tokens[scan_id] = process_token
+        return True
 
 
 def end_scan_process_attempt(scan_id, process_token):
@@ -518,6 +523,7 @@ def execute_nmap_subprocess(command, scan_id=None, process_token=None):
         )
         if scan_id is not None:
             active_processes.setdefault(scan_id, set()).add(proc)
+            active_process_attempt_tokens[proc] = process_token
     try:
         stdout, stderr = proc.communicate(timeout=NMAP_SUBPROCESS_TIMEOUT_SECONDS)
         returncode = proc.returncode
@@ -533,18 +539,28 @@ def execute_nmap_subprocess(command, scan_id=None, process_token=None):
                     processes.discard(proc)
                     if not processes:
                         active_processes.pop(scan_id, None)
+                active_process_attempt_tokens.pop(proc, None)
     return returncode, stdout, stderr
 
 def stop_scan_process(scan_id, process_token=None):
     with active_processes_lock:
         registered_token = active_scan_process_tokens.get(scan_id)
+        all_registered_processes = list(active_processes.get(scan_id, set()))
+        if process_token is not None:
+            processes = [
+                proc for proc in all_registered_processes
+                if active_process_attempt_tokens.get(proc) == process_token
+            ]
+            if registered_token != process_token and not processes:
+                return StopResult(False, False, False)
+        else:
+            processes = all_registered_processes
         start_permission_revoked = (
             registered_token is not None
             and (process_token is None or registered_token == process_token)
         )
         if start_permission_revoked:
             active_scan_process_tokens.pop(scan_id, None)
-        processes = list(active_processes.get(scan_id, set()))
     if not processes:
         return StopResult(start_permission_revoked, False, True)
 
@@ -567,6 +583,8 @@ def stop_scan_process(scan_id, process_token=None):
             registered = active_processes.get(scan_id)
             if registered is not None:
                 registered.difference_update(confirmed_stopped)
+                for proc in confirmed_stopped:
+                    active_process_attempt_tokens.pop(proc, None)
                 if not registered:
                     active_processes.pop(scan_id, None)
     return StopResult(start_permission_revoked, True, all_stopped)

@@ -211,3 +211,24 @@ def test_cross_worker_stop_cannot_revoke_another_process_token():
     assert result.had_processes is False
     assert scanner.active_scan_process_tokens[301] == "owner-worker-token"
     scanner.active_scan_process_tokens.clear()
+
+
+def test_wrong_process_token_cannot_kill_current_attempt():
+    process = FakeProcess()
+    scanner.active_processes.clear()
+    scanner.active_process_attempt_tokens.clear()
+    scanner.active_scan_process_tokens.clear()
+    scanner.active_processes[302] = {process}
+    scanner.active_process_attempt_tokens[process] = "current-token"
+    scanner.active_scan_process_tokens[302] = "current-token"
+
+    result = scanner.stop_scan_process(302, "stale-token")
+
+    assert result.start_permission_revoked is False
+    assert result.had_processes is False
+    assert process.killed is False
+    assert scanner.active_scan_process_tokens[302] == "current-token"
+    assert scanner.active_processes[302] == {process}
+    scanner.active_processes.clear()
+    scanner.active_process_attempt_tokens.clear()
+    scanner.active_scan_process_tokens.clear()

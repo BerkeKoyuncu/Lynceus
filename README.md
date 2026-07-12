@@ -363,6 +363,16 @@ operational diagnosis. Claim-token process-start fencing prevents a subprocess
 from being launched in the gap between recovery cancellation and registry stop
 inside the same Python worker. It is not a cross-worker cancellation guarantee;
 multi-worker deployments need a shared cancellation backend or supervisor.
+The local token registry uses compare-and-set after the conditional database
+`claimed → running` transition, and each subprocess is tagged with its attempt
+token. A delayed or stale attempt therefore cannot overwrite a newer token or
+terminate another attempt's process.
+
+Active scans (`pending`, `running`, `cancellation_requested`, and
+`termination_failed`) cannot be deleted directly, including through user or bulk
+deletion. Administrators may resolve stuck cancellations/orphans only with an
+explicit reason; the admin identity, timestamped application log entry, previous
+worker ID/host/PID, status, scan ID, and reason are recorded for audit purposes.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so

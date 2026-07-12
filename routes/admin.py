@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 
-from models import db, User, ScanResult, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
+from models import ACTIVE_SCAN_STATUSES, db, User, ScanResult, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -296,9 +296,15 @@ def admin_delete_user(user_id):
     if user.id == current_user.id:
         flash("You cannot delete your own account.", "error")
         return redirect(url_for("admin.admin_panel", tab="users"))
+    if ScanResult.query.filter(
+        ScanResult.user_id == user.id,
+        ScanResult.status.in_(ACTIVE_SCAN_STATUSES),
+    ).first():
+        flash("Stop or resolve the user's active scans before deleting the account.", "error")
+        return redirect(url_for("admin.admin_panel", tab="users"))
 
     try:
-        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, ScanResult, SecurityFinding
+        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, SecurityFinding
         ScanSchedule.query.filter_by(user_id=user.id).delete(synchronize_session=False)
         SystemSetting.query.filter_by(user_id=user.id).delete(synchronize_session=False)
         ScanCredential.query.filter_by(user_id=user.id).delete(synchronize_session=False)
@@ -325,6 +331,9 @@ def admin_delete_user(user_id):
 @admin_required
 def admin_delete_scan(scan_id):
     scan = ScanResult.query.get_or_404(scan_id)
+    if scan.status in ACTIVE_SCAN_STATUSES:
+        flash("Stop or resolve the scan before deleting it.", "error")
+        return redirect(url_for("admin.admin_panel", tab="scans"))
     from models import AssetObservation
     AssetObservation.query.filter_by(scan_id=scan.id).delete(synchronize_session=False)
     db.session.delete(scan)
@@ -338,14 +347,33 @@ def admin_delete_scan(scan_id):
 @admin_required
 def admin_resolve_orphan_scan(scan_id):
     scan = ScanResult.query.get_or_404(scan_id)
-    if scan.status != "termination_failed":
-        flash("Only orphaned termination-failed scans can be resolved.", "warning")
+    if scan.status not in {"termination_failed", "cancellation_requested"}:
+        flash("Only orphaned or stuck-cancellation scans can be resolved.", "warning")
+        return redirect(url_for("admin.admin_panel", tab="scans"))
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("A resolution reason is required for the audit log.", "error")
         return redirect(url_for("admin.admin_panel", tab="scans"))
 
+    previous_status = scan.status
+    previous_worker_id = scan.scheduler_worker_id
+    previous_worker_host = scan.scheduler_worker_host
+    previous_process_id = scan.scheduler_process_id
     scan.status = "failed"
     scan.scheduler_dispatch_state = "failed"
     scan.scheduler_execution_phase = "operator_resolved"
     db.session.commit()
+    current_app.logger.warning(
+        "ADMIN_SCAN_ORPHAN_RESOLVED admin_id=%s scan_id=%s previous_status=%s "
+        "worker_id=%s worker_host=%s process_id=%s reason=%r",
+        current_user.id,
+        scan.id,
+        previous_status,
+        previous_worker_id,
+        previous_worker_host,
+        previous_process_id,
+        reason,
+    )
     flash(
         "Orphan resolved. Concurrency capacity has been released by an administrator.",
         "success",
@@ -436,8 +464,14 @@ def admin_bulk_delete_users():
         if current_user.id in int_ids:
             flash("You cannot delete your own account in bulk delete.", "error")
             return redirect(url_for("admin.admin_panel", tab="users"))
+        if ScanResult.query.filter(
+            ScanResult.user_id.in_(int_ids),
+            ScanResult.status.in_(ACTIVE_SCAN_STATUSES),
+        ).first():
+            flash("Stop or resolve active scans before deleting these users.", "error")
+            return redirect(url_for("admin.admin_panel", tab="users"))
 
-        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, ScanResult, SecurityFinding
+        from models import ScanSchedule, SystemSetting, ScanCredential, SecurityRule, AssetObservation, SecurityFinding
         ScanSchedule.query.filter(ScanSchedule.user_id.in_(int_ids)).delete(synchronize_session=False)
         SystemSetting.query.filter(SystemSetting.user_id.in_(int_ids)).delete(synchronize_session=False)
         ScanCredential.query.filter(ScanCredential.user_id.in_(int_ids)).delete(synchronize_session=False)
@@ -468,6 +502,12 @@ def admin_bulk_delete_scans():
         return redirect(url_for("admin.admin_panel", tab="scans"))
     try:
         int_ids = [int(sid) for sid in scan_ids]
+        if ScanResult.query.filter(
+            ScanResult.id.in_(int_ids),
+            ScanResult.status.in_(ACTIVE_SCAN_STATUSES),
+        ).first():
+            flash("Stop or resolve active scans before deleting them.", "error")
+            return redirect(url_for("admin.admin_panel", tab="scans"))
         from models import AssetObservation
         AssetObservation.query.filter(AssetObservation.scan_id.in_(int_ids)).delete(synchronize_session=False)
         deleted_count = ScanResult.query.filter(ScanResult.id.in_(int_ids)).delete(synchronize_session=False)

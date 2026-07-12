@@ -1095,7 +1095,6 @@ def _reconcile_scan_worker_exit(app, scan_id, claim_token):
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
     if scheduler_claim_token:
-        allow_scan_process_start(scan_id, scheduler_claim_token)
         with app.app_context():
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             started = ScanResult.query.filter(
@@ -1116,9 +1115,37 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
             )
             if started != 1:
                 db.session.rollback()
-                end_scan_process_attempt(scan_id, scheduler_claim_token)
                 return
             db.session.commit()
+
+        if not allow_scan_process_start(scan_id, scheduler_claim_token):
+            with app.app_context():
+                ScanResult.query.filter(
+                    ScanResult.id == scan_id,
+                    ScanResult.status == "running",
+                    ScanResult.scheduler_claim_token == scheduler_claim_token,
+                ).update(
+                    {
+                        ScanResult.status: "termination_failed",
+                        ScanResult.scheduler_dispatch_state: "orphaned",
+                        ScanResult.scheduler_execution_phase: "token_conflict",
+                    },
+                    synchronize_session=False,
+                )
+                db.session.commit()
+                app.logger.critical(
+                    "Process token conflict for scan %s; capacity remains reserved.",
+                    scan_id,
+                )
+            return
+
+        with app.app_context():
+            if not _independent_scheduler_claim_is_current(
+                scan_id, scheduler_claim_token
+            ):
+                end_scan_process_attempt(scan_id, scheduler_claim_token)
+                _reconcile_scan_worker_exit(app, scan_id, scheduler_claim_token)
+                return
 
         heartbeat_stop = threading.Event()
         threading.Thread(

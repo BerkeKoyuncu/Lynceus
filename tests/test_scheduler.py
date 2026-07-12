@@ -153,6 +153,34 @@ def test_scheduler_job_is_recoverable_if_process_dies_before_thread_start(
         assert started == [scan_id, scan_id]
 
 
+def test_expired_claim_thread_cannot_overwrite_new_attempt_process_token(app):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.41",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.41/32",
+            status="pending",
+            scheduler_dispatch_state="claimed",
+            scheduler_claim_token="new-attempt-token",
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+    scanner.active_scan_process_tokens.clear()
+    assert scanner.allow_scan_process_start(job_id, "new-attempt-token") is True
+
+    execute_scan(app, job_id, scheduler_claim_token="expired-attempt-token")
+
+    assert scanner.active_scan_process_tokens[job_id] == "new-attempt-token"
+    scanner.end_scan_process_attempt(job_id, "new-attempt-token")
+
+
 def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
     with app.app_context():
         user = User.query.first()
@@ -617,7 +645,10 @@ def test_local_stop_without_active_nmap_requests_cancellation(app, client, phase
         assert db.session.get(ScanResult, job_id).status == "cancelled"
 
 
-def test_admin_can_resolve_remote_orphan(app, client):
+@pytest.mark.parametrize(
+    "orphan_status", ["termination_failed", "cancellation_requested"]
+)
+def test_admin_can_resolve_remote_orphan(app, client, orphan_status, caplog):
     with app.app_context():
         admin = User.query.filter_by(is_admin=True).first()
         job = ScanResult(
@@ -626,9 +657,12 @@ def test_admin_can_resolve_remote_orphan(app, client):
             subnet_mask="32",
             scan_type="fast",
             network_cidr="192.0.2.68/32",
-            status="termination_failed",
-            scheduler_dispatch_state="orphaned",
-            scheduler_execution_phase="termination_failed",
+            status=orphan_status,
+            scheduler_dispatch_state=(
+                "orphaned" if orphan_status == "termination_failed"
+                else "cancellation_requested"
+            ),
+            scheduler_execution_phase=orphan_status,
         )
         db.session.add(job)
         db.session.commit()
@@ -638,13 +672,88 @@ def test_admin_can_resolve_remote_orphan(app, client):
     with client.session_transaction() as session:
         session["_user_id"] = str(admin_id)
         session["_fresh"] = True
-    response = client.post(f"/admin/scan/{job_id}/resolve-orphan")
+    response = client.post(
+        f"/admin/scan/{job_id}/resolve-orphan",
+        data={"reason": "Owning worker was confirmed stopped"},
+    )
     assert response.status_code == 302
 
     with app.app_context():
         job = db.session.get(ScanResult, job_id)
         assert job.status == "failed"
         assert job.scheduler_execution_phase == "operator_resolved"
+    assert "ADMIN_SCAN_ORPHAN_RESOLVED" in caplog.text
+    assert "Owning worker was confirmed stopped" in caplog.text
+
+
+def test_failed_active_process_stop_becomes_termination_failed(app, client, monkeypatch):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.69",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.69/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_execution_phase="starting-primary-scan",
+            scheduler_claim_token="unstoppable-token",
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+        user_id = user.id
+
+    monkeypatch.setattr(
+        scanner,
+        "stop_scan_process",
+        lambda scan_id, process_token=None: scanner.StopResult(True, True, False),
+    )
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    client.post(f"/scan/{job_id}/stop")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "termination_failed"
+        assert job.scheduler_dispatch_state == "orphaned"
+
+
+def test_active_scan_and_its_user_cannot_be_deleted(app, client):
+    with app.app_context():
+        admin = User.query.filter_by(is_admin=True).first()
+        user = User(email="active-owner@test.com", password_hash="test")
+        db.session.add(user)
+        db.session.flush()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.70",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.70/32",
+            status="running",
+            scheduler_dispatch_state="started",
+        )
+        db.session.add(job)
+        db.session.commit()
+        admin_id, user_id, job_id = admin.id, user.id, job.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(admin_id)
+        session["_fresh"] = True
+
+    assert client.post(f"/admin/scan/{job_id}/delete").status_code == 302
+    assert client.post(f"/admin/user/{user_id}/delete").status_code == 302
+
+    with app.app_context():
+        assert db.session.get(ScanResult, job_id) is not None
+        assert db.session.get(User, user_id) is not None
 
 
 def test_ownership_loss_is_handled_without_thread_traceback(app, monkeypatch, caplog):

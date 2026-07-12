@@ -282,7 +282,16 @@ def stop_scan(scan_id):
         cancellation_secured = bool(
             stop_result
             and (
-                stop_result.start_permission_revoked
+                (
+                    not stop_result.had_processes
+                    and (
+                        stop_result.start_permission_revoked
+                        or (
+                            scan_result.scheduler_execution_phase == "starting"
+                            and stop_result.all_processes_stopped
+                        )
+                    )
+                )
                 or (
                     stop_result.had_processes
                     and stop_result.all_processes_stopped

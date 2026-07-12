@@ -10,6 +10,13 @@ from services.encryption_service import encrypt_val, decrypt_val, get_flask_secr
 
 db = SQLAlchemy()
 
+ACTIVE_SCAN_STATUSES = {
+    "pending",
+    "running",
+    "cancellation_requested",
+    "termination_failed",
+}
+
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
