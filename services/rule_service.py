@@ -291,8 +291,24 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                     days_left = get_ssl_expiry_days(ip, p_num)
                     if days_left is not None and days_left <= 30:
                         evidence = f"TLS Certificate on port {p_num} is expiring in {days_left} days."
+                    elif days_left is None:
+                        # Evaluation was inconclusive. Preserve an existing finding
+                        # by recording it as observed in this scan; reconciliation
+                        # must not interpret an external-service failure as safety.
+                        existing_tls = SecurityFinding.query.filter_by(
+                            asset_id=asset.id,
+                            ip_address=ip,
+                            port=p_num,
+                            protocol=matched_protocol,
+                            source_type="rule",
+                            source_rule_id=rule.id,
+                        ).first()
+                        if existing_tls:
+                            existing_tls.scan_id = scan_id
+                            db.session.commit()
+                        matched = False
                     else:
-                        matched = False  # Not expiring or couldn't fetch
+                        matched = False  # Certificate was evaluated and is not expiring
 
                 if matched:
                     break
@@ -629,10 +645,11 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                         if finding.port not in cve_failed_ports:
                             port_info = current_ports_info.get((finding_protocol, finding.port)) if current_ports_info else None
                             if port_info:
-                                current_version = port_info.get("version_display") or port_info.get("version") or ""
-                                # Only auto-close if the version has changed (indicating an upgrade occurred)
-                                if current_version and finding.version and current_version != finding.version:
-                                    finding.status = "not_observed"
+                                # A changed banner/version string is not proof that the
+                                # CVE's affected-version boundary is no longer matched.
+                                # Keep the finding active until CVE evaluation positively
+                                # identifies the new endpoint as unaffected.
+                                pass
                 elif finding.source_type == "credential_audit":
                     # Only reconcile if the audit completed successfully and marked the port as "safe"
                     audit_status = audited_endpoints.get((finding_protocol, finding.port))

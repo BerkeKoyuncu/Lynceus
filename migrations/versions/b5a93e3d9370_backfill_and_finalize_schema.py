@@ -64,7 +64,9 @@ def upgrade():
         if 'blocked_at' in columns_hbi:
             op.execute("UPDATE honeypot_blocked_ip SET created_at = blocked_at WHERE created_at IS NULL AND blocked_at IS NOT NULL")
         op.execute("UPDATE honeypot_blocked_ip SET reason = 'Blocked by Honeypot' WHERE reason IS NULL")
-        op.execute("UPDATE honeypot_blocked_ip SET ip_address = '0.0.0.0' WHERE ip_address IS NULL")
+        # A blocked record without an IP is unusable. Deleting it also avoids
+        # collisions with the unique ip_address constraint.
+        op.execute("DELETE FROM honeypot_blocked_ip WHERE ip_address IS NULL")
 
         # Now drop old columns and set NOT NULL
         with op.batch_alter_table('honeypot_blocked_ip', schema=None) as batch_op:
@@ -113,57 +115,7 @@ def upgrade():
 
 
 def downgrade():
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    existing_tables = inspector.get_table_names()
-
-    if 'security_finding' in existing_tables:
-        with op.batch_alter_table('security_finding', schema=None) as batch_op:
-            batch_op.alter_column('protocol', existing_type=sa.String(length=10), nullable=True)
-
-    if 'security_anomaly' in existing_tables:
-        with op.batch_alter_table('security_anomaly', schema=None) as batch_op:
-            batch_op.alter_column('description', existing_type=sa.Text(), nullable=True)
-            batch_op.alter_column('ip_address', existing_type=sa.String(45), nullable=True)
-            batch_op.alter_column('anomaly_type', existing_type=sa.String(50), nullable=True)
-
-    if 'scan_schedule' in existing_tables:
-        with op.batch_alter_table('scan_schedule', schema=None) as batch_op:
-            batch_op.alter_column('next_run', existing_type=sa.DateTime(), nullable=True)
-
-    if 'asset' in existing_tables:
-        with op.batch_alter_table('asset', schema=None) as batch_op:
-            batch_op.alter_column('ip_assignment_type', existing_type=sa.String(20), nullable=True)
-
-    if 'honeypot_blocked_ip' in existing_tables:
-        columns_hbi = [c['name'] for c in inspector.get_columns('honeypot_blocked_ip')]
-        with op.batch_alter_table('honeypot_blocked_ip', schema=None) as batch_op:
-            batch_op.alter_column('ip_address', existing_type=sa.String(45), nullable=True)
-            batch_op.add_column(sa.Column('expires_at', sa.DateTime(), nullable=True))
-            batch_op.add_column(sa.Column('blocked_at', sa.DateTime(), nullable=True))
-            
-        # copy created_at to blocked_at before dropping
-        op.execute("UPDATE honeypot_blocked_ip SET blocked_at = created_at WHERE blocked_at IS NULL AND created_at IS NOT NULL")
-        
-        with op.batch_alter_table('honeypot_blocked_ip', schema=None) as batch_op:
-            if 'created_at' in columns_hbi:
-                batch_op.drop_column('created_at')
-            if 'reason' in columns_hbi:
-                batch_op.drop_column('reason')
-
-    if 'honeypot_log' in existing_tables:
-        columns_hl = [c['name'] for c in inspector.get_columns('honeypot_log')]
-        with op.batch_alter_table('honeypot_log', schema=None) as batch_op:
-            batch_op.alter_column('path', existing_type=sa.String(255), nullable=True)
-            batch_op.alter_column('ip_address', existing_type=sa.String(45), nullable=True)
-            batch_op.add_column(sa.Column('timestamp', sa.DateTime(), nullable=True))
-            batch_op.add_column(sa.Column('method', sa.String(10), nullable=True))
-            
-        # copy created_at to timestamp before dropping
-        op.execute("UPDATE honeypot_log SET timestamp = created_at WHERE timestamp IS NULL AND created_at IS NOT NULL")
-        
-        with op.batch_alter_table('honeypot_log', schema=None) as batch_op:
-            if 'created_at' in columns_hl:
-                batch_op.drop_column('created_at')
-            if 'headers' in columns_hl:
-                batch_op.drop_column('headers')
+    # This revision only backfills data and reasserts constraints already owned
+    # by its ancestors. Reversing those changes would make the physical schema
+    # disagree with parent revision 81e56a4fa655.
+    pass

@@ -327,6 +327,7 @@ python -m flask --app app cleanup-scans
 **Development (localhost only):**
 
 ```bash
+$env:START_SCHEDULER = "false"
 python -m flask --app app run
 ```
 
@@ -340,6 +341,17 @@ For local network deployment, use [Waitress](https://docs.pylonsproject.org/proj
 # Bind to all interfaces on port 5000
 waitress-serve --call --host 0.0.0.0 --port 5000 app:create_app
 ```
+
+The scheduler is disabled by default. Run exactly one dedicated scheduler-enabled
+process in production (never enable it in multiple web workers):
+
+```powershell
+$env:START_SCHEDULER = "true"
+waitress-serve --call --host 0.0.0.0 --port 5000 app:create_app
+```
+
+`flask run` is treated as a development/CLI process, so it does not start the
+scheduler even when `START_SCHEDULER=true`.
 
 > **Security note:** Only expose Lynceus on trusted private networks. Do not expose it directly to the internet.
 

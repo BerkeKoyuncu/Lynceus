@@ -599,8 +599,9 @@ def test_migration_with_legacy_data():
         })
         
         with app.app_context():
-            # 1. Upgrade to revision 81e56a4fa655
-            run_upgrade(revision="81e56a4fa655")
+            # Start at the real parent of the schema-alignment migration so the
+            # normal 4b -> 3f -> 81 -> b5 chain is exercised.
+            run_upgrade(revision="4b1d0851377a")
             
         # 2. Open raw sqlite connection to populate legacy data with old schemas and nulls
         conn = sqlite3.connect(db_path)
@@ -674,8 +675,7 @@ def test_migration_with_legacy_data():
                 service VARCHAR(50),
                 severity VARCHAR(20),
                 status VARCHAR(20),
-                scan_id INTEGER,
-                protocol VARCHAR(10) NULL
+                scan_id INTEGER
             )
         """)
 
@@ -690,14 +690,16 @@ def test_migration_with_legacy_data():
         cursor.execute("INSERT INTO scan_result (id, user_id, input_ip, subnet_mask, scan_type, status, network_cidr) VALUES (21, 10, '192.168.1.0', '24', 'service_version', 'completed', '192.168.1.0/24')")
 
         # Insert legacy findings on those scans with NULL protocol
-        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id, protocol) VALUES (101, 1, '192.168.1.5', 53, 'domain', 'Medium', 'open', 20, NULL)")
-        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id, protocol) VALUES (102, 1, '192.168.1.5', 80, 'http', 'Low', 'open', 21, NULL)")
+        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id) VALUES (101, 1, '192.168.1.5', 53, 'domain', 'Medium', 'open', 20)")
+        cursor.execute("INSERT INTO security_finding (id, asset_id, ip_address, port, service, severity, status, scan_id) VALUES (102, 1, '192.168.1.5', 80, 'http', 'Low', 'open', 21)")
 
         # Insert legacy honeypot log with old schema
         cursor.execute("INSERT INTO honeypot_log (id, ip_address, path, method, timestamp) VALUES (1, NULL, NULL, 'GET', '2026-07-12 12:00:00')")
         
         # Insert legacy blocked ip
         cursor.execute("INSERT INTO honeypot_blocked_ip (id, ip_address, blocked_at) VALUES (1, NULL, '2026-07-12 13:00:00')")
+        cursor.execute("INSERT INTO honeypot_blocked_ip (id, ip_address, blocked_at) VALUES (2, NULL, '2026-07-12 14:00:00')")
+        cursor.execute("INSERT INTO honeypot_blocked_ip (id, ip_address, blocked_at) VALUES (3, '0.0.0.0', '2026-07-12 15:00:00')")
 
         # Insert legacy anomaly with null fields
         cursor.execute("INSERT INTO security_anomaly (id, anomaly_type, ip_address, description) VALUES (1, NULL, NULL, NULL)")
@@ -723,6 +725,11 @@ def test_migration_with_legacy_data():
         assert row_hl[0] == "0.0.0.0"
         assert row_hl[1] == "/"
         assert row_hl[2] is not None
+
+        # Invalid NULL blocked-IP rows are removed without colliding with an
+        # existing unique 0.0.0.0 record.
+        cursor.execute("SELECT id, ip_address FROM honeypot_blocked_ip ORDER BY id")
+        assert cursor.fetchall() == [(3, "0.0.0.0")]
         
         # Verify legacy scan findings got correct protocol backfilled
         cursor.execute("SELECT protocol FROM security_finding WHERE id = 101")

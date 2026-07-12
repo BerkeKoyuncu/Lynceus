@@ -330,16 +330,28 @@ def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
             ("user", "password")
         ])
     import ftplib
+    rejected = 0
     for username, password in credentials:
+        ftp = None
         try:
             ftp = ftplib.FTP()
             ftp.connect(ip, port, timeout=2)
             ftp.login(username, password)
             ftp.quit()
             return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
-        except Exception:
-            continue
-    return {"status": "safe", "message": "No common default credentials found"}
+        except ftplib.error_perm:
+            rejected += 1
+        except (OSError, EOFError, ftplib.Error) as error:
+            return {"status": "skipped", "message": f"FTP credential audit could not complete: {error}"}
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.close()
+                except OSError:
+                    pass
+    if credentials and rejected == len(credentials):
+        return {"status": "safe", "message": "FTP rejected all tested credentials"}
+    return {"status": "skipped", "message": "No FTP credentials were available to test"}
 
 def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
     passwords = []
@@ -347,7 +359,9 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
         passwords.extend(custom_passwords)
     if use_defaults:
         passwords.extend(["", "admin", "password", "redis", "root"])
+    rejected = 0
     for pwd in passwords:
+        s = None
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(2)
@@ -364,10 +378,18 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
                 if b"+OK" in resp:
                     s.close()
                     return {"status": "vulnerable", "message": "A weak Redis password was successfully authenticated."}
-            s.close()
-        except Exception:
-            continue
-    return {"status": "safe", "message": "No common passwords found"}
+            if resp.startswith((b"-NOAUTH", b"-WRONGPASS")) or b"invalid password" in resp.lower():
+                rejected += 1
+            else:
+                return {"status": "skipped", "message": "Redis returned an unexpected authentication response"}
+        except (OSError, socket.timeout) as error:
+            return {"status": "skipped", "message": f"Redis credential audit could not complete: {error}"}
+        finally:
+            if s is not None:
+                s.close()
+    if passwords and rejected == len(passwords):
+        return {"status": "safe", "message": "Redis rejected all tested passwords"}
+    return {"status": "skipped", "message": "No Redis passwords were available to test"}
 
 def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_defaults=True):
     import urllib.request
@@ -430,6 +452,8 @@ def detect_device_type(hostname, mac_vendor, ports_list):
     open_ports = set()
     for p in ports_list:
         if isinstance(p, dict):
+            if p.get("state") != "open":
+                continue
             port_val = p.get("port")
         else:
             port_val = p
