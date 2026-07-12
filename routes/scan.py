@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash, current_app, Response
 from flask_login import login_required, current_user
 from datetime import datetime, timezone, timedelta
+import os
 import re
 import json
 import csv
@@ -271,12 +272,33 @@ def stop_scan(scan_id):
         flash("Scan execution cancelled.", "success")
     elif scan_result.status in ["running", "termination_failed"]:
         from scanner import stop_scan_process
-        if stop_scan_process(scan_result.id):
-            scan_result.status = "cancelled"
-            scan_result.scheduler_dispatch_state = "cancelled"
-            scan_result.scheduler_execution_phase = "cancelled"
+        is_local_owner = (
+            scan_result.scheduler_worker_id == current_app.config["SCAN_WORKER_ID"]
+            and scan_result.scheduler_process_id == os.getpid()
+        )
+        stop_result = stop_scan_process(
+            scan_result.id, scan_result.scheduler_claim_token
+        ) if is_local_owner else None
+        cancellation_secured = bool(
+            stop_result
+            and (
+                stop_result.start_permission_revoked
+                or (
+                    stop_result.had_processes
+                    and stop_result.all_processes_stopped
+                )
+            )
+        )
+        if cancellation_secured:
+            scan_result.status = "cancellation_requested"
+            scan_result.scheduler_dispatch_state = "cancellation_requested"
+            scan_result.scheduler_execution_phase = "cancellation_requested"
             db.session.commit()
-            flash("Scan execution cancelled.", "success")
+            flash(
+                "Scan cancellation requested; capacity will be released when "
+                "the owning worker exits.",
+                "success",
+            )
         else:
             scan_result.status = "termination_failed"
             scan_result.scheduler_dispatch_state = "orphaned"
@@ -349,7 +371,12 @@ def history():
     ).all()
 
     has_active_scans = any(
-        scan.status in ["pending", "running", "termination_failed"]
+        scan.status in [
+            "pending",
+            "running",
+            "cancellation_requested",
+            "termination_failed",
+        ]
         for scan in scan_results
     )
 

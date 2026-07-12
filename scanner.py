@@ -3,6 +3,7 @@ import subprocess
 import shutil
 import os
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 
 
 def calculate_network(ip_address, subnet_mask=None):
@@ -473,6 +474,13 @@ active_processes_lock = threading.Lock()
 active_scan_process_tokens = {}
 NMAP_SUBPROCESS_TIMEOUT_SECONDS = 600
 
+
+@dataclass(frozen=True)
+class StopResult:
+    start_permission_revoked: bool
+    had_processes: bool
+    all_processes_stopped: bool
+
 class CompletedProcessDummy:
     def __init__(self, returncode, stdout, stderr):
         self.returncode = returncode
@@ -527,12 +535,18 @@ def execute_nmap_subprocess(command, scan_id=None, process_token=None):
                         active_processes.pop(scan_id, None)
     return returncode, stdout, stderr
 
-def stop_scan_process(scan_id):
+def stop_scan_process(scan_id, process_token=None):
     with active_processes_lock:
-        active_scan_process_tokens.pop(scan_id, None)
+        registered_token = active_scan_process_tokens.get(scan_id)
+        start_permission_revoked = (
+            registered_token is not None
+            and (process_token is None or registered_token == process_token)
+        )
+        if start_permission_revoked:
+            active_scan_process_tokens.pop(scan_id, None)
         processes = list(active_processes.get(scan_id, set()))
     if not processes:
-        return False
+        return StopResult(start_permission_revoked, False, True)
 
     all_stopped = True
     confirmed_stopped = []
@@ -555,7 +569,7 @@ def stop_scan_process(scan_id):
                 registered.difference_update(confirmed_stopped)
                 if not registered:
                     active_processes.pop(scan_id, None)
-    return all_stopped
+    return StopResult(start_permission_revoked, True, all_stopped)
 
 
 def extract_scanned_endpoints_from_xml(xml_output):

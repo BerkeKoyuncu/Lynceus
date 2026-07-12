@@ -323,8 +323,13 @@ that scan are stopped. Worker instance, host, and process identifiers are stored
 with each claim. An attempt owned by another process, or one whose local process
 cannot be confirmed stopped, enters `termination_failed/orphaned` instead of
 being retried. Orphaned attempts continue consuming concurrency capacity until
-termination is positively confirmed or an operator resolves the owning worker;
-this avoids overlapping scans without pretending that the in-memory process
+the owner worker reaches its `finally` block and reconciles the job to `failed`,
+or an administrator explicitly uses **Resolve Orphan** after confirming the
+remote/crashed worker is gone. Local cancellation before the first Nmap process
+or during post-processing uses `cancellation_requested`; it remains capacity-
+active until the owner worker exits, then becomes `cancelled`. This prevents a
+temporary empty process registry from creating a permanent orphan and avoids
+overlapping scans without pretending that the in-memory process
 registry works across workers. Deployments requiring cross-process retry should
 use an external worker queue or supervisor with a shared cancellation mechanism.
 
@@ -355,7 +360,9 @@ plus `SCHEDULER_LEASE_SECONDS`, providing shutdown and scheduling margin. Curren
 execution phases (primary/fallback Nmap, host discovery, asset processing,
 credential audit, CVE evaluation, and reconciliation) are persisted for
 operational diagnosis. Claim-token process-start fencing prevents a subprocess
-from being launched in the gap between recovery cancellation and registry stop.
+from being launched in the gap between recovery cancellation and registry stop
+inside the same Python worker. It is not a cross-worker cancellation guarantee;
+multi-worker deployments need a shared cancellation backend or supervisor.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so

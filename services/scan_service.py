@@ -14,7 +14,12 @@ from flask import current_app
 from sqlalchemy.orm import sessionmaker
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, Asset, ScanCredential, SecurityFinding, SecurityAnomaly
-from scanner import allow_scan_process_start, end_scan_process_attempt, run_nmap_scan
+from scanner import (
+    ScanOwnershipLost,
+    allow_scan_process_start,
+    end_scan_process_attempt,
+    run_nmap_scan,
+)
 from services.anomaly_service import evaluate_host_anomalies, record_observation
 from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules, reconcile_findings_for_scan
 from services.email_service import send_notification_email_async
@@ -1049,9 +1054,48 @@ def _clear_scheduler_progress_checkpoint(scan_id, claim_token):
         _progress_checkpoint_retry_after.pop((scan_id, claim_token), None)
 
 
+def _reconcile_scan_worker_exit(app, scan_id, claim_token):
+    if not claim_token:
+        return
+    with app.app_context():
+        owner_filter = (
+            ScanResult.id == scan_id,
+            ScanResult.scheduler_claim_token == claim_token,
+            ScanResult.scheduler_worker_id == app.config["SCAN_WORKER_ID"],
+            ScanResult.scheduler_process_id == os.getpid(),
+        )
+        cancelled = ScanResult.query.filter(
+            *owner_filter,
+            ScanResult.status == "cancellation_requested",
+        ).update(
+            {
+                ScanResult.status: "cancelled",
+                ScanResult.scheduler_dispatch_state: "cancelled",
+                ScanResult.scheduler_execution_phase: "cancelled",
+            },
+            synchronize_session=False,
+        )
+        terminated = ScanResult.query.filter(
+            *owner_filter,
+            ScanResult.status == "termination_failed",
+        ).update(
+            {
+                ScanResult.status: "failed",
+                ScanResult.scheduler_dispatch_state: "failed",
+                ScanResult.scheduler_execution_phase: "terminated",
+            },
+            synchronize_session=False,
+        )
+        if cancelled or terminated:
+            db.session.commit()
+        else:
+            db.session.rollback()
+
+
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
     if scheduler_claim_token:
+        allow_scan_process_start(scan_id, scheduler_claim_token)
         with app.app_context():
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             started = ScanResult.query.filter(
@@ -1072,10 +1116,9 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
             )
             if started != 1:
                 db.session.rollback()
+                end_scan_process_attempt(scan_id, scheduler_claim_token)
                 return
             db.session.commit()
-
-        allow_scan_process_start(scan_id, scheduler_claim_token)
 
         heartbeat_stop = threading.Event()
         threading.Thread(
@@ -1092,11 +1135,17 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
             scheduler_claim_token=scheduler_claim_token,
             already_started=bool(scheduler_claim_token),
         )
+    except ScanOwnershipLost:
+        with app.app_context():
+            app.logger.info(
+                "Scan %s stopped because claim ownership was lost.", scan_id
+            )
     finally:
         if heartbeat_stop is not None:
             heartbeat_stop.set()
         end_scan_process_attempt(scan_id, scheduler_claim_token)
         _clear_scheduler_progress_checkpoint(scan_id, scheduler_claim_token)
+        _reconcile_scan_worker_exit(app, scan_id, scheduler_claim_token)
         try:
             from app import _dispatch_pending_scheduled_scans
             with app.app_context():

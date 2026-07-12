@@ -18,7 +18,12 @@ def dashboard():
     # 1. Fetch user scan stats
     total_scans = ScanResult.query.filter_by(user_id=current_user.id).count()
     running_scans = ScanResult.query.filter_by(user_id=current_user.id).filter(
-        ScanResult.status.in_(["pending", "running", "termination_failed"])
+        ScanResult.status.in_([
+            "pending",
+            "running",
+            "cancellation_requested",
+            "termination_failed",
+        ])
     ).count()
     completed_scans = ScanResult.query.filter_by(user_id=current_user.id, status="completed").count()
     failed_scans = ScanResult.query.filter_by(user_id=current_user.id, status="failed").count()

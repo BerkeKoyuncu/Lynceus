@@ -64,7 +64,9 @@ def test_stop_scan_kills_every_active_attempt():
     scanner.active_processes.clear()
     scanner.active_processes[99] = {first, second}
 
-    assert scanner.stop_scan_process(99) is True
+    result = scanner.stop_scan_process(99)
+    assert result.had_processes is True
+    assert result.all_processes_stopped is True
     assert first.killed is True
     assert second.killed is True
     assert first.waited is True
@@ -84,7 +86,9 @@ def test_stop_scan_requires_every_process_to_terminate():
     scanner.active_processes.clear()
     scanner.active_processes[100] = {healthy, stuck}
 
-    assert scanner.stop_scan_process(100) is False
+    result = scanner.stop_scan_process(100)
+    assert result.had_processes is True
+    assert result.all_processes_stopped is False
     assert healthy.killed is True
     assert healthy.waited is True
     assert stuck.killed is True
@@ -187,7 +191,23 @@ def test_process_registered_during_stop_is_also_terminated(monkeypatch):
     stopper.join(timeout=5)
     worker.join(timeout=5)
 
-    assert stopped == [True]
+    assert len(stopped) == 1
+    assert stopped[0].start_permission_revoked is True
+    assert stopped[0].had_processes is True
+    assert stopped[0].all_processes_stopped is True
     assert process.killed is True
     assert 300 not in scanner.active_processes
     assert 300 not in scanner.active_scan_process_tokens
+
+
+def test_cross_worker_stop_cannot_revoke_another_process_token():
+    scanner.active_processes.clear()
+    scanner.active_scan_process_tokens.clear()
+    scanner.allow_scan_process_start(301, "owner-worker-token")
+
+    result = scanner.stop_scan_process(301, "different-worker-token")
+
+    assert result.start_permission_revoked is False
+    assert result.had_processes is False
+    assert scanner.active_scan_process_tokens[301] == "owner-worker-token"
+    scanner.active_scan_process_tokens.clear()

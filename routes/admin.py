@@ -239,7 +239,12 @@ def admin_panel():
     scan_results = ScanResult.query.order_by(ScanResult.created_at.desc()).all()
     users = User.query.order_by(User.created_at.desc()).all()
     has_active_scans = any(
-        scan.status in ["pending", "running", "termination_failed"]
+        scan.status in [
+            "pending",
+            "running",
+            "cancellation_requested",
+            "termination_failed",
+        ]
         for scan in scan_results
     )
 
@@ -325,6 +330,26 @@ def admin_delete_scan(scan_id):
     db.session.delete(scan)
     db.session.commit()
     flash("Scan result deleted.", "success")
+    return redirect(url_for("admin.admin_panel", tab="scans"))
+
+
+@admin_bp.route("/admin/scan/<int:scan_id>/resolve-orphan", methods=["POST"])
+@login_required
+@admin_required
+def admin_resolve_orphan_scan(scan_id):
+    scan = ScanResult.query.get_or_404(scan_id)
+    if scan.status != "termination_failed":
+        flash("Only orphaned termination-failed scans can be resolved.", "warning")
+        return redirect(url_for("admin.admin_panel", tab="scans"))
+
+    scan.status = "failed"
+    scan.scheduler_dispatch_state = "failed"
+    scan.scheduler_execution_phase = "operator_resolved"
+    db.session.commit()
+    flash(
+        "Orphan resolved. Concurrency capacity has been released by an administrator.",
+        "success",
+    )
     return redirect(url_for("admin.admin_panel", tab="scans"))
 
 @admin_bp.route("/admin/honeypot/unblock/<int:block_id>", methods=["POST"])

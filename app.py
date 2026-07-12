@@ -624,6 +624,16 @@ def _mark_scheduler_termination_failed(job, message):
     })
 
 
+def _all_registered_processes_stopped(stop_result):
+    return bool(
+        stop_result is True
+        or (
+            getattr(stop_result, "had_processes", False)
+            and getattr(stop_result, "all_processes_stopped", False)
+        )
+    )
+
+
 def _recover_expired_scan_jobs(
     now,
     lease_seconds,
@@ -662,7 +672,9 @@ def _recover_expired_scan_jobs(
         stopped = False
         if is_local_owner:
             from scanner import stop_scan_process
-            stopped = stop_scan_process(job.id)
+            stopped = _all_registered_processes_stopped(
+                stop_scan_process(job.id, job.scheduler_claim_token)
+            )
 
         if is_local_owner and not stopped:
             message = (
@@ -709,7 +721,9 @@ def _recover_expired_scan_jobs(
         stopped = False
         if is_local_owner:
             from scanner import stop_scan_process
-            stopped = stop_scan_process(job.id)
+            stopped = _all_registered_processes_stopped(
+                stop_scan_process(job.id, job.scheduler_claim_token)
+            )
 
         if not stopped:
             _mark_scheduler_termination_failed(
@@ -773,7 +787,11 @@ def _dispatch_pending_scheduled_scans(app, now=None):
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     eligible, retry_before, _ = _recover_scan_jobs_with_lock(app, now)
     running_count = ScanResult.query.filter(
-        ScanResult.status.in_(["running", "termination_failed"])
+        ScanResult.status.in_([
+            "running",
+            "cancellation_requested",
+            "termination_failed",
+        ])
     ).count()
     live_claims = ScanResult.query.filter(
         ScanResult.status == "pending",

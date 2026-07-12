@@ -5,7 +5,7 @@
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 
 
-{% if scan_result.status == "pending" or scan_result.status == "running" %}
+{% if scan_result.status in ["pending", "running", "cancellation_requested"] %}
 <meta http-equiv="refresh" content="3">
 {% endif %}
 
@@ -83,6 +83,8 @@
             <span class="badge running-badge">Running</span>
             {% elif scan_result.status == "termination_failed" %}
             <span class="badge error-badge">Termination Failed</span>
+            {% elif scan_result.status == "cancellation_requested" %}
+            <span class="badge pending-badge">Cancellation Requested</span>
             {% elif scan_result.status == "pending" %}
             <span class="badge pending-badge">Pending</span>
             {% elif scan_result.status == "failed" %}
@@ -140,6 +142,17 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button btn-danger">Retry Termination</button>
     </form>
+    {% if current_user.is_admin %}
+    <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan_result.id) }}" style="margin-top: 8px;" onsubmit="return confirm('Confirm that the owning worker/process is no longer running before releasing capacity.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="button">Resolve Orphan</button>
+    </form>
+    {% endif %}
+</div>
+
+{% elif scan_result.status == "cancellation_requested" %}
+<div class="alert alert-info" style="border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+    Cancellation is secured. Waiting for the owning worker to exit before releasing capacity.
 </div>
 
 {% elif scan_result.status == "cancelled" %}

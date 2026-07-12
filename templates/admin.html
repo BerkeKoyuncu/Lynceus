@@ -316,6 +316,8 @@
                             <span class="badge running-badge">Running</span>
                         {% elif scan.status == "termination_failed" %}
                             <span class="badge error-badge">Termination Failed</span>
+                        {% elif scan.status == "cancellation_requested" %}
+                            <span class="badge pending-badge">Cancellation Requested</span>
                         {% elif scan.status == "pending" %}
                             <span class="badge pending-badge">Pending</span>
                         {% elif scan.status == "failed" %}
@@ -332,6 +334,12 @@
                         
                         <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
                             <a href="{{ url_for('result', scan_id=scan.id) }}" class="button" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">View</a>
+                            {% if scan.status == "termination_failed" %}
+                            <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan.id) }}" style="margin: 0;" onsubmit="return confirm('Confirm that the owning worker/process is no longer running before releasing capacity.');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="button" style="padding: 6px 12px; font-size: 13px;">Resolve Orphan</button>
+                            </form>
+                            {% endif %}
                             <button type="submit" form="delete-scan-form-{{ scan.id }}" class="button btn-danger" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">Delete</button>
                         </div>
                     </td>
