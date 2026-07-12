@@ -73,7 +73,7 @@ def upgrade():
             sa.Column('ports', sa.String(100), nullable=True),
             sa.Column('network_cidr', sa.String(50), nullable=False),
             sa.Column('frequency', sa.String(20), nullable=False),
-            sa.Column('next_run', sa.DateTime(), nullable=True),
+            sa.Column('next_run', sa.DateTime(), nullable=False),
             sa.Column('last_run', sa.DateTime(), nullable=True),
             sa.Column('is_active', sa.Boolean(), nullable=True),
             sa.Column('exclude_targets', sa.Text(), nullable=True),
@@ -133,7 +133,7 @@ def upgrade():
             'asset',
             sa.Column('id', sa.Integer(), nullable=False),
             sa.Column('name', sa.String(100), nullable=True),
-            sa.Column('ip_address', sa.String(45), nullable=True),
+            sa.Column('ip_address', sa.String(45), nullable=False),
             sa.Column('mac_address', sa.String(45), nullable=True),
             sa.Column('mac_vendor', sa.String(100), nullable=True),
             sa.Column('device_type', sa.String(50), nullable=True),
@@ -170,11 +170,11 @@ def upgrade():
         op.create_table(
             'honeypot_log',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('ip_address', sa.String(45), nullable=True),
-            sa.Column('path', sa.String(255), nullable=True),
-            sa.Column('method', sa.String(10), nullable=True),
+            sa.Column('ip_address', sa.String(45), nullable=False),
             sa.Column('user_agent', sa.Text(), nullable=True),
-            sa.Column('timestamp', sa.DateTime(), nullable=True),
+            sa.Column('path', sa.String(255), nullable=False),
+            sa.Column('headers', sa.Text(), nullable=True),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
         )
 
@@ -183,9 +183,9 @@ def upgrade():
         op.create_table(
             'honeypot_blocked_ip',
             sa.Column('id', sa.Integer(), nullable=False),
-            sa.Column('ip_address', sa.String(45), nullable=True),
-            sa.Column('blocked_at', sa.DateTime(), nullable=True),
-            sa.Column('expires_at', sa.DateTime(), nullable=True),
+            sa.Column('ip_address', sa.String(45), nullable=False),
+            sa.Column('reason', sa.String(255), nullable=True),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
             sa.UniqueConstraint('ip_address'),
         )

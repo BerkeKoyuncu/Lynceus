@@ -96,35 +96,72 @@ def is_version_affected(user_ver, match_obj, api_product):
             
     return True
 
-def fetch_cves_for_query(query):
+def fetch_cves_for_query(query, cpe_list=None):
     """
     Queries the CIRCL CVE API for a service query and returns up to 15 CVE details.
+    Uses CPE list to extract accurate vendor/product fields if available.
     """
     if not query or query == "-":
         return []
     
-    cache_key = query.lower()
+    cache_key = (query.lower(), tuple(cpe_list) if cpe_list else ())
     if cache_key in CVE_CACHE:
         return CVE_CACHE[cache_key]
 
-    parts = query.split()
-    if len(parts) == 0:
-        return []
-    elif len(parts) == 1:
-        product = parts[0]
-        version = ""
-    else:
-        two_word_prod = f"{parts[0]} {parts[1]}".lower()
-        if two_word_prod in ["apache httpd", "microsoft iis", "vsftpd project", "werkzeug httpd"]:
-            product = two_word_prod
-            version = " ".join(parts[2:])
-        else:
-            product = parts[0]
+    cpe_vendor = None
+    cpe_product = None
+    cpe_version = None
+
+    if cpe_list:
+        for cpe_str in cpe_list:
+            if not cpe_str:
+                continue
+            parts = cpe_str.split(":")
+            if len(parts) >= 4:
+                # 2.3 format: cpe:2.3:a:vendor:product:version:...
+                if parts[0] == "cpe" and parts[1] == "2.3" and parts[2] == "a" and len(parts) >= 5:
+                    cpe_vendor = parts[3]
+                    cpe_product = parts[4]
+                    cpe_version = parts[5] if len(parts) > 5 else None
+                    break
+                # 2.2 format: cpe:/a:vendor:product:version
+                elif parts[0] == "cpe" and parts[1].startswith("/a") and len(parts) >= 4:
+                    cpe_vendor = parts[2]
+                    cpe_product = parts[3]
+                    cpe_version = parts[4] if len(parts) > 4 else None
+                    break
+
+    version = ""
+    if cpe_vendor and cpe_product:
+        vendor, api_product = cpe_vendor, cpe_product
+        parts = query.split()
+        if len(parts) > 1:
             version = " ".join(parts[1:])
+        if not version and cpe_version and cpe_version not in ["*", "-"]:
+            version = cpe_version
+    else:
+        parts = query.split()
+        if len(parts) == 0:
+            return []
+        elif len(parts) == 1:
+            product = parts[0]
+            version = ""
+        else:
+            two_word_prod = f"{parts[0]} {parts[1]}".lower()
+            if two_word_prod in ["apache httpd", "microsoft iis", "vsftpd project", "werkzeug httpd"]:
+                product = two_word_prod
+                version = " ".join(parts[2:])
+            else:
+                product = parts[0]
+                version = " ".join(parts[1:])
 
-    product_clean = product.lower().strip()
-    vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
+        product_clean = product.lower().strip()
+        vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
 
+    cpe_success = False
+    all_items = []
+    
+    # Try querying using the parsed/cpe vendor and product
     url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
     try:
         req = urllib.request.Request(
@@ -133,8 +170,45 @@ def fetch_cves_for_query(query):
         )
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
-
         all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
+        if all_items:
+            cpe_success = True
+    except Exception:
+        pass
+
+    # Fallback to string query parsing if CPE-based search failed/empty and we initially used CPE
+    if not cpe_success and cpe_list:
+        parts = query.split()
+        if len(parts) > 0:
+            if len(parts) == 1:
+                product = parts[0]
+                version = ""
+            else:
+                two_word_prod = f"{parts[0]} {parts[1]}".lower()
+                if two_word_prod in ["apache httpd", "microsoft iis", "vsftpd project", "werkzeug httpd"]:
+                    product = two_word_prod
+                    version = " ".join(parts[2:])
+                else:
+                    product = parts[0]
+                    version = " ".join(parts[1:])
+
+            product_clean = product.lower().strip()
+            vendor_fb, api_product_fb = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
+            if vendor_fb != vendor or api_product_fb != api_product:
+                vendor, api_product = vendor_fb, api_product_fb
+                url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
+                try:
+                    req = urllib.request.Request(
+                        url,
+                        headers={"User-Agent": "Lynceus Vulnerability Scanner"}
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        data = json.loads(response.read().decode("utf-8"))
+                    all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
+                except Exception:
+                    pass
+
+    try:
         seen_cves = set()
         filtered_cves = []
 
@@ -245,7 +319,7 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
         existing.evidence = message
         existing.fingerprint = fp
         existing.scan_id = scan_id
-        if existing.status == "resolved":
+        if existing.status in {"resolved", "not_observed"}:
             existing.status = "open"
     else:
         new_finding = SecurityFinding(
@@ -285,7 +359,7 @@ def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
             ftp.connect(ip, port, timeout=2)
             ftp.login(username, password)
             ftp.quit()
-            return {"status": "vulnerable", "message": f"Weak credentials: {username}:{password}"}
+            return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
         except Exception:
             continue
     return {"status": "safe", "message": "No common default credentials found"}
@@ -306,13 +380,13 @@ def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
                 resp = s.recv(1024)
                 if b"+PONG" in resp:
                     s.close()
-                    return {"status": "vulnerable", "message": "No password set (Unauthenticated access)"}
+                    return {"status": "vulnerable", "message": "No password set (Unauthenticated access)."}
             else:
                 s.sendall(f"AUTH {pwd}\r\n".encode())
                 resp = s.recv(1024)
                 if b"+OK" in resp:
                     s.close()
-                    return {"status": "vulnerable", "message": f"Weak password: {pwd}"}
+                    return {"status": "vulnerable", "message": "A weak Redis password was successfully authenticated."}
             s.close()
         except Exception:
             continue
@@ -357,7 +431,7 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
             
             resp = urllib.request.urlopen(req, timeout=2)
             if resp.code == 200:
-                return {"status": "vulnerable", "message": f"Weak credentials: {username}:{password}"}
+                return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
         except urllib.error.HTTPError as e:
             if e.code == 401:
                 continue
@@ -652,8 +726,10 @@ def execute_scan(app, scan_id, audit_credentials=False):
         scan_result.status = "running"
         db.session.commit()
 
-        # Seed default rules for the scanning user if they don't have any rules set up
-        seed_default_rules(scan_result.user_id)
+        # Determine rule owner: always use admin (global/admin-managed Model A)
+        admin_user = User.query.filter_by(is_admin=True).first()
+        rule_owner_id = admin_user.id if admin_user else scan_result.user_id
+        seed_default_rules(rule_owner_id)
 
         # Retrieve global exclusions from the admin settings
         admin_user = User.query.filter_by(is_admin=True).first()
@@ -735,10 +811,6 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         asset_match.name = hostname
                     if asset_match.device_type == "Unknown" or not asset_match.device_type:
                         asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
-                    
-                    # Evaluate custom rules for this asset
-                    prev_ports = prev_hosts_map.get(ip)
-                    evaluate_rules_for_host(host, asset_match, scan_result.user_id, prev_ports=prev_ports, scan_id=scan_result.id)
                 else:
                     # Create as Untrusted Asset
                     new_asset = Asset(
@@ -755,9 +827,6 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     )
                     db.session.add(new_asset)
                     db.session.commit()
-
-                    # Evaluate custom rules for this new asset
-                    evaluate_rules_for_host(host, new_asset, scan_result.user_id, prev_ports=None, scan_id=scan_result.id)
 
             db.session.commit()
 
@@ -875,7 +944,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 asset_match = Asset.query.filter_by(ip_address=ip).first()
                 if asset_match:
                     prev_ports = prev_hosts_map.get(ip)
-                    evaluate_rules_for_host(host, asset_match, scan_result.user_id, prev_ports=prev_ports, scan_id=scan_result.id)
+                    evaluate_rules_for_host(host, asset_match, rule_owner_id, prev_ports=prev_ports, scan_id=scan_result.id)
 
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
@@ -896,7 +965,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
 
                     if lookup_key and lookup_key != "-":
                         query = f"{lookup_key} {raw_version}".strip()
-                        cves = fetch_cves_for_query(query)
+                        cves = fetch_cves_for_query(query, cpe_list=cpe_list)
                         if cves:
                             evaluate_cve_findings(
                                 asset=asset,

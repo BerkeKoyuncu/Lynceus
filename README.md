@@ -297,10 +297,14 @@ python -m flask --app app db upgrade
 This creates all required tables from scratch on a fresh database, and is safe to re-run on an existing one.
 
 > **Existing databases managed by a previous `db.create_all()` setup:**
-> If you have an existing database that was created by an older version of Lynceus (using `db.create_all()`), stamp it at the baseline revision first so Alembic does not try to re-create tables that already exist:
+> Stamping tells Alembic that your database is already at a given revision. **It does not modify any tables** — it only updates the `alembic_version` marker. Only stamp after verifying that your existing schema exactly matches the baseline. If columns or tables are missing, stamping will hide the discrepancy and future migrations will fail.
+>
 > ```bash
+> # Only if you have verified schema compatibility:
 > python -m flask --app app db stamp 4b1d0851377a
 > ```
+>
+> If your existing database was created by an older version of Lynceus and its schema does not match the current models, the safest path is to export your data, drop all tables, and run `flask db upgrade` on a clean database.
 
 ### 6. Create an Admin User
 

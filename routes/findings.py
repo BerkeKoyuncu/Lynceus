@@ -54,24 +54,35 @@ def update_finding(finding_id):
     remediation_note = request.form.get("remediation_note")
     acceptance_expiry_raw = request.form.get("acceptance_expiry", "").strip()
 
-    valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review", "not_observed"]
-    if status in valid_statuses:
-        finding.status = status
+    # not_observed is system-managed — not allowed as a manual status
+    valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]
+    if status not in valid_statuses:
+        flash("Invalid status selected.", "error")
+        return redirect(url_for("findings.list_findings", status=finding.status))
+    finding.status = status
 
+    # Validate assigned user exists
     if assigned_user_id:
         if assigned_user_id == "none":
             finding.assigned_user_id = None
         else:
             try:
-                finding.assigned_user_id = int(assigned_user_id)
+                uid = int(assigned_user_id)
+                assigned_user = db.session.get(User, uid)
+                if not assigned_user:
+                    flash("Selected user could not be found.", "error")
+                    return redirect(url_for("findings.list_findings", status=finding.status))
+                finding.assigned_user_id = uid
             except ValueError:
-                pass
+                flash("Invalid user selection.", "error")
+                return redirect(url_for("findings.list_findings", status=finding.status))
 
     if due_date_raw:
         try:
             finding.due_date = datetime.strptime(due_date_raw, "%Y-%m-%d")
         except ValueError:
-            pass
+            flash("Invalid due date format.", "error")
+            return redirect(url_for("findings.list_findings", status=finding.status))
     else:
         finding.due_date = None
 
@@ -84,7 +95,8 @@ def update_finding(finding_id):
             try:
                 finding.acceptance_expiry = datetime.strptime(acceptance_expiry_raw, "%Y-%m-%d")
             except ValueError:
-                pass
+                flash("Invalid acceptance expiry date format.", "error")
+                return redirect(url_for("findings.list_findings", status=finding.status))
         else:
             finding.acceptance_expiry = None  # Indefinite acceptance
     else:

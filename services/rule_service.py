@@ -197,7 +197,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                             existing_new.evidence = new_evidence
                             existing_new.fingerprint = new_fp
                             existing_new.scan_id = scan_id
-                            if existing_new.status == "resolved":
+                            if existing_new.status in {"resolved", "not_observed"}:
                                 existing_new.status = "open"
                         else:
                             db.session.add(SecurityFinding(
@@ -250,14 +250,16 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
 
                 # Special case: Redis anonymous auth check
                 if matched and rule.name == "Redis Unauthenticated Access":
-                    # If this port is 6379 or service is redis, check credential audit results
                     audit_res = pinfo.get("credential_audit")
                     if audit_res and audit_res.get("status") == "vulnerable":
-                        evidence = f"Redis instance on port {p_num} allows anonymous login or has default passwords: {audit_res.get('message')}"
+                        evidence = (
+                            f"Redis authentication weakness confirmed on port {p_num}: "
+                            f"{audit_res.get('message')}"
+                        )
                     else:
-                        # If not audited yet or audited safe, we don't mark as critical anonymous unless audited
-                        if p_num == 6379:
-                            evidence = "Redis port 6379 is open. Check credential settings to verify authentication status."
+                        # Not audited or audited safe — don't create a Critical finding
+                        matched = False
+                        continue
                 
                 # Special case: TLS certificate check
                 if matched and rule.name == "Expiring TLS Certificate":
@@ -298,7 +300,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                 existing_finding.scan_id = scan_id
                 
                 reopen = False
-                if existing_finding.status == "resolved":
+                if existing_finding.status in {"resolved", "not_observed"}:
                     reopen = True
                 elif existing_finding.status == "accepted_risk":
                     if existing_finding.acceptance_expiry and datetime.now(timezone.utc).replace(tzinfo=None) > existing_finding.acceptance_expiry:
@@ -376,7 +378,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
             existing_finding.scan_id = scan_id
             
             reopen = False
-            if existing_finding.status == "resolved":
+            if existing_finding.status in {"resolved", "not_observed"}:
                 reopen = True
             elif existing_finding.status == "accepted_risk":
                 if existing_finding.acceptance_expiry and datetime.now(timezone.utc).replace(tzinfo=None) > existing_finding.acceptance_expiry:
@@ -472,7 +474,6 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
     for finding in active_findings:
         if finding.fingerprint and finding.fingerprint not in observed_fingerprints:
             finding.status = "not_observed"
-            finding.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
 
     db.session.commit()
 
