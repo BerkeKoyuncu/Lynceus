@@ -1,6 +1,7 @@
 import urllib.request
 import json
 import threading
+from datetime import datetime, timezone
 from services.scan_service import (
     CVE_CACHE,
     _cpe_version_state,
@@ -9,7 +10,7 @@ from services.scan_service import (
 )
 from services.rule_service import evaluate_cve_findings, reconcile_findings_for_scan
 from services.anomaly_service import evaluate_host_anomalies
-from models import db, SecurityFinding, Asset, User, ScanResult
+from models import db, SecurityFinding, Asset, User, ScanResult, ScanSchedule
 
 def test_is_version_affected():
     # 1. Exact match / substring check
@@ -679,8 +680,28 @@ def test_execute_scan_e2e_serialization(app, monkeypatch):
 
     with app.app_context():
         user = User.query.first()
+        schedule = ScanSchedule(
+            user_id=user.id,
+            name="E2E schedule",
+            input_ip="192.168.1.100",
+            subnet_mask="32",
+            scan_type="service_version",
+            network_cidr="192.168.1.100/32",
+            frequency="daily",
+            next_run=datetime.now(timezone.utc).replace(tzinfo=None),
+            is_active=True,
+        )
+        db.session.add(schedule)
+        db.session.flush()
+        claim_token = "e2e-claim-token"
         scan = ScanResult(
             user_id=user.id if user else None,
+            schedule_id=schedule.id,
+            scheduled_for=datetime.now(timezone.utc).replace(tzinfo=None),
+            scheduler_dispatch_state="claimed",
+            scheduler_claim_token=claim_token,
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
             input_ip="192.168.1.100",
             subnet_mask="32",
             scan_type="service_version",
@@ -693,11 +714,17 @@ def test_execute_scan_e2e_serialization(app, monkeypatch):
 
         # Run execute_scan
         from services.scan_service import execute_scan
-        execute_scan(app, scan.id, audit_credentials=False)
+        execute_scan(
+            app,
+            scan.id,
+            audit_credentials=False,
+            scheduler_claim_token=claim_token,
+        )
 
         # Check status and result data serialization
         db.session.refresh(scan)
         assert scan.status == "completed"
+        assert scan.scheduler_dispatch_state == "completed"
         assert scan.result_data is not None
         
         # Verify JSON loads successfully without serialization errors

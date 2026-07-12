@@ -307,10 +307,16 @@ Downgrades below `b5a93e3d9370` are intentionally blocked because older
 honeypot downgrade steps are destructive. Restore a database backup/export when
 you need to return to an older release; do not bypass this migration floor.
 
-Revision `d4f8a1c6e902` stores scheduled occurrences as recoverable jobs. A job
-committed before a scheduler process exits remains queued (or reclaimable after
-its short dispatch lease), so another scheduler instance can start it without
-creating a duplicate occurrence.
+Revisions `d4f8a1c6e902` and `e6b3c9d0f417` store scheduled occurrences as a
+bounded, recoverable queue. `MAX_CONCURRENT_SCANS` defaults to `4`; queued jobs
+are dispatched oldest-first only when capacity is available. Claims use unique
+tokens, workers refresh a heartbeat lease, and an interrupted scheduled scan is
+retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). This is process-crash
+recovery, not host-level Nmap resume: a retried attempt starts its scan again.
+
+Lease tuning is available through `SCHEDULER_LEASE_SECONDS` (default `120`) and
+`SCHEDULER_HEARTBEAT_SECONDS` (default `20`). For larger installations, use a
+dedicated external worker queue instead of increasing in-process concurrency.
 
 > **Existing databases managed by a previous `db.create_all()` setup:**
 > Stamping tells Alembic that your database is already at a given revision. **It does not modify any tables** — it only updates the `alembic_version` marker. Only stamp after verifying that your existing schema exactly matches the baseline. If columns or tables are missing, stamping will hide the discrepancy and future migrations will fail.

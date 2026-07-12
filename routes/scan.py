@@ -271,6 +271,8 @@ def stop_scan(scan_id):
 
     if scan_result.status in ["pending", "running"]:
         scan_result.status = "cancelled"
+        if scan_result.schedule_id is not None:
+            scan_result.scheduler_dispatch_state = "cancelled"
         db.session.commit()
         
         # Kill background Nmap process

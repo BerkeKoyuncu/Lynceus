@@ -50,6 +50,11 @@ class ScanResult(db.Model):
     scheduled_for = db.Column(db.DateTime, nullable=True)
     scheduler_dispatch_state = db.Column(db.String(20), nullable=True)
     scheduler_claimed_at = db.Column(db.DateTime, nullable=True)
+    scheduler_claim_token = db.Column(db.String(36), nullable=True)
+    scheduler_started_at = db.Column(db.DateTime, nullable=True)
+    scheduler_heartbeat_at = db.Column(db.DateTime, nullable=True)
+    scheduler_attempt_count = db.Column(db.Integer, nullable=False, default=0)
+    scheduler_max_attempts = db.Column(db.Integer, nullable=False, default=3)
 
     input_ip = db.Column(db.String(45), nullable=False)
     subnet_mask = db.Column(db.String(45), nullable=False)
@@ -75,6 +80,13 @@ class ScanResult(db.Model):
         db.UniqueConstraint(
             "schedule_id", "scheduled_for", name="uq_scan_result_schedule_occurrence"
         ),
+        db.Index(
+            "ix_scan_result_scheduler_queue",
+            "status",
+            "scheduler_dispatch_state",
+            "scheduler_claimed_at",
+        ),
+        db.Index("ix_scan_result_scheduled_for", "scheduled_for"),
     )
 
     def __repr__(self):

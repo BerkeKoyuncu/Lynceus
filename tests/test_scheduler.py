@@ -130,12 +130,17 @@ def test_scheduler_job_is_recoverable_if_process_dies_before_thread_start(
         assert _dispatch_pending_scheduled_scans(app, now) == [scan_id]
         db.session.refresh(job)
         assert job.scheduler_dispatch_state == "claimed"
+        first_token = job.scheduler_claim_token
+        assert first_token
         assert started == [scan_id]
 
         # The fake thread never starts execute_scan. After the lease expires,
         # another scheduler process can safely dispatch the same persisted job.
         retry_at = now + timedelta(minutes=2)
         assert _dispatch_pending_scheduled_scans(app, retry_at) == [scan_id]
+        db.session.refresh(job)
+        assert job.scheduler_claim_token != first_token
+        assert job.scheduler_attempt_count == 2
         assert started == [scan_id, scan_id]
 
 
@@ -178,3 +183,127 @@ def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
         assert job.status == "pending"
         assert job.scheduler_dispatch_state == "queued"
         assert job.scheduler_claimed_at is None
+
+
+def test_scheduler_backlog_respects_concurrency_capacity_and_order(app, monkeypatch):
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, args, daemon):
+            self.args = args
+
+        def start(self):
+            started.append(self.args[1])
+
+    monkeypatch.setattr("app.threading.Thread", FakeThread)
+    app.config["MAX_CONCURRENT_SCANS"] = 2
+    with app.app_context():
+        user = User.query.first()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        schedule = ScanSchedule(
+            user_id=user.id,
+            name="Backlog",
+            input_ip="198.51.100.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="198.51.100.0/24",
+            frequency="daily",
+            next_run=now + timedelta(days=1),
+            is_active=True,
+        )
+        db.session.add(schedule)
+        db.session.flush()
+        running = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.1",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.1/32",
+            status="running",
+        )
+        db.session.add(running)
+        jobs = []
+        for minutes in [3, 1, 2]:
+            job = ScanResult(
+                user_id=user.id,
+                schedule_id=schedule.id,
+                scheduled_for=now + timedelta(minutes=minutes),
+                scheduler_dispatch_state="queued",
+                scheduler_attempt_count=0,
+                scheduler_max_attempts=3,
+                input_ip="198.51.100.0",
+                subnet_mask="24",
+                scan_type="fast",
+                network_cidr="198.51.100.0/24",
+                status="pending",
+            )
+            jobs.append(job)
+            db.session.add(job)
+        db.session.commit()
+
+        dispatched = _dispatch_pending_scheduled_scans(app, now)
+        expected = next(job.id for job in jobs if job.scheduled_for == now + timedelta(minutes=1))
+        assert dispatched == [expected]
+        assert started == [expected]
+        assert ScanResult.query.filter_by(
+            scheduler_dispatch_state="queued", status="pending"
+        ).count() == 2
+
+
+def test_expired_running_lease_is_requeued_with_new_worker_token(app, monkeypatch):
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, args, daemon):
+            self.args = args
+
+        def start(self):
+            started.append(self.args)
+
+    monkeypatch.setattr("app.threading.Thread", FakeThread)
+    app.config["MAX_CONCURRENT_SCANS"] = 1
+    app.config["SCHEDULER_LEASE_SECONDS"] = 30
+    with app.app_context():
+        user = User.query.first()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        schedule = ScanSchedule(
+            user_id=user.id,
+            name="Lease recovery",
+            input_ip="192.0.2.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="192.0.2.0/24",
+            frequency="daily",
+            next_run=now + timedelta(days=1),
+            is_active=True,
+        )
+        db.session.add(schedule)
+        db.session.flush()
+        job = ScanResult(
+            user_id=user.id,
+            schedule_id=schedule.id,
+            scheduled_for=now - timedelta(minutes=5),
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="expired-token",
+            scheduler_claimed_at=now - timedelta(minutes=5),
+            scheduler_started_at=now - timedelta(minutes=5),
+            scheduler_heartbeat_at=now - timedelta(minutes=2),
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+            input_ip="192.0.2.0",
+            subnet_mask="24",
+            scan_type="fast",
+            network_cidr="192.0.2.0/24",
+            status="running",
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == [job.id]
+        db.session.refresh(job)
+        assert job.status == "pending"
+        assert job.scheduler_dispatch_state == "claimed"
+        assert job.scheduler_claim_token != "expired-token"
+        assert job.scheduler_attempt_count == 2
+        assert started[0][1] == job.id
+        assert started[0][3] == job.scheduler_claim_token

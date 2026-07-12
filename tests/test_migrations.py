@@ -56,18 +56,23 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
             "FROM honeypot_blocked_ip ORDER BY id"
         ).fetchall()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        scan_indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(scan_result)").fetchall()
+        }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "d4f8a1c6e902"
+        assert revision == "e6b3c9d0f417"
+        assert "ix_scan_result_scheduler_queue" in scan_indexes
+        assert "ix_scan_result_scheduled_for" in scan_indexes
     finally:
         _cleanup_database(fd, path)
 
 
-def test_c7_deduplicates_blocked_ips_before_adding_unique_constraint():
+def test_e6_deduplicates_drifted_blocked_ips_before_unique_constraint():
     fd, path, app = _database_app()
     try:
         with app.app_context():
-            upgrade(revision="b5a93e3d9370")
+            upgrade(revision="d4f8a1c6e902")
 
         connection = sqlite3.connect(path)
         connection.execute("DROP TABLE honeypot_blocked_ip")
@@ -92,7 +97,7 @@ def test_c7_deduplicates_blocked_ips_before_adding_unique_constraint():
         connection.close()
 
         with app.app_context():
-            upgrade(revision="c7e9d2f4a681")
+            upgrade(revision="e6b3c9d0f417")
 
         connection = sqlite3.connect(path)
         rows = connection.execute(

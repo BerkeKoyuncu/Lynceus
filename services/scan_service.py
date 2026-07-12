@@ -931,7 +931,82 @@ def check_and_send_scan_alert(scan_result):
         }
         send_notification_email_async(setting_dict, subject, body_html)
 
-def execute_scan(app, scan_id, audit_credentials=False):
+def _scheduler_heartbeat_loop(app, scan_id, claim_token, stop_event):
+    interval = app.config["SCHEDULER_HEARTBEAT_SECONDS"]
+    while not stop_event.wait(interval):
+        try:
+            with app.app_context():
+                updated = ScanResult.query.filter(
+                    ScanResult.id == scan_id,
+                    ScanResult.status == "running",
+                    ScanResult.scheduler_dispatch_state == "started",
+                    ScanResult.scheduler_claim_token == claim_token,
+                ).update(
+                    {ScanResult.scheduler_heartbeat_at: datetime.now(timezone.utc).replace(tzinfo=None)},
+                    synchronize_session=False,
+                )
+                db.session.commit()
+                if updated != 1:
+                    return
+        except Exception:
+            # A transient DB lock should not kill the heartbeat permanently.
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
+
+def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
+    heartbeat_stop = None
+    if scheduler_claim_token:
+        with app.app_context():
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            started = ScanResult.query.filter(
+                ScanResult.id == scan_id,
+                ScanResult.status == "pending",
+                ScanResult.scheduler_dispatch_state == "claimed",
+                ScanResult.scheduler_claim_token == scheduler_claim_token,
+            ).update(
+                {
+                    ScanResult.status: "running",
+                    ScanResult.scheduler_dispatch_state: "started",
+                    ScanResult.scheduler_started_at: now,
+                    ScanResult.scheduler_heartbeat_at: now,
+                },
+                synchronize_session=False,
+            )
+            if started != 1:
+                db.session.rollback()
+                return
+            db.session.commit()
+
+        heartbeat_stop = threading.Event()
+        threading.Thread(
+            target=_scheduler_heartbeat_loop,
+            args=(app, scan_id, scheduler_claim_token, heartbeat_stop),
+            daemon=True,
+        ).start()
+
+    try:
+        _execute_scan_body(
+            app,
+            scan_id,
+            audit_credentials,
+            scheduler_claim_token=scheduler_claim_token,
+            already_started=bool(scheduler_claim_token),
+        )
+    finally:
+        if heartbeat_stop is not None:
+            heartbeat_stop.set()
+
+
+def _execute_scan_body(
+    app,
+    scan_id,
+    audit_credentials=False,
+    scheduler_claim_token=None,
+    already_started=False,
+):
     """
     Executes the Nmap scan in a background thread and updates the database,
     evaluating anomalies and rules engine criteria.
@@ -944,10 +1019,18 @@ def execute_scan(app, scan_id, audit_credentials=False):
         if scan_result.status == "cancelled":
             return
 
-        scan_result.status = "running"
-        if scan_result.schedule_id is not None:
-            scan_result.scheduler_dispatch_state = "started"
-        db.session.commit()
+        if scheduler_claim_token:
+            if (
+                scan_result.scheduler_claim_token != scheduler_claim_token
+                or scan_result.status != "running"
+            ):
+                return
+        elif not already_started:
+            scan_result.status = "running"
+            if scan_result.schedule_id is not None:
+                scan_result.scheduler_dispatch_state = "started"
+                scan_result.scheduler_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.session.commit()
 
         # Determine rule owner: always use admin (global/admin-managed Model A)
         admin_user = User.query.filter_by(is_admin=True).first()
@@ -980,6 +1063,11 @@ def execute_scan(app, scan_id, audit_credentials=False):
         )
 
         db.session.refresh(scan_result)
+        if (
+            scheduler_claim_token
+            and scan_result.scheduler_claim_token != scheduler_claim_token
+        ):
+            return
         if scan_result.status == "cancelled":
             return
 
@@ -1344,11 +1432,34 @@ def execute_scan(app, scan_id, audit_credentials=False):
             "hosts": hosts
         }
 
-        scan_result.result_data = json.dumps(result_payload, indent=4)
+        serialized_result = json.dumps(result_payload, indent=4)
 
         if nmap_result["success"]:
-            scan_result.status = "completed"
-            db.session.commit()
+            if scheduler_claim_token:
+                completed = ScanResult.query.filter(
+                    ScanResult.id == scan_id,
+                    ScanResult.status == "running",
+                    ScanResult.scheduler_dispatch_state == "started",
+                    ScanResult.scheduler_claim_token == scheduler_claim_token,
+                ).update(
+                    {
+                        ScanResult.status: "completed",
+                        ScanResult.scheduler_dispatch_state: "completed",
+                        ScanResult.result_data: serialized_result,
+                        ScanResult.scheduler_heartbeat_at: datetime.now(timezone.utc).replace(tzinfo=None),
+                    },
+                    synchronize_session=False,
+                )
+                db.session.commit()
+                if completed != 1:
+                    return
+                db.session.refresh(scan_result)
+            else:
+                scan_result.result_data = serialized_result
+                scan_result.status = "completed"
+                if scan_result.schedule_id is not None:
+                    scan_result.scheduler_dispatch_state = "completed"
+                db.session.commit()
             
             try:
                 check_and_send_scan_alert(scan_result)
@@ -1356,5 +1467,23 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 import sys
                 print(f"[Email Alert Error]: {str(e)}", file=sys.stderr)
         else:
-            scan_result.status = "failed"
+            if scheduler_claim_token:
+                ScanResult.query.filter(
+                    ScanResult.id == scan_id,
+                    ScanResult.status == "running",
+                    ScanResult.scheduler_claim_token == scheduler_claim_token,
+                ).update(
+                    {
+                        ScanResult.status: "failed",
+                        ScanResult.scheduler_dispatch_state: "failed",
+                        ScanResult.result_data: serialized_result,
+                        ScanResult.scheduler_heartbeat_at: datetime.now(timezone.utc).replace(tzinfo=None),
+                    },
+                    synchronize_session=False,
+                )
+            else:
+                scan_result.result_data = serialized_result
+                scan_result.status = "failed"
+                if scan_result.schedule_id is not None:
+                    scan_result.scheduler_dispatch_state = "failed"
             db.session.commit()
