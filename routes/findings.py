@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models import db, SecurityFinding, User
 from routes.admin import admin_required
@@ -47,32 +47,50 @@ def list_findings():
 @admin_required
 def update_finding(finding_id):
     finding = SecurityFinding.query.get_or_404(finding_id)
-    
+
     status = request.form.get("status")
     assigned_user_id = request.form.get("assigned_user_id")
-    due_date_raw = request.form.get("due_date")
+    due_date_raw = request.form.get("due_date", "").strip()
     remediation_note = request.form.get("remediation_note")
-    
-    if status in ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]:
+    acceptance_expiry_raw = request.form.get("acceptance_expiry", "").strip()
+
+    valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review", "not_observed"]
+    if status in valid_statuses:
         finding.status = status
-        
+
     if assigned_user_id:
         if assigned_user_id == "none":
             finding.assigned_user_id = None
         else:
-            finding.assigned_user_id = int(assigned_user_id)
-            
+            try:
+                finding.assigned_user_id = int(assigned_user_id)
+            except ValueError:
+                pass
+
     if due_date_raw:
         try:
             finding.due_date = datetime.strptime(due_date_raw, "%Y-%m-%d")
         except ValueError:
             pass
-    elif due_date_raw == "":
+    else:
         finding.due_date = None
-        
+
     if remediation_note is not None:
         finding.remediation_note = remediation_note.strip()
-        
+
+    # Handle acceptance_expiry — only meaningful when status is accepted_risk
+    if status == "accepted_risk":
+        if acceptance_expiry_raw:
+            try:
+                finding.acceptance_expiry = datetime.strptime(acceptance_expiry_raw, "%Y-%m-%d")
+            except ValueError:
+                pass
+        else:
+            finding.acceptance_expiry = None  # Indefinite acceptance
+    else:
+        # Clear expiry when no longer in accepted_risk state
+        finding.acceptance_expiry = None
+
     db.session.commit()
     flash("Finding details updated successfully.", "success")
     return redirect(url_for("findings.list_findings", status=finding.status))

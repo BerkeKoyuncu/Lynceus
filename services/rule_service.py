@@ -570,7 +570,7 @@ def calculate_network_risk_score(user_id):
     admin_user = _User.query.filter_by(is_admin=True).first()
     setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
     if setting:
-        if not setting.honeypot_enabled:
+        if not setting.honeypot_active:
             risk_score += 10
             risk_factors.append({
                 "severity": "low",

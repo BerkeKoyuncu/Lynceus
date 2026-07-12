@@ -266,23 +266,51 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Initialise the Database (Optional)
+### 4. Configure the Database (Required)
 
-The application automatically checks, creates, and migrates database tables on startup. However, you can manually trigger database table generation and schema migrations using:
+**SQLite (default — no configuration needed):**
+
+The application uses SQLite by default and stores its database in `database.db` in the project root.
+
+**PostgreSQL (optional):**
+
+Set the `DATABASE_URL` environment variable before running any commands:
 
 ```bash
-python -m flask --app app init-db
+# Linux/macOS
+export DATABASE_URL="postgresql://user:password@localhost/lynceus"
+
+# Windows PowerShell
+$env:DATABASE_URL = "postgresql://user:password@localhost/lynceus"
 ```
 
-### 5. Create an Admin User
+`psycopg[binary]` is included in `requirements.txt` and handles the PostgreSQL driver automatically.
+
+### 5. Apply Database Migrations
+
+Database schema is managed by Alembic. **Always run this before `create-admin`:**
+
+```bash
+python -m flask --app app db upgrade
+```
+
+This creates all required tables from scratch on a fresh database, and is safe to re-run on an existing one.
+
+> **Existing databases managed by a previous `db.create_all()` setup:**
+> If you have an existing database that was created by an older version of Lynceus (using `db.create_all()`), stamp it at the baseline revision first so Alembic does not try to re-create tables that already exist:
+> ```bash
+> python -m flask --app app db stamp 4b1d0851377a
+> ```
+
+### 6. Create an Admin User
 
 ```bash
 python -m flask --app app create-admin
 ```
 
-The command will ask for an admin email address and password.
+The command will prompt for an admin email address, password, and will display a TOTP QR code to scan with your authenticator app (e.g. Google Authenticator). **2FA is mandatory for admin accounts.**
 
-### 6. Clean Up Stale Scans (Optional)
+### 7. Clean Up Stale Scans (Optional)
 
 If the application is stopped or crashes while scans are running, those scans might get stuck in a `pending` or `running` state. You can reset them manually with:
 
@@ -290,19 +318,34 @@ If the application is stopped or crashes while scans are running, those scans mi
 python -m flask --app app cleanup-scans
 ```
 
-### 7. Run the Application
+### 8. Run the Application
+
+**Development (localhost only):**
 
 ```bash
-python app.py
+python -m flask --app app run
 ```
 
-By default, the application runs at:
+The development server binds to `127.0.0.1:5000` by default. Debug mode is controlled by the `FLASK_DEBUG` environment variable (default: `false`).
+
+**LAN/Production deployment with Waitress:**
+
+For local network deployment, use [Waitress](https://docs.pylonsproject.org/projects/waitress/) instead of the Flask development server:
+
+```bash
+# Bind to all interfaces on port 5000
+waitress-serve --call --host 0.0.0.0 --port 5000 app:create_app
+```
+
+> **Security note:** Only expose Lynceus on trusted private networks. Do not expose it directly to the internet.
+
+By default the application is reachable at:
 
 ```text
-http://127.0.0.1:5000
+http://127.0.0.1:5000   (development)
+http://<your-lan-ip>:5000   (waitress, LAN)
 ```
 
-When hosted on the local network, it may also be reachable through the machine's LAN IP address.
 
 ---
 

@@ -13,8 +13,8 @@ def _anomaly_exists(anomaly_type, ip_address, mac_address, hours=24):
         SecurityAnomaly.anomaly_type == anomaly_type,
         SecurityAnomaly.ip_address == ip_address,
         SecurityAnomaly.mac_address == mac_address,
-        SecurityAnomaly.resolved == False,
-        SecurityAnomaly.detected_at >= since
+        SecurityAnomaly.is_resolved == False,
+        SecurityAnomaly.created_at >= since
     ).first() is not None
 
 def get_ports_hash(ports_list):
