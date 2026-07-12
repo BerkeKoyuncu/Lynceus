@@ -527,12 +527,12 @@ def create_app(config=None):
         start_scan_dispatcher(app)
 
     with app.app_context():
-        if app.config.get("SEED_DEMO_DATA"):
-            try:
-                seed_mock_security_data()
-            except Exception:
-                pass
         if not is_management_cli:
+            if app.config.get("SEED_DEMO_DATA"):
+                try:
+                    seed_mock_security_data()
+                except Exception:
+                    pass
             try:
                 cleanup_stale_scans()
             except Exception:
@@ -706,8 +706,8 @@ def _recover_expired_scan_jobs(
     return eligible, retry_before, changed
 
 
-def _dispatch_pending_scheduled_scans(app, now=None):
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+def _recover_scan_jobs_with_lock(app, now, commit=False):
+    """Run scheduler recovery while holding the global dispatch lock."""
     dispatch_lock = db.session.get(ScanDispatchLock, 1)
     if dispatch_lock is None:
         raise RuntimeError(
@@ -717,15 +717,21 @@ def _dispatch_pending_scheduled_scans(app, now=None):
     ScanDispatchLock.query.filter(ScanDispatchLock.id == 1).update(
         {ScanDispatchLock.touched_at: now}, synchronize_session=False
     )
-
-    lease_seconds = app.config["SCHEDULER_LEASE_SECONDS"]
-    eligible, retry_before, _ = _recover_expired_scan_jobs(
+    result = _recover_expired_scan_jobs(
         now,
-        lease_seconds,
+        app.config["SCHEDULER_LEASE_SECONDS"],
         app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"],
         app.config["MAX_SCAN_RUNTIME_SECONDS"],
         app.config["SCAN_WORKER_ID"],
     )
+    if commit:
+        db.session.commit()
+    return result
+
+
+def _dispatch_pending_scheduled_scans(app, now=None):
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    eligible, retry_before, _ = _recover_scan_jobs_with_lock(app, now)
     running_count = ScanResult.query.filter(ScanResult.status == "running").count()
     live_claims = ScanResult.query.filter(
         ScanResult.status == "pending",
@@ -935,22 +941,14 @@ def seed_mock_security_data():
 def cleanup_stale_scans():
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     stale_threshold = now - timedelta(minutes=30)
-    _, _, recovered_jobs = _recover_expired_scan_jobs(
-        now,
-        current_app.config["SCHEDULER_LEASE_SECONDS"],
-        current_app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"],
-        current_app.config["MAX_SCAN_RUNTIME_SECONDS"],
-        current_app.config["SCAN_WORKER_ID"],
+    _, _, recovered_jobs = _recover_scan_jobs_with_lock(
+        current_app._get_current_object(), now, commit=True
     )
 
     stale_scans = ScanResult.query.filter(
         ScanResult.status.in_(["pending", "running"]),
+        ScanResult.scheduler_dispatch_state.is_(None),
         ScanResult.created_at < stale_threshold,
-        or_(
-            ScanResult.status == "running",
-            ScanResult.scheduler_dispatch_state.is_(None),
-            ScanResult.scheduler_dispatch_state.notin_(["queued", "claimed"]),
-        ),
     ).all()
     for scan in stale_scans:
         scan.status = "failed"

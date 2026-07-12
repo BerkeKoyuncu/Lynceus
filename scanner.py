@@ -508,14 +508,20 @@ def execute_nmap_subprocess(command, scan_id=None):
 def stop_scan_process(scan_id):
     with active_processes_lock:
         processes = list(active_processes.get(scan_id, set()))
-    stopped = False
+    if not processes:
+        return False
+
+    all_stopped = True
     for proc in processes:
         try:
-            proc.kill()
-            stopped = True
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+            if proc.poll() is None:
+                all_stopped = False
         except Exception:
-            pass
-    return stopped
+            all_stopped = False
+    return all_stopped
 
 
 def extract_scanned_endpoints_from_xml(xml_output):

@@ -970,6 +970,7 @@ def scheduler_claim_is_current(scan_id, claim_token):
 
 
 _progress_checkpoint_times = {}
+_progress_checkpoint_retry_after = {}
 _progress_checkpoint_lock = threading.Lock()
 
 
@@ -985,6 +986,9 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
     interval = current_app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"]
     with _progress_checkpoint_lock:
         last_update = _progress_checkpoint_times.get(key)
+        retry_after = _progress_checkpoint_retry_after.get(key)
+    if retry_after is not None and monotonic_now < retry_after:
+        return True
     if not force and last_update is not None and monotonic_now - last_update < interval:
         return True
 
@@ -1007,7 +1011,9 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
     except Exception:
         progress_session.rollback()
         # A transient progress-write lock must not commit or roll back the
-        # business session. Ownership is still fenced by the read above.
+        # business session. Back off before another host/port retries it.
+        with _progress_checkpoint_lock:
+            _progress_checkpoint_retry_after[key] = monotonic_now + min(interval, 5)
         return scheduler_claim_is_current(scan_id, claim_token)
     finally:
         progress_session.close()
@@ -1016,6 +1022,7 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
         return False
     with _progress_checkpoint_lock:
         _progress_checkpoint_times[key] = monotonic_now
+        _progress_checkpoint_retry_after.pop(key, None)
     return True
 
 
@@ -1024,6 +1031,7 @@ def _clear_scheduler_progress_checkpoint(scan_id, claim_token):
         return
     with _progress_checkpoint_lock:
         _progress_checkpoint_times.pop((scan_id, claim_token), None)
+        _progress_checkpoint_retry_after.pop((scan_id, claim_token), None)
 
 
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):

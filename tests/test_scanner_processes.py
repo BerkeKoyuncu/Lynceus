@@ -9,6 +9,7 @@ class FakeProcess:
         self.release = threading.Event()
         self.returncode = 0
         self.killed = False
+        self.waited = False
 
     def communicate(self, timeout=None):
         self.release.wait(timeout=5)
@@ -17,6 +18,15 @@ class FakeProcess:
     def kill(self):
         self.killed = True
         self.release.set()
+
+    def wait(self, timeout=None):
+        self.waited = True
+        if not self.release.wait(timeout):
+            raise scanner.subprocess.TimeoutExpired("nmap", timeout)
+        return self.returncode
+
+    def poll(self):
+        return self.returncode if self.release.is_set() else None
 
 
 def test_finished_retry_process_does_not_unregister_new_attempt(monkeypatch):
@@ -55,4 +65,26 @@ def test_stop_scan_kills_every_active_attempt():
     assert scanner.stop_scan_process(99) is True
     assert first.killed is True
     assert second.killed is True
+    assert first.waited is True
+    assert second.waited is True
+    scanner.active_processes.clear()
+
+
+def test_stop_scan_requires_every_process_to_terminate():
+    healthy = FakeProcess()
+    stuck = FakeProcess()
+
+    def fail_wait(timeout=None):
+        stuck.waited = True
+        raise scanner.subprocess.TimeoutExpired("nmap", timeout)
+
+    stuck.wait = fail_wait
+    scanner.active_processes.clear()
+    scanner.active_processes[100] = {healthy, stuck}
+
+    assert scanner.stop_scan_process(100) is False
+    assert healthy.killed is True
+    assert healthy.waited is True
+    assert stuck.killed is True
+    assert stuck.waited is True
     scanner.active_processes.clear()

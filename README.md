@@ -311,8 +311,10 @@ Revisions `d4f8a1c6e902` and `e6b3c9d0f417` store scheduled occurrences as a
 bounded, recoverable queue. `MAX_CONCURRENT_SCANS` defaults to `4`; queued jobs
 are dispatched oldest-first only when capacity is available. Claims use unique
 tokens, workers refresh a heartbeat lease, and an interrupted scheduled scan is
-retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). This is process-crash
-recovery, not host-level Nmap resume: a retried attempt starts its scan again.
+retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). Recovery is limited to a
+stalled attempt whose local Nmap processes can all be positively stopped by the
+same worker process; process restarts and cross-worker failures fail closed.
+A retried attempt starts its scan again rather than resuming Nmap state.
 Before a local expired attempt is retried, all Nmap subprocesses registered for
 that scan are stopped. Worker instance, host, and process identifiers are stored
 with each claim. An attempt owned by another process, or one whose local process
@@ -323,7 +325,9 @@ worker queue or supervisor with a shared cancellation mechanism.
 
 Manual, repeated, and scheduled scans all use this persisted queue. A database
 dispatcher lock serializes capacity reservation across web/scheduler processes,
-so the concurrency limit is global for a shared database.
+so the concurrency limit is global for a shared database. Automatic and manual
+cleanup use this same lock for queue recovery; the generic 30-minute cleanup is
+limited to legacy scans that are not managed by the persisted queue.
 
 Lease tuning is available through `SCHEDULER_LEASE_SECONDS` (default `120`) and
 `SCHEDULER_HEARTBEAT_SECONDS` (default `20`). The heartbeat represents worker

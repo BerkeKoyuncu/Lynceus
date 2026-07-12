@@ -191,6 +191,41 @@ def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
         assert job.scheduler_claimed_at == old_time
 
 
+def test_fresh_running_queue_job_is_not_failed_by_cleanup_after_30_minutes(app):
+    with app.app_context():
+        user = User.query.first()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.90",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.90/32",
+            status="running",
+            created_at=now - timedelta(minutes=40),
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="healthy-token",
+            scheduler_started_at=now - timedelta(minutes=10),
+            scheduler_heartbeat_at=now,
+            scheduler_progress_at=now,
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        cleanup_stale_scans()
+
+        db.session.refresh(job)
+        assert job.status == "running"
+        assert job.scheduler_dispatch_state == "started"
+        dispatch_lock = db.session.get(ScanDispatchLock, 1)
+        db.session.refresh(dispatch_lock)
+        assert dispatch_lock.touched_at is not None
+
+
 def test_scheduler_backlog_respects_concurrency_capacity_and_order(app, monkeypatch):
     started = []
 
@@ -673,6 +708,51 @@ def test_progress_checkpoint_does_not_commit_business_session(app):
         assert persisted.scheduler_progress_at is not None
 
 
+def test_failed_progress_write_is_throttled(app, monkeypatch):
+    import services.scan_service as scan_service
+
+    attempts = []
+
+    class FailingProgressSession:
+        def query(self, model):
+            attempts.append(model)
+            raise RuntimeError("database is locked")
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        scan_service,
+        "sessionmaker",
+        lambda **kwargs: lambda: FailingProgressSession(),
+    )
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.73",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.73/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="locked-progress-token",
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert scheduler_progress_checkpoint(job.id, job.scheduler_claim_token, force=True)
+        assert scheduler_progress_checkpoint(job.id, job.scheduler_claim_token, force=True)
+        assert len(attempts) == 1
+        scan_service._clear_scheduler_progress_checkpoint(
+            job.id, job.scheduler_claim_token
+        )
+
+
 def test_missing_dispatch_lock_is_a_schema_error(app):
     import pytest
 
@@ -715,12 +795,13 @@ def test_documented_management_cli_form_starts_no_background_work(monkeypatch):
     monkeypatch.setattr(app_module, "start_scheduler", lambda flask_app: calls.append("scheduler"))
     monkeypatch.setattr(app_module, "start_scan_dispatcher", lambda flask_app: calls.append("dispatcher"))
     monkeypatch.setattr(app_module, "cleanup_stale_scans", lambda: calls.append("cleanup"))
+    monkeypatch.setattr(app_module, "seed_mock_security_data", lambda: calls.append("seed"))
 
     create_app({
         "TESTING": False,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "START_SCHEDULER": True,
-        "SEED_DEMO_DATA": False,
+        "SEED_DEMO_DATA": True,
     })
 
     assert calls == []
