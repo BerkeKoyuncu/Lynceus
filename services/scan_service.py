@@ -1054,7 +1054,9 @@ def _clear_scheduler_progress_checkpoint(scan_id, claim_token):
         _progress_checkpoint_retry_after.pop((scan_id, claim_token), None)
 
 
-def _reconcile_scan_worker_exit(app, scan_id, claim_token):
+def _reconcile_scan_worker_exit(
+    app, scan_id, claim_token, reconcile_termination_failed=True
+):
     if not claim_token:
         return
     with app.app_context():
@@ -1075,17 +1077,19 @@ def _reconcile_scan_worker_exit(app, scan_id, claim_token):
             },
             synchronize_session=False,
         )
-        terminated = ScanResult.query.filter(
-            *owner_filter,
-            ScanResult.status == "termination_failed",
-        ).update(
-            {
-                ScanResult.status: "failed",
-                ScanResult.scheduler_dispatch_state: "failed",
-                ScanResult.scheduler_execution_phase: "terminated",
-            },
-            synchronize_session=False,
-        )
+        terminated = 0
+        if reconcile_termination_failed:
+            terminated = ScanResult.query.filter(
+                *owner_filter,
+                ScanResult.status == "termination_failed",
+            ).update(
+                {
+                    ScanResult.status: "failed",
+                    ScanResult.scheduler_dispatch_state: "failed",
+                    ScanResult.scheduler_execution_phase: "terminated",
+                },
+                synchronize_session=False,
+            )
         if cancelled or terminated:
             db.session.commit()
         else:
@@ -1094,67 +1098,79 @@ def _reconcile_scan_worker_exit(app, scan_id, claim_token):
 
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
-    if scheduler_claim_token:
-        with app.app_context():
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
-            started = ScanResult.query.filter(
-                ScanResult.id == scan_id,
-                ScanResult.status == "pending",
-                ScanResult.scheduler_dispatch_state == "claimed",
-                ScanResult.scheduler_claim_token == scheduler_claim_token,
-            ).update(
-                {
-                    ScanResult.status: "running",
-                    ScanResult.scheduler_dispatch_state: "started",
-                    ScanResult.scheduler_started_at: now,
-                    ScanResult.scheduler_heartbeat_at: now,
-                    ScanResult.scheduler_progress_at: now,
-                    ScanResult.scheduler_execution_phase: "starting",
-                },
-                synchronize_session=False,
-            )
-            if started != 1:
-                db.session.rollback()
-                return
-            db.session.commit()
-
-        if not allow_scan_process_start(scan_id, scheduler_claim_token):
+    attempt_registered = False
+    transition_started = False
+    try:
+        if scheduler_claim_token:
             with app.app_context():
-                ScanResult.query.filter(
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                started = ScanResult.query.filter(
                     ScanResult.id == scan_id,
-                    ScanResult.status == "running",
+                    ScanResult.status == "pending",
+                    ScanResult.scheduler_dispatch_state == "claimed",
                     ScanResult.scheduler_claim_token == scheduler_claim_token,
                 ).update(
                     {
-                        ScanResult.status: "termination_failed",
-                        ScanResult.scheduler_dispatch_state: "orphaned",
-                        ScanResult.scheduler_execution_phase: "token_conflict",
+                        ScanResult.status: "running",
+                        ScanResult.scheduler_dispatch_state: "started",
+                        ScanResult.scheduler_started_at: now,
+                        ScanResult.scheduler_heartbeat_at: now,
+                        ScanResult.scheduler_progress_at: now,
+                        ScanResult.scheduler_execution_phase: "starting",
                     },
                     synchronize_session=False,
                 )
+                if started != 1:
+                    db.session.rollback()
+                    return
                 db.session.commit()
-                app.logger.critical(
-                    "Process token conflict for scan %s; capacity remains reserved.",
-                    scan_id,
-                )
-            return
+                transition_started = True
 
-        with app.app_context():
-            if not _independent_scheduler_claim_is_current(
-                scan_id, scheduler_claim_token
-            ):
-                end_scan_process_attempt(scan_id, scheduler_claim_token)
-                _reconcile_scan_worker_exit(app, scan_id, scheduler_claim_token)
+            if not allow_scan_process_start(scan_id, scheduler_claim_token):
+                with app.app_context():
+                    conflict_payload = json.dumps({
+                        "command": "N/A",
+                        "output": (
+                            "A local process-token conflict prevented this "
+                            "attempt from starting. Capacity remains reserved "
+                            "until an administrator resolves the orphan."
+                        ),
+                        "hosts": [],
+                    })
+                    ScanResult.query.filter(
+                        ScanResult.id == scan_id,
+                        ScanResult.status == "running",
+                        ScanResult.scheduler_claim_token == scheduler_claim_token,
+                    ).update(
+                        {
+                            ScanResult.status: "termination_failed",
+                            ScanResult.scheduler_dispatch_state: "orphaned",
+                            ScanResult.scheduler_execution_phase: "token_conflict",
+                            ScanResult.result_data: conflict_payload,
+                        },
+                        synchronize_session=False,
+                    )
+                    db.session.commit()
+                    app.logger.critical(
+                        "Process token conflict for scan %s; capacity remains reserved.",
+                        scan_id,
+                    )
                 return
+            attempt_registered = True
 
-        heartbeat_stop = threading.Event()
-        threading.Thread(
-            target=_scheduler_heartbeat_loop,
-            args=(app, scan_id, scheduler_claim_token, heartbeat_stop),
-            daemon=True,
-        ).start()
+            with app.app_context():
+                if not _independent_scheduler_claim_is_current(
+                    scan_id, scheduler_claim_token
+                ):
+                    return
 
-    try:
+            heartbeat_stop = threading.Event()
+            threading.Thread(
+                target=_scheduler_heartbeat_loop,
+                args=(app, scan_id, scheduler_claim_token, heartbeat_stop),
+                daemon=True,
+            ).start()
+
         _execute_scan_body(
             app,
             scan_id,
@@ -1167,18 +1183,48 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
             app.logger.info(
                 "Scan %s stopped because claim ownership was lost.", scan_id
             )
+    except Exception as error:
+        with app.app_context():
+            if transition_started and scheduler_claim_token:
+                failure_payload = json.dumps({
+                    "command": "N/A",
+                    "output": f"Scan worker failed during setup or execution: {error}",
+                    "hosts": [],
+                })
+                ScanResult.query.filter(
+                    ScanResult.id == scan_id,
+                    ScanResult.status == "running",
+                    ScanResult.scheduler_claim_token == scheduler_claim_token,
+                ).update(
+                    {
+                        ScanResult.status: "failed",
+                        ScanResult.scheduler_dispatch_state: "failed",
+                        ScanResult.scheduler_execution_phase: "worker_failed",
+                        ScanResult.result_data: failure_payload,
+                    },
+                    synchronize_session=False,
+                )
+                db.session.commit()
+            app.logger.exception("Scan worker %s failed", scan_id)
     finally:
         if heartbeat_stop is not None:
             heartbeat_stop.set()
-        end_scan_process_attempt(scan_id, scheduler_claim_token)
+        if attempt_registered:
+            end_scan_process_attempt(scan_id, scheduler_claim_token)
         _clear_scheduler_progress_checkpoint(scan_id, scheduler_claim_token)
-        _reconcile_scan_worker_exit(app, scan_id, scheduler_claim_token)
-        try:
-            from app import _dispatch_pending_scheduled_scans
-            with app.app_context():
-                _dispatch_pending_scheduled_scans(app)
-        except Exception:
-            pass
+        if transition_started:
+            _reconcile_scan_worker_exit(
+                app,
+                scan_id,
+                scheduler_claim_token,
+                reconcile_termination_failed=attempt_registered,
+            )
+            try:
+                from app import _dispatch_pending_scheduled_scans
+                with app.app_context():
+                    _dispatch_pending_scheduled_scans(app)
+            except Exception:
+                pass
 
 
 def _execute_scan_body(

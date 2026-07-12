@@ -62,9 +62,17 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         scan_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(scan_result)").fetchall()
         }
+        user_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(user)").fetchall()
+        }
+        table_names = {
+            row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "b7e2c9d4a610"
+        assert revision == "c4f8a2d7e915"
         assert "ix_scan_result_scheduler_queue" in scan_indexes
         assert "ix_scan_result_scheduled_for" in scan_indexes
         assert {
@@ -74,6 +82,8 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
             "scheduler_worker_host",
             "scheduler_process_id",
         }.issubset(scan_columns)
+        assert "is_deleting" in user_columns
+        assert "scan_resolution_audit" in table_names
     finally:
         _cleanup_database(fd, path)
 
@@ -162,7 +172,7 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         connection.close()
         assert rows == [(20, "198.51.100.20", "first")]
-        assert revision == "b7e2c9d4a610"
+        assert revision == "c4f8a2d7e915"
     finally:
         _cleanup_database(fd, path)
 

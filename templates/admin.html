@@ -337,7 +337,7 @@
                             {% if scan.status in ["termination_failed", "cancellation_requested"] %}
                             <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan.id) }}" style="margin: 0;" onsubmit="return confirm('Confirm that the owning worker/process is no longer running before releasing capacity.');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <input type="text" name="reason" required placeholder="Resolution reason" style="width: 150px;">
+                                <input type="text" name="reason" required maxlength="500" placeholder="Resolution reason" style="width: 150px;">
                                 <button type="submit" class="button" style="padding: 6px 12px; font-size: 13px;">Resolve Orphan</button>
                             </form>
                             {% endif %}

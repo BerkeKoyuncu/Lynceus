@@ -74,6 +74,11 @@ def is_scan_frozen():
     except Exception:
         return False
 
+
+def _lock_user_for_new_scan(user_id):
+    user = User.query.filter(User.id == user_id).with_for_update().first()
+    return user if user is not None and not user.is_deleting else None
+
 def validate_scan_request(
     ip_address,
     subnet_mask,
@@ -177,6 +182,9 @@ def validate_scan_request(
 @login_required
 def scan():
     if request.method == "POST":
+        if _lock_user_for_new_scan(current_user.id) is None:
+            flash("This account is being deleted and cannot start new scans.", "error")
+            return redirect(url_for("scan.scan"))
         if is_scan_frozen():
             flash("Scan blocked due to Scan Blackout Window", "error")
             return redirect(url_for("scan.scan"))
@@ -265,20 +273,37 @@ def stop_scan(scan_id):
         return redirect(url_for("scan.scan"))
 
     if scan_result.status == "pending":
-        scan_result.status = "cancelled"
-        scan_result.scheduler_dispatch_state = "cancelled"
-        scan_result.scheduler_execution_phase = "cancelled"
+        cancelled = ScanResult.query.filter(
+            ScanResult.id == scan_id,
+            ScanResult.status == "pending",
+        ).update(
+            {
+                ScanResult.status: "cancelled",
+                ScanResult.scheduler_dispatch_state: "cancelled",
+                ScanResult.scheduler_execution_phase: "cancelled",
+            },
+            synchronize_session=False,
+        )
         db.session.commit()
-        flash("Scan execution cancelled.", "success")
-    elif scan_result.status in ["running", "termination_failed"]:
+        if cancelled == 1:
+            flash("Scan execution cancelled.", "success")
+            return redirect(url_for("scan.result", scan_id=scan_id))
+        db.session.expire_all()
+        scan_result = db.session.get(ScanResult, scan_id)
+
+    if scan_result and scan_result.status in ["running", "termination_failed"]:
         from scanner import stop_scan_process
+
+        expected_status = scan_result.status
+        expected_token = scan_result.scheduler_claim_token
+        expected_phase = scan_result.scheduler_execution_phase
         is_local_owner = (
             scan_result.scheduler_worker_id == current_app.config["SCAN_WORKER_ID"]
             and scan_result.scheduler_process_id == os.getpid()
         )
-        stop_result = stop_scan_process(
-            scan_result.id, scan_result.scheduler_claim_token
-        ) if is_local_owner else None
+        stop_result = (
+            stop_scan_process(scan_id, expected_token) if is_local_owner else None
+        )
         cancellation_secured = bool(
             stop_result
             and (
@@ -287,7 +312,7 @@ def stop_scan(scan_id):
                     and (
                         stop_result.start_permission_revoked
                         or (
-                            scan_result.scheduler_execution_phase == "starting"
+                            expected_phase == "starting"
                             and stop_result.all_processes_stopped
                         )
                     )
@@ -298,21 +323,39 @@ def stop_scan(scan_id):
                 )
             )
         )
-        if cancellation_secured:
-            scan_result.status = "cancellation_requested"
-            scan_result.scheduler_dispatch_state = "cancellation_requested"
-            scan_result.scheduler_execution_phase = "cancellation_requested"
-            db.session.commit()
+        token_condition = (
+            ScanResult.scheduler_claim_token == expected_token
+            if expected_token is not None
+            else ScanResult.scheduler_claim_token.is_(None)
+        )
+        new_values = (
+            {
+                ScanResult.status: "cancellation_requested",
+                ScanResult.scheduler_dispatch_state: "cancellation_requested",
+                ScanResult.scheduler_execution_phase: "cancellation_requested",
+            }
+            if cancellation_secured
+            else {
+                ScanResult.status: "termination_failed",
+                ScanResult.scheduler_dispatch_state: "orphaned",
+                ScanResult.scheduler_execution_phase: "termination_failed",
+            }
+        )
+        updated = ScanResult.query.filter(
+            ScanResult.id == scan_id,
+            ScanResult.status == expected_status,
+            token_condition,
+        ).update(new_values, synchronize_session=False)
+        db.session.commit()
+        if updated != 1:
+            flash("Scan state changed before cancellation; terminal state was preserved.", "warning")
+        elif cancellation_secured:
             flash(
                 "Scan cancellation requested; capacity will be released when "
                 "the owning worker exits.",
                 "success",
             )
         else:
-            scan_result.status = "termination_failed"
-            scan_result.scheduler_dispatch_state = "orphaned"
-            scan_result.scheduler_execution_phase = "termination_failed"
-            db.session.commit()
             flash(
                 "The scan process could not be confirmed terminated and still "
                 "consumes concurrency capacity.",
@@ -326,6 +369,9 @@ def stop_scan(scan_id):
 @scan_bp.route("/scan/<int:scan_id>/repeat", methods=["POST"])
 @login_required
 def repeat_scan(scan_id):
+    if _lock_user_for_new_scan(current_user.id) is None:
+        flash("This account is being deleted and cannot start new scans.", "error")
+        return redirect(url_for("scan.scan"))
     if is_scan_frozen():
         flash("Scan blocked due to Scan Blackout Window", "error")
         return redirect(url_for("scan.scan"))

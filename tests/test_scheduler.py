@@ -9,7 +9,7 @@ from app import (
     cleanup_stale_scans,
     create_app,
 )
-from models import db, ScanDispatchLock, ScanResult, ScanSchedule, User
+from models import db, ScanDispatchLock, ScanResolutionAudit, ScanResult, ScanSchedule, User
 from services.scan_service import (
     _execute_scan_body,
     _reconcile_scan_worker_exit,
@@ -179,6 +179,79 @@ def test_expired_claim_thread_cannot_overwrite_new_attempt_process_token(app):
 
     assert scanner.active_scan_process_tokens[job_id] == "new-attempt-token"
     scanner.end_scan_process_attempt(job_id, "new-attempt-token")
+
+
+def test_heartbeat_thread_start_failure_runs_attempt_cleanup(app, monkeypatch):
+    import scanner
+
+    scanner.active_scan_process_tokens.clear()
+
+    class FailingThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("cannot start heartbeat")
+
+    monkeypatch.setattr("services.scan_service.threading.Thread", FailingThread)
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.42",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.42/32",
+            status="pending",
+            scheduler_dispatch_state="claimed",
+            scheduler_claim_token="heartbeat-failure-token",
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+    execute_scan(app, job_id, scheduler_claim_token="heartbeat-failure-token")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "failed"
+        assert job.scheduler_execution_phase == "worker_failed"
+    assert job_id not in scanner.active_scan_process_tokens
+
+
+def test_token_conflict_has_persistent_failure_details(app):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.43",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.43/32",
+            status="pending",
+            scheduler_dispatch_state="claimed",
+            scheduler_claim_token="conflicting-new-token",
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+    scanner.active_scan_process_tokens.clear()
+    scanner.allow_scan_process_start(job_id, "older-local-token")
+    execute_scan(app, job_id, scheduler_claim_token="conflicting-new-token")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "termination_failed"
+        assert job.scheduler_execution_phase == "token_conflict"
+        assert "local process-token conflict" in job.result_data
+    scanner.end_scan_process_attempt(job_id, "older-local-token")
 
 
 def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
@@ -645,6 +718,153 @@ def test_local_stop_without_active_nmap_requests_cancellation(app, client, phase
         assert db.session.get(ScanResult, job_id).status == "cancelled"
 
 
+def test_pending_cancel_racing_with_claim_uses_running_stop_flow(
+    app, client, monkeypatch
+):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.72",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.72/32",
+            status="pending",
+            scheduler_dispatch_state="queued",
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id, user_id = job.id, user.id
+
+    query_class = type(ScanResult.query)
+    real_update = query_class.update
+    raced = {"done": False}
+
+    def racing_update(query, values, *args, **kwargs):
+        if not raced["done"] and values.get(ScanResult.status) == "cancelled":
+            raced["done"] = True
+            db.session.execute(
+                ScanResult.__table__.update().where(ScanResult.id == job_id).values(
+                    status="running",
+                    scheduler_dispatch_state="started",
+                    scheduler_execution_phase="starting",
+                    scheduler_claim_token="race-token",
+                    scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+                    scheduler_process_id=os.getpid(),
+                )
+            )
+            db.session.commit()
+        return real_update(query, values, *args, **kwargs)
+
+    monkeypatch.setattr(query_class, "update", racing_update)
+    stop_calls = []
+    monkeypatch.setattr(
+        scanner,
+        "stop_scan_process",
+        lambda scan_id, process_token=None: stop_calls.append(process_token)
+        or scanner.StopResult(True, False, True),
+    )
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    client.post(f"/scan/{job_id}/stop")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "cancellation_requested"
+        assert stop_calls == ["race-token"]
+
+
+def test_running_cancel_cannot_overwrite_completed_status(app, client, monkeypatch):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.73",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.73/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_execution_phase="starting-primary-scan",
+            scheduler_claim_token="completion-race-token",
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id, user_id = job.id, user.id
+
+    def complete_while_stopping(scan_id, process_token=None):
+        ScanResult.query.filter_by(id=scan_id).update(
+            {
+                ScanResult.status: "completed",
+                ScanResult.scheduler_dispatch_state: "completed",
+                ScanResult.scheduler_execution_phase: "completed",
+            },
+            synchronize_session=False,
+        )
+        db.session.commit()
+        return scanner.StopResult(True, False, True)
+
+    monkeypatch.setattr(scanner, "stop_scan_process", complete_while_stopping)
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    client.post(f"/scan/{job_id}/stop")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "completed"
+        assert job.scheduler_dispatch_state == "completed"
+
+
+def test_cancel_transition_is_claim_token_fenced(app, client, monkeypatch):
+    import scanner
+
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.74",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.74/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_execution_phase="starting-primary-scan",
+            scheduler_claim_token="old-cancel-token",
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id, user_id = job.id, user.id
+
+    def replace_claim_while_stopping(scan_id, process_token=None):
+        ScanResult.query.filter_by(id=scan_id).update(
+            {ScanResult.scheduler_claim_token: "new-current-token"},
+            synchronize_session=False,
+        )
+        db.session.commit()
+        return scanner.StopResult(True, False, True)
+
+    monkeypatch.setattr(scanner, "stop_scan_process", replace_claim_while_stopping)
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    client.post(f"/scan/{job_id}/stop")
+
+    with app.app_context():
+        job = db.session.get(ScanResult, job_id)
+        assert job.status == "running"
+        assert job.scheduler_claim_token == "new-current-token"
+
+
 @pytest.mark.parametrize(
     "orphan_status", ["termination_failed", "cancellation_requested"]
 )
@@ -674,7 +894,7 @@ def test_admin_can_resolve_remote_orphan(app, client, orphan_status, caplog):
         session["_fresh"] = True
     response = client.post(
         f"/admin/scan/{job_id}/resolve-orphan",
-        data={"reason": "Owning worker was confirmed stopped"},
+        data={"reason": "Owning worker\r\nwas confirmed stopped" + ("!" * 600)},
     )
     assert response.status_code == 302
 
@@ -682,8 +902,12 @@ def test_admin_can_resolve_remote_orphan(app, client, orphan_status, caplog):
         job = db.session.get(ScanResult, job_id)
         assert job.status == "failed"
         assert job.scheduler_execution_phase == "operator_resolved"
+        audit = ScanResolutionAudit.query.filter_by(scan_id=job_id).one()
+        assert "\n" not in audit.reason and "\r" not in audit.reason
+        assert len(audit.reason) == 500
+        assert audit.admin_user_id == admin_id
+        assert audit.previous_status == orphan_status
     assert "ADMIN_SCAN_ORPHAN_RESOLVED" in caplog.text
-    assert "Owning worker was confirmed stopped" in caplog.text
 
 
 def test_failed_active_process_stop_becomes_termination_failed(app, client, monkeypatch):
@@ -753,7 +977,38 @@ def test_active_scan_and_its_user_cannot_be_deleted(app, client):
 
     with app.app_context():
         assert db.session.get(ScanResult, job_id) is not None
-        assert db.session.get(User, user_id) is not None
+        protected_user = db.session.get(User, user_id)
+        assert protected_user is not None
+        assert protected_user.is_deleting is False
+
+
+def test_deleting_user_cannot_create_new_scan(app, client):
+    with app.app_context():
+        user = User(
+            email="deleting-user@test.com",
+            password_hash="test",
+            is_deleting=True,
+        )
+        db.session.add(user)
+        db.session.commit()
+        user_id = user.id
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+    response = client.post(
+        "/scan",
+        data={
+            "ip_address": "192.0.2.71",
+            "subnet_mask": "32",
+            "scan_type": "fast",
+            "timing_template": "4",
+        },
+    )
+
+    assert response.status_code == 302
+    with app.app_context():
+        assert ScanResult.query.filter_by(user_id=user_id).count() == 0
 
 
 def test_ownership_loss_is_handled_without_thread_traceback(app, monkeypatch, caplog):

@@ -27,6 +27,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
 
     is_admin = db.Column(db.Boolean, default=False)
+    is_deleting = db.Column(db.Boolean, nullable=False, default=False)
     _otp_secret = db.Column("otp_secret", db.String(255), nullable=True)
 
     created_at = db.Column(db.DateTime, default=utc_now)
@@ -108,6 +109,18 @@ class ScanResult(db.Model):
 class ScanDispatchLock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     touched_at = db.Column(db.DateTime, nullable=True)
+
+
+class ScanResolutionAudit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, nullable=False, index=True)
+    admin_user_id = db.Column(db.Integer, nullable=False, index=True)
+    previous_status = db.Column(db.String(20), nullable=False)
+    worker_id = db.Column(db.String(36), nullable=True)
+    worker_host = db.Column(db.String(255), nullable=True)
+    process_id = db.Column(db.Integer, nullable=True)
+    reason = db.Column(db.String(500), nullable=False)
+    resolved_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
 
 class ScanSchedule(db.Model):

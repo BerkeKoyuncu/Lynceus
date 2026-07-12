@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import re
 
-from models import ACTIVE_SCAN_STATUSES, db, User, ScanResult, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
+from models import ACTIVE_SCAN_STATUSES, db, User, ScanResult, ScanResolutionAudit, SystemSetting, HoneypotLog, HoneypotBlockedIP, SecurityAnomaly, Asset, ScanCredential
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -292,14 +292,18 @@ def admin_reset_user_2fa(user_id):
 @login_required
 @admin_required
 def admin_delete_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = User.query.filter(User.id == user_id).with_for_update().first_or_404()
     if user.id == current_user.id:
         flash("You cannot delete your own account.", "error")
         return redirect(url_for("admin.admin_panel", tab="users"))
+    user.is_deleting = True
+    db.session.flush()
     if ScanResult.query.filter(
         ScanResult.user_id == user.id,
         ScanResult.status.in_(ACTIVE_SCAN_STATUSES),
     ).first():
+        user.is_deleting = False
+        db.session.commit()
         flash("Stop or resolve the user's active scans before deleting the account.", "error")
         return redirect(url_for("admin.admin_panel", tab="users"))
 
@@ -350,7 +354,10 @@ def admin_resolve_orphan_scan(scan_id):
     if scan.status not in {"termination_failed", "cancellation_requested"}:
         flash("Only orphaned or stuck-cancellation scans can be resolved.", "warning")
         return redirect(url_for("admin.admin_panel", tab="scans"))
-    reason = request.form.get("reason", "").strip()
+    raw_reason = request.form.get("reason", "")
+    reason = re.sub(r"[\r\n\t]+", " ", raw_reason)
+    reason = "".join(character for character in reason if character.isprintable())
+    reason = re.sub(r"\s+", " ", reason).strip()[:500]
     if not reason:
         flash("A resolution reason is required for the audit log.", "error")
         return redirect(url_for("admin.admin_panel", tab="scans"))
@@ -359,6 +366,17 @@ def admin_resolve_orphan_scan(scan_id):
     previous_worker_id = scan.scheduler_worker_id
     previous_worker_host = scan.scheduler_worker_host
     previous_process_id = scan.scheduler_process_id
+    audit = ScanResolutionAudit(
+        scan_id=scan.id,
+        admin_user_id=current_user.id,
+        previous_status=previous_status,
+        worker_id=previous_worker_id,
+        worker_host=previous_worker_host,
+        process_id=previous_process_id,
+        reason=reason,
+        resolved_at=datetime.now(timezone.utc).replace(tzinfo=None),
+    )
+    db.session.add(audit)
     scan.status = "failed"
     scan.scheduler_dispatch_state = "failed"
     scan.scheduler_execution_phase = "operator_resolved"
@@ -464,10 +482,15 @@ def admin_bulk_delete_users():
         if current_user.id in int_ids:
             flash("You cannot delete your own account in bulk delete.", "error")
             return redirect(url_for("admin.admin_panel", tab="users"))
+        locked_users = User.query.filter(User.id.in_(int_ids)).with_for_update().all()
+        for user in locked_users:
+            user.is_deleting = True
+        db.session.flush()
         if ScanResult.query.filter(
             ScanResult.user_id.in_(int_ids),
             ScanResult.status.in_(ACTIVE_SCAN_STATUSES),
         ).first():
+            db.session.rollback()
             flash("Stop or resolve active scans before deleting these users.", "error")
             return redirect(url_for("admin.admin_panel", tab="users"))
 

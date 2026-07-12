@@ -556,6 +556,13 @@ def _next_schedule_run(now, frequency):
 
 def _claim_scheduled_scan(schedule, now):
     """Atomically claim one occurrence and persist a recoverable queued job."""
+    schedule_user = User.query.filter(
+        User.id == schedule.user_id,
+        User.is_deleting.is_(False),
+    ).with_for_update().first()
+    if schedule_user is None:
+        db.session.rollback()
+        return None
     due_at = schedule.next_run
     claimed = ScanSchedule.query.filter(
         ScanSchedule.id == schedule.id,

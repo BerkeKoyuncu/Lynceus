@@ -371,8 +371,17 @@ terminate another attempt's process.
 Active scans (`pending`, `running`, `cancellation_requested`, and
 `termination_failed`) cannot be deleted directly, including through user or bulk
 deletion. Administrators may resolve stuck cancellations/orphans only with an
-explicit reason; the admin identity, timestamped application log entry, previous
-worker ID/host/PID, status, scan ID, and reason are recorded for audit purposes.
+explicit reason. Resolution writes a transactional `ScanResolutionAudit` record
+containing the admin identity, previous worker ID/host/PID, status, scan ID,
+sanitized reason (maximum 500 characters), and resolution time; a corresponding
+application audit log is also emitted.
+
+Stop requests use status- and claim-token-fenced conditional updates. A pending
+cancel that loses a race to dispatch reloads the row and follows the running
+process-stop policy, while a concurrent completion or replacement claim cannot
+be overwritten by stale ORM state. User deletion locks and marks the account as
+`is_deleting`; manual, repeated, and scheduled scan creation locks the same user
+row and rejects new work until deletion completes or is rolled back.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so
