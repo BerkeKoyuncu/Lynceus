@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 import threading
 
 from app import (
@@ -299,6 +300,9 @@ def test_expired_running_lease_is_requeued_with_new_worker_token(app, monkeypatc
             scheduler_claimed_at=now - timedelta(minutes=5),
             scheduler_started_at=now - timedelta(minutes=5),
             scheduler_heartbeat_at=now - timedelta(minutes=2),
+            scheduler_progress_at=now - timedelta(minutes=2),
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
             scheduler_attempt_count=1,
             scheduler_max_attempts=3,
             input_ip="192.0.2.0",
@@ -319,6 +323,43 @@ def test_expired_running_lease_is_requeued_with_new_worker_token(app, monkeypatc
         assert started[0][1] == job.id
         assert started[0][3] == job.scheduler_claim_token
         assert events == [("old-process-stopped", job.id), "retry-started"]
+
+
+def test_expired_attempt_owned_by_another_process_fails_closed(app, monkeypatch):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stop_calls = []
+    monkeypatch.setattr(
+        "scanner.stop_scan_process",
+        lambda scan_id: stop_calls.append(scan_id) or True,
+    )
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.61",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.61/32",
+            status="running",
+            scheduled_for=now - timedelta(minutes=5),
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="remote-token",
+            scheduler_started_at=now - timedelta(minutes=2),
+            scheduler_heartbeat_at=now - timedelta(minutes=2),
+            scheduler_progress_at=now - timedelta(minutes=2),
+            scheduler_worker_id="another-worker",
+            scheduler_process_id=999999,
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        db.session.add(job)
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == []
+        db.session.refresh(job)
+        assert job.status == "failed"
+        assert "not retried" in job.result_data
+        assert stop_calls == []
 
 
 def test_fresh_heartbeat_cannot_hide_scan_runtime_deadline(app, monkeypatch):
@@ -358,16 +399,20 @@ def test_fresh_heartbeat_cannot_hide_scan_runtime_deadline(app, monkeypatch):
             scheduler_started_at=now - timedelta(seconds=601),
             scheduler_heartbeat_at=now,
             scheduler_progress_at=now,
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
             scheduler_attempt_count=1,
             scheduler_max_attempts=3,
         )
         db.session.add(job)
         db.session.commit()
 
-        assert _dispatch_pending_scheduled_scans(app, now) == [job.id]
+        assert _dispatch_pending_scheduled_scans(app, now) == []
         assert stopped == [job.id]
         db.session.refresh(job)
-        assert job.scheduler_claim_token != "over-runtime"
+        assert job.status == "failed"
+        assert job.scheduler_dispatch_state == "failed"
+        assert "not retried" in job.result_data
 
 
 def test_heartbeat_interval_must_be_safely_below_lease():
@@ -401,6 +446,12 @@ def test_progress_timeout_and_runtime_config_are_ordered():
             "TESTING": True,
             "SCHEDULER_LEASE_SECONDS": 120,
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 60,
+        })
+
+    with pytest.raises(RuntimeError, match="Nmap subprocess timeout"):
+        create_app({
+            "TESTING": True,
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 600,
         })
     with pytest.raises(RuntimeError, match="MAX_SCAN_RUNTIME_SECONDS"):
         create_app({
@@ -595,6 +646,33 @@ def test_progress_checkpoint_fences_later_host_work(app, monkeypatch):
         assert scheduler_progress_checkpoint(job_id, "first-token") is False
 
 
+def test_progress_checkpoint_does_not_commit_business_session(app):
+    with app.app_context():
+        user = User.query.first()
+        job = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.72",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.72/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="checkpoint-token",
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+        job.result_data = "must remain uncommitted"
+        assert scheduler_progress_checkpoint(job_id, "checkpoint-token", force=True)
+        db.session.rollback()
+
+        db.session.expire_all()
+        persisted = db.session.get(ScanResult, job_id)
+        assert persisted.result_data is None
+        assert persisted.scheduler_progress_at is not None
+
+
 def test_missing_dispatch_lock_is_a_schema_error(app):
     import pytest
 
@@ -622,6 +700,52 @@ def test_flask_run_starts_dispatcher_but_not_schedule_creator(monkeypatch):
         "SEED_DEMO_DATA": False,
     })
 
+    assert started == ["dispatcher"]
+
+
+def test_documented_management_cli_form_starts_no_background_work(monkeypatch):
+    import sys
+    import app as app_module
+
+    calls = []
+    monkeypatch.setattr(
+        sys, "argv", ["flask", "--app", "app", "db", "upgrade"]
+    )
+    monkeypatch.setenv("FLASK_RUN_FROM_CLI", "true")
+    monkeypatch.setattr(app_module, "start_scheduler", lambda flask_app: calls.append("scheduler"))
+    monkeypatch.setattr(app_module, "start_scan_dispatcher", lambda flask_app: calls.append("dispatcher"))
+    monkeypatch.setattr(app_module, "cleanup_stale_scans", lambda: calls.append("cleanup"))
+
+    create_app({
+        "TESTING": False,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "START_SCHEDULER": True,
+        "SEED_DEMO_DATA": False,
+    })
+
+    assert calls == []
+
+
+def test_debug_reloader_only_starts_dispatcher_in_child(monkeypatch):
+    import app as app_module
+
+    started = []
+    monkeypatch.setenv("FLASK_RUN_FROM_CLI", "true")
+    monkeypatch.delenv("WERKZEUG_RUN_MAIN", raising=False)
+    monkeypatch.setattr(app_module, "start_scan_dispatcher", lambda flask_app: started.append("dispatcher"))
+    monkeypatch.setattr(app_module, "cleanup_stale_scans", lambda: None)
+
+    config = {
+        "TESTING": False,
+        "DEBUG": True,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "SEED_DEMO_DATA": False,
+    }
+    create_app(config)
+    assert started == []
+
+    monkeypatch.setenv("WERKZEUG_RUN_MAIN", "true")
+    create_app(config)
     assert started == ["dispatcher"]
 
 

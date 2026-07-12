@@ -18,6 +18,7 @@ from models import db, User, ScanResult, ScanDispatchLock, ScanSchedule, SystemS
 from services.encryption_service import get_flask_secret_key
 from services.scan_service import execute_scan
 from services.email_service import send_notification_email_async
+from scanner import NMAP_SUBPROCESS_TIMEOUT_SECONDS
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -82,6 +83,7 @@ def _validate_scheduler_config(app):
         "SCHEDULER_HEARTBEAT_SECONDS": 5,
         "SCHEDULER_MAX_ATTEMPTS": 1,
         "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 30,
+        "SCHEDULER_PROGRESS_INTERVAL_SECONDS": 1,
         "MAX_SCAN_RUNTIME_SECONDS": 60,
     }
     for name, minimum in minimums.items():
@@ -103,6 +105,16 @@ def _validate_scheduler_config(app):
         raise RuntimeError(
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be at least "
             "SCHEDULER_LEASE_SECONDS."
+        )
+    if app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] <= NMAP_SUBPROCESS_TIMEOUT_SECONDS:
+        raise RuntimeError(
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be greater than the "
+            f"{NMAP_SUBPROCESS_TIMEOUT_SECONDS}-second Nmap subprocess timeout."
+        )
+    if app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"] >= app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"]:
+        raise RuntimeError(
+            "SCHEDULER_PROGRESS_INTERVAL_SECONDS must be less than "
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS."
         )
     if app.config["MAX_SCAN_RUNTIME_SECONDS"] < app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"]:
         raise RuntimeError(
@@ -131,6 +143,9 @@ def create_app(config=None):
     app.config["SCHEDULER_MAX_ATTEMPTS"] = os.environ.get("SCHEDULER_MAX_ATTEMPTS", "3")
     app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] = os.environ.get(
         "SCHEDULER_PROGRESS_TIMEOUT_SECONDS", "900"
+    )
+    app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"] = os.environ.get(
+        "SCHEDULER_PROGRESS_INTERVAL_SECONDS", "10"
     )
     app.config["MAX_SCAN_RUNTIME_SECONDS"] = os.environ.get(
         "MAX_SCAN_RUNTIME_SECONDS", "3600"
@@ -482,9 +497,15 @@ def create_app(config=None):
     # Background threads
     import sys
     flask_run = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
-    is_management_cli = (
-        len(sys.argv) > 1
-        and sys.argv[1] in ["db", "create-admin", "init-db", "cleanup-scans", "seed-demo-data"]
+    management_commands = {
+        "db",
+        "create-admin",
+        "init-db",
+        "cleanup-scans",
+        "seed-demo-data",
+    }
+    is_management_cli = any(
+        argument in management_commands for argument in sys.argv[1:]
     )
     is_reloader_parent = (
         flask_run
@@ -511,10 +532,11 @@ def create_app(config=None):
                 seed_mock_security_data()
             except Exception:
                 pass
-        try:
-            cleanup_stale_scans()
-        except Exception:
-            pass
+        if not is_management_cli:
+            try:
+                cleanup_stale_scans()
+            except Exception:
+                pass
 
     return app
 
@@ -575,11 +597,22 @@ def _claim_scheduled_scan(schedule, now):
     return scan.id
 
 
+def _fail_scheduler_job(job, message):
+    job.status = "failed"
+    job.scheduler_dispatch_state = "failed"
+    job.result_data = json.dumps({
+        "command": "N/A",
+        "output": message,
+        "hosts": [],
+    })
+
+
 def _recover_expired_scan_jobs(
     now,
     lease_seconds,
     progress_timeout_seconds,
     max_runtime_seconds,
+    worker_id,
 ):
     retry_before = now - timedelta(seconds=lease_seconds)
     progress_before = now - timedelta(seconds=progress_timeout_seconds)
@@ -595,30 +628,61 @@ def _recover_expired_scan_jobs(
         ),
     )
     changed = False
-    expired_running = ScanResult.query.filter(
+    running_jobs = ScanResult.query.filter(
         ScanResult.status == "running",
         ScanResult.scheduler_dispatch_state == "started",
+    )
+    hard_runtime_jobs = running_jobs.filter(
+        ScanResult.scheduler_started_at.isnot(None),
+        ScanResult.scheduler_started_at <= runtime_before,
+    ).all()
+    for job in hard_runtime_jobs:
+        changed = True
+        if (
+            job.scheduler_worker_id == worker_id
+            and job.scheduler_process_id == os.getpid()
+        ):
+            from scanner import stop_scan_process
+            stop_scan_process(job.id)
+        _fail_scheduler_job(
+            job,
+            "Scan exceeded MAX_SCAN_RUNTIME_SECONDS and was not retried.",
+        )
+
+    stalled_jobs = running_jobs.filter(
         or_(
             ScanResult.scheduler_heartbeat_at.is_(None),
             ScanResult.scheduler_heartbeat_at <= retry_before,
             ScanResult.scheduler_progress_at.is_(None),
             ScanResult.scheduler_progress_at <= progress_before,
-            ScanResult.scheduler_started_at <= runtime_before,
+        ),
+        or_(
+            ScanResult.scheduler_started_at.is_(None),
+            ScanResult.scheduler_started_at > runtime_before,
         ),
     ).all()
-    for job in expired_running:
+    for job in stalled_jobs:
         changed = True
-        # Prevent a local retry from overlapping the previous Nmap process.
-        from scanner import stop_scan_process
-        stop_scan_process(job.id)
-        if job.scheduler_attempt_count >= job.scheduler_max_attempts:
-            job.status = "failed"
-            job.scheduler_dispatch_state = "failed"
-            job.result_data = json.dumps({
-                "command": "N/A",
-                "output": "Scan exceeded its maximum recovery attempts.",
-                "hosts": [],
-            })
+        is_local_owner = (
+            job.scheduler_worker_id == worker_id
+            and job.scheduler_process_id == os.getpid()
+        )
+        stopped = False
+        if is_local_owner:
+            from scanner import stop_scan_process
+            stopped = stop_scan_process(job.id)
+
+        if not stopped:
+            _fail_scheduler_job(
+                job,
+                "Expired scan could not be safely stopped by its owning local "
+                "worker, so it was not retried.",
+            )
+        elif job.scheduler_attempt_count >= job.scheduler_max_attempts:
+            _fail_scheduler_job(
+                job,
+                "Scan exceeded its maximum recovery attempts.",
+            )
         else:
             job.status = "pending"
             job.scheduler_dispatch_state = "queued"
@@ -638,13 +702,7 @@ def _recover_expired_scan_jobs(
     ).all()
     for job in exhausted:
         changed = True
-        job.status = "failed"
-        job.scheduler_dispatch_state = "failed"
-        job.result_data = json.dumps({
-            "command": "N/A",
-            "output": "Scan exceeded its maximum dispatch attempts.",
-            "hosts": [],
-        })
+        _fail_scheduler_job(job, "Scan exceeded its maximum dispatch attempts.")
     return eligible, retry_before, changed
 
 
@@ -666,6 +724,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
         lease_seconds,
         app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"],
         app.config["MAX_SCAN_RUNTIME_SECONDS"],
+        app.config["SCAN_WORKER_ID"],
     )
     running_count = ScanResult.query.filter(ScanResult.status == "running").count()
     live_claims = ScanResult.query.filter(
@@ -881,6 +940,7 @@ def cleanup_stale_scans():
         current_app.config["SCHEDULER_LEASE_SECONDS"],
         current_app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"],
         current_app.config["MAX_SCAN_RUNTIME_SECONDS"],
+        current_app.config["SCAN_WORKER_ID"],
     )
 
     stale_scans = ScanResult.query.filter(

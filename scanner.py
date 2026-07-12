@@ -470,6 +470,7 @@ import threading
 
 active_processes = {}
 active_processes_lock = threading.Lock()
+NMAP_SUBPROCESS_TIMEOUT_SECONDS = 600
 
 class CompletedProcessDummy:
     def __init__(self, returncode, stdout, stderr):
@@ -488,7 +489,7 @@ def execute_nmap_subprocess(command, scan_id=None):
         with active_processes_lock:
             active_processes.setdefault(scan_id, set()).add(proc)
     try:
-        stdout, stderr = proc.communicate(timeout=600)
+        stdout, stderr = proc.communicate(timeout=NMAP_SUBPROCESS_TIMEOUT_SECONDS)
         returncode = proc.returncode
     except subprocess.TimeoutExpired:
         proc.kill()

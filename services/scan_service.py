@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from flask import current_app
+from sqlalchemy.orm import sessionmaker
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, Asset, ScanCredential, SecurityFinding, SecurityAnomaly
 from scanner import run_nmap_scan
@@ -968,12 +969,28 @@ def scheduler_claim_is_current(scan_id, claim_token):
         ).first() is not None
 
 
-def scheduler_progress_checkpoint(scan_id, claim_token):
-    """Fence one work unit and persist main-worker progress atomically."""
+_progress_checkpoint_times = {}
+_progress_checkpoint_lock = threading.Lock()
+
+
+def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
+    """Fence work and throttle progress writes outside the business session."""
     if not claim_token:
         return True
-    with db.session.no_autoflush:
-        updated = ScanResult.query.filter(
+    if not scheduler_claim_is_current(scan_id, claim_token):
+        return False
+
+    key = (scan_id, claim_token)
+    monotonic_now = time.monotonic()
+    interval = current_app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"]
+    with _progress_checkpoint_lock:
+        last_update = _progress_checkpoint_times.get(key)
+    if not force and last_update is not None and monotonic_now - last_update < interval:
+        return True
+
+    progress_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
+    try:
+        updated = progress_session.query(ScanResult).filter(
             ScanResult.id == scan_id,
             ScanResult.status == "running",
             ScanResult.scheduler_dispatch_state == "started",
@@ -986,11 +1003,27 @@ def scheduler_progress_checkpoint(scan_id, claim_token):
             },
             synchronize_session=False,
         )
+        progress_session.commit()
+    except Exception:
+        progress_session.rollback()
+        # A transient progress-write lock must not commit or roll back the
+        # business session. Ownership is still fenced by the read above.
+        return scheduler_claim_is_current(scan_id, claim_token)
+    finally:
+        progress_session.close()
+
     if updated != 1:
-        db.session.rollback()
         return False
-    db.session.commit()
+    with _progress_checkpoint_lock:
+        _progress_checkpoint_times[key] = monotonic_now
     return True
+
+
+def _clear_scheduler_progress_checkpoint(scan_id, claim_token):
+    if not claim_token:
+        return
+    with _progress_checkpoint_lock:
+        _progress_checkpoint_times.pop((scan_id, claim_token), None)
 
 
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
@@ -1036,6 +1069,7 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
     finally:
         if heartbeat_stop is not None:
             heartbeat_stop.set()
+        _clear_scheduler_progress_checkpoint(scan_id, scheduler_claim_token)
         try:
             from app import _dispatch_pending_scheduled_scans
             with app.app_context():
@@ -1106,7 +1140,7 @@ def _execute_scan_body(
             scan_id=scan_result.id
         )
 
-        if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+        if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, force=True):
             return
 
         db.session.refresh(scan_result)
@@ -1336,6 +1370,8 @@ def _execute_scan_body(
                 ports_list = host.get("ports", [])
                 audited_endpoints = {}
                 for port_info in ports_list:
+                    if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                        return
                     if port_info.get("state") != "open":
                         continue
                     p_num = int(port_info.get("port") or 0)
@@ -1397,6 +1433,8 @@ def _execute_scan_body(
                 cve_failed_ports = set()
                 confirmed_unaffected_cves = {}
                 for port_info in host.get("ports", []):
+                    if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
+                        return
                     if port_info.get("state") != "open":
                         continue
                     # Use 'product' for VENDOR_PRODUCT_MAP lookup (e.g. 'OpenSSH' not 'ssh')

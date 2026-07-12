@@ -315,7 +315,11 @@ retried up to `SCHEDULER_MAX_ATTEMPTS` (default `3`). This is process-crash
 recovery, not host-level Nmap resume: a retried attempt starts its scan again.
 Before a local expired attempt is retried, all Nmap subprocesses registered for
 that scan are stopped. Worker instance, host, and process identifiers are stored
-with each claim so cross-process recovery can be diagnosed.
+with each claim. An attempt owned by another process, or one whose local process
+cannot be confirmed stopped, fails closed instead of being retried; this avoids
+overlapping scans without pretending that the in-memory process registry works
+across workers. Deployments requiring cross-process retry should use an external
+worker queue or supervisor with a shared cancellation mechanism.
 
 Manual, repeated, and scheduled scans all use this persisted queue. A database
 dispatcher lock serializes capacity reservation across web/scheduler processes,
@@ -325,10 +329,12 @@ Lease tuning is available through `SCHEDULER_LEASE_SECONDS` (default `120`) and
 `SCHEDULER_HEARTBEAT_SECONDS` (default `20`). The heartbeat represents worker
 process liveness; `scheduler_progress_at` is updated by the main scan workflow.
 `SCHEDULER_PROGRESS_TIMEOUT_SECONDS` defaults to `900`, while the absolute
-`MAX_SCAN_RUNTIME_SECONDS` deadline defaults to `3600`. A live heartbeat cannot
-extend either progress timeout or the absolute execution deadline. For larger
-installations, use a dedicated external worker queue instead of increasing
-in-process concurrency.
+`MAX_SCAN_RUNTIME_SECONDS` deadline defaults to `3600`. Progress writes use an
+independent transaction and are throttled by
+`SCHEDULER_PROGRESS_INTERVAL_SECONDS` (default `10`), so they do not commit scan
+business data. The progress timeout must exceed Nmap's 600-second subprocess
+timeout. A live heartbeat cannot extend either progress timeout or the absolute
+execution deadline, and a hard runtime timeout fails immediately without retry.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so
