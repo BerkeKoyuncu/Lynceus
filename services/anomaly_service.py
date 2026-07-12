@@ -19,16 +19,18 @@ def _anomaly_exists(anomaly_type, ip_address, mac_address, hours=24):
 
 def get_ports_hash(ports_list):
     """
-    Computes a stable hash from a list of open ports.
+    Computes a stable hash from a list of ports including port number, protocol, and state.
     """
     if not ports_list:
         return "empty"
-    # Extract port numbers, sort them, and compute SHA-256
+    # Extract endpoint details, sort them, and compute SHA-256
     port_ids = []
     for p in ports_list:
         p_num = p.get("port")
         if p_num:
-            port_ids.append(str(p_num))
+            proto = (p.get("protocol") or "tcp").lower()
+            state = (p.get("state") or "open").lower()
+            port_ids.append(f"{p_num}/{proto}:{state}")
     sorted_ports = ",".join(sorted(port_ids))
     return hashlib.sha256(sorted_ports.encode()).hexdigest()
 

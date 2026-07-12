@@ -458,7 +458,7 @@
             <tr class="finding-row" tabindex="0" role="button" aria-expanded="false"
                 aria-controls="details-{{ finding.id }}" data-details-id="details-{{ finding.id }}">
                 <td style="font-weight: 600;">
-                    {{ finding.ip_address }}:{{ finding.port }}
+                    {{ finding.ip_address }}:{{ finding.port }}/{{ finding.protocol or 'tcp' }}
                 </td>
 
                 <td>

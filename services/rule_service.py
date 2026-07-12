@@ -141,7 +141,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
     """
     ip = host.get("address")
     mac = host.get("mac_address", "").strip().lower() if host.get("mac_address") else ""
-    ports = host.get("ports", [])
+    ports = [p for p in host.get("ports", []) if p.get("state") == "open"]
     
     # Load all active security rules for the user
     rules = SecurityRule.query.filter_by(user_id=user_id, enabled=True).all()
@@ -174,26 +174,30 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
         # Check "new_port" condition — detect ALL new ports, not just the first
         if "new_port" in conditions:
             if prev_ports is not None:
-                current_port_nums = [int(p.get("port") or 0) for p in ports]
-                for cp in current_port_nums:
-                    if cp not in prev_ports:
-                        # Find service info for this port
-                        new_service = None
-                        new_version = None
-                        new_protocol = "tcp"
-                        for pinfo in ports:
-                            if int(pinfo.get("port") or 0) == cp:
-                                new_service = pinfo.get("service")
-                                new_version = pinfo.get("version_display") or pinfo.get("version")
-                                new_protocol = (pinfo.get("protocol") or "tcp").lower()
-                                break
-                        new_evidence = f"New port {cp} was detected. It was not open in previous scans."
-                        new_fp = calculate_finding_fingerprint(ip, cp, new_service, "rule", rule.id, protocol=new_protocol)
+                legacy_prev_ports = {p for p in prev_ports if isinstance(p, int)}
+                tuple_prev_ports = {p for p in prev_ports if isinstance(p, tuple)}
+                
+                for pinfo in ports:
+                    cp_num = int(pinfo.get("port") or 0)
+                    cp_proto = (pinfo.get("protocol") or "tcp").lower()
+                    
+                    is_new = False
+                    if (cp_proto, cp_num) not in tuple_prev_ports:
+                        if not tuple_prev_ports and cp_num not in legacy_prev_ports:
+                            is_new = True
+                        elif tuple_prev_ports:
+                            is_new = True
+                            
+                    if is_new:
+                        new_service = pinfo.get("service")
+                        new_version = pinfo.get("version_display") or pinfo.get("version")
+                        new_evidence = f"New port {cp_num}/{cp_proto} was detected. It was not open in previous scans."
+                        new_fp = calculate_finding_fingerprint(ip, cp_num, new_service, "rule", rule.id, protocol=cp_proto)
                         existing_new = SecurityFinding.query.filter_by(asset_id=asset.id, fingerprint=new_fp).first()
                         if not existing_new:
                             existing_new = SecurityFinding.query.filter_by(
-                                asset_id=asset.id, ip_address=ip, port=cp,
-                                protocol=new_protocol, source_type="rule", source_rule_id=rule.id
+                                asset_id=asset.id, ip_address=ip, port=cp_num,
+                                protocol=cp_proto, source_type="rule", source_rule_id=rule.id
                             ).first()
                         if existing_new:
                             existing_new.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -204,7 +208,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                                 existing_new.status = "open"
                         else:
                             db.session.add(SecurityFinding(
-                                asset_id=asset.id, ip_address=ip, port=cp, protocol=new_protocol,
+                                asset_id=asset.id, ip_address=ip, port=cp_num, protocol=cp_proto,
                                 service=new_service or "unknown", version=new_version,
                                 severity=rule.severity, evidence=new_evidence, status="open",
                                 remediation_note=rule.remediation_text,
@@ -257,6 +261,19 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
 
                 # Special case: Redis anonymous auth check
                 if matched and rule.name == "Redis Unauthenticated Access":
+                    # Check if a credential audit finding was already created for this host and port to prevent double risk score calculation
+                    existing_cred_finding = SecurityFinding.query.filter_by(
+                        asset_id=asset.id,
+                        ip_address=ip,
+                        port=p_num,
+                        protocol=matched_protocol,
+                        source_type="credential_audit",
+                        status="open"
+                    ).first()
+                    if existing_cred_finding:
+                        matched = False
+                        continue
+
                     audit_res = pinfo.get("credential_audit")
                     if audit_res and audit_res.get("status") == "vulnerable":
                         evidence = (
@@ -472,7 +489,7 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                                 scan_type, requested_ports, audit_credentials=False, 
                                 credential_ids=None, current_open_ports=None,
                                 cve_failed_ports=None, audited_endpoints=None,
-                                scanned_endpoints=None):
+                                scanned_endpoints=None, endpoint_states=None):
     """
     After a scan, marks findings that were not observed in this scan as 'not_observed'.
     Only does this if the host was seen online (status='up') during the scan.
@@ -489,15 +506,23 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
     if audited_endpoints is None:
         audited_endpoints = {}
 
+    if endpoint_states is None:
+        endpoint_states = {}
+        if current_open_ports:
+            for item in current_open_ports:
+                if isinstance(item, tuple):
+                    endpoint_states[(item[0].lower(), int(item[1]))] = "open"
+                else:
+                    endpoint_states[("tcp", int(item))] = "open"
+
     # Build set of open endpoints: (protocol, port)
     # If the caller passed a set/list of tuples, use it. Otherwise construct assuming 'tcp'
     current_open_endpoints = set()
-    if current_open_ports:
-        for item in current_open_ports:
-            if isinstance(item, tuple):
-                current_open_endpoints.add((item[0].lower(), int(item[1])))
-            else:
-                current_open_endpoints.add(("tcp", int(item)))
+    for item in current_open_ports:
+        if isinstance(item, tuple):
+            current_open_endpoints.add((item[0].lower(), int(item[1])))
+        else:
+            current_open_endpoints.add(("tcp", int(item)))
 
     # Parse scanned_endpoints into a set of (protocol, port)
     scanned_endpoints_set = set()
@@ -587,24 +612,31 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
             if not is_endpoint_scanned(finding_protocol, finding.port):
                 continue
 
-            # If the endpoint is now closed, we definitely reconcile it
-            if (finding_protocol, finding.port) not in current_open_endpoints:
-                finding.status = "not_observed"
+            # Check if the port has an explicit scanned state
+            state = endpoint_states.get((finding_protocol, finding.port))
+            
+            # If the state is inconclusive (filtered or open|filtered), we must not close it
+            if state in ["filtered", "open|filtered", "closed|filtered", "unfiltered"]:
                 continue
 
-            # Port is still open, check based on source type
-            if finding.source_type == "cve":
-                # Only reconcile if version detection ran in this scan and CVE search succeeded
-                if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
-                    if finding.port not in cve_failed_ports:
+            # If the state is "open", we only close it if the condition for its source type is met
+            if state == "open":
+                # Port is still open, check based on source type
+                if finding.source_type == "cve":
+                    # Only reconcile if version detection ran in this scan and CVE search succeeded
+                    if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
+                        if finding.port not in cve_failed_ports:
+                            finding.status = "not_observed"
+                elif finding.source_type == "credential_audit":
+                    # Only reconcile if the audit completed successfully and marked the port as "safe"
+                    audit_status = audited_endpoints.get((finding_protocol, finding.port))
+                    if audit_status == "safe":
                         finding.status = "not_observed"
-            elif finding.source_type == "credential_audit":
-                # Only reconcile if the audit completed successfully and marked the port as "safe"
-                audit_status = audited_endpoints.get((finding_protocol, finding.port))
-                if audit_status == "safe":
+                else:
+                    # Other types (rules, etc.) on open ports can be reconciled because rule matching ran
                     finding.status = "not_observed"
             else:
-                # Other types (rules, etc.) on open ports can be reconciled because rule matching ran
+                # If state is explicitly "closed" or if the endpoint was scanned but not reported (meaning closed)
                 finding.status = "not_observed"
 
     db.session.commit()

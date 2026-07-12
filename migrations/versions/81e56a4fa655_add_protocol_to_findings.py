@@ -17,8 +17,25 @@ depends_on = None
 
 
 def upgrade():
+    # Pass 1: Add the protocol column as nullable
     with op.batch_alter_table('security_finding', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('protocol', sa.String(length=10), nullable=False, server_default='tcp'))
+        batch_op.add_column(sa.Column('protocol', sa.String(length=10), nullable=True))
+
+    # Backfill protocol based on scan_result.scan_type
+    op.execute(
+        "UPDATE security_finding "
+        "SET protocol = 'udp' "
+        "WHERE scan_id IN (SELECT id FROM scan_result WHERE scan_type = 'udp')"
+    )
+    op.execute(
+        "UPDATE security_finding "
+        "SET protocol = 'tcp' "
+        "WHERE protocol IS NULL"
+    )
+
+    # Pass 2: Set column to NOT NULL
+    with op.batch_alter_table('security_finding', schema=None) as batch_op:
+        batch_op.alter_column('protocol', existing_type=sa.String(length=10), nullable=False)
 
 
 def downgrade():

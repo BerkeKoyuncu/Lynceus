@@ -145,7 +145,7 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     else:
         vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
 
-    cpe_success = False
+    request_succeeded = False
     all_items = []
     first_error = None
     
@@ -159,12 +159,12 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
         all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
-        cpe_success = True
+        request_succeeded = True
     except Exception as e:
         first_error = str(e)
 
-    # Fallback to string query parsing if CPE-based search failed/empty and we initially used CPE
-    if not cpe_success and cpe_list:
+    # Fallback to string query parsing if CPE-based search failed or returned no items
+    if (not request_succeeded or not all_items) and cpe_list:
         vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
         url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
         try:
@@ -175,11 +175,12 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode("utf-8"))
             all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
-            cpe_success = True
+            request_succeeded = True
         except Exception as e:
-            first_error = str(e)
+            if not first_error:
+                first_error = str(e)
 
-    if not cpe_success and not all_items:
+    if not request_succeeded:
         return {"success": False, "cves": [], "error": first_error or "API query failed"}
 
     try:
@@ -588,11 +589,15 @@ def check_and_send_scan_alert(scan_result):
                 })
                 new_ports_detected = True
         else:
-            prev_ports = {p["port"]: p for p in map_prev[ip].get("ports", [])}
+            prev_ports = {
+                ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p
+                for p in map_prev[ip].get("ports", [])
+            }
             host_added_ports = []
             for p in curr_ports:
-                p_num = p["port"]
-                if p_num not in prev_ports:
+                p_num = int(p["port"])
+                p_proto = (p.get("protocol") or "tcp").lower()
+                if (p_proto, p_num) not in prev_ports:
                     host_added_ports.append(p)
                     new_ports_detected = True
             if host_added_ports:
@@ -1024,6 +1029,10 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         for p in host.get("ports", [])
                         if p.get("state") == "open"
                     ]
+                    endpoint_states = {
+                        ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p.get("state")
+                        for p in host.get("ports", [])
+                    }
                     cve_failed_ports = host.get("_cve_failed_ports", set())
                     audited_endpoints = host.get("_audited_endpoints", {})
                     reconcile_findings_for_scan(
@@ -1038,8 +1047,18 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         current_open_ports=current_open_endpoints,
                         cve_failed_ports=cve_failed_ports,
                         audited_endpoints=audited_endpoints,
-                        scanned_endpoints=scanned_endpoints
+                        scanned_endpoints=scanned_endpoints,
+                        endpoint_states=endpoint_states
                     )
+
+        # Clear internal runtime parameters to prevent JSON serialization errors (tuple keys, sets, etc.)
+        for host in hosts:
+            host.pop("_asset_id", None)
+            host.pop("_expected_ip", None)
+            host.pop("_expected_mac", None)
+            host.pop("_audited_endpoints", None)
+            host.pop("_cve_failed_ports", None)
+            host.pop("is_new_rogue", None)
 
         result_payload = {
             "command": nmap_result.get("command", "N/A"),

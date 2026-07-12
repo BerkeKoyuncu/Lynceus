@@ -83,6 +83,11 @@ def create_app(config=None):
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["TRUST_PROXY"] = os.environ.get("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
     app.config["SEED_DEMO_DATA"] = os.environ.get("SEED_DEMO_DATA", "False").lower() in ("true", "1", "yes")
+    env_start = os.environ.get("START_SCHEDULER")
+    if env_start is not None:
+        app.config["START_SCHEDULER"] = env_start.lower() in {"true", "1", "yes"}
+    else:
+        app.config["START_SCHEDULER"] = True
 
     if config:
         app.config.update(config)
@@ -426,9 +431,15 @@ def create_app(config=None):
         click.echo("Demo security data seeded successfully.")
 
     # Background threads
+    import sys
+    is_cli = (
+        os.environ.get("FLASK_RUN_FROM_CLI") == "true"
+        or (len(sys.argv) > 1 and sys.argv[1] in ["db", "create-admin", "init-db", "cleanup-scans", "seed-demo-data"])
+    )
     if (
         app.config.get("START_SCHEDULER", True)
         and not app.config.get("TESTING", False)
+        and not is_cli
     ):
         start_scheduler(app)
 
