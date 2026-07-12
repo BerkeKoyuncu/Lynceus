@@ -426,69 +426,13 @@ def create_app(config=None):
         click.echo("Demo security data seeded successfully.")
 
     # Background threads
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        def run_scheduler_loop():
-            time.sleep(5)
-            while True:
-                try:
-                    with app.app_context():
-                        if is_scan_frozen():
-                            pass
-                        else:
-                            now = datetime.now(timezone.utc).replace(tzinfo=None)
-                            due_schedules = ScanSchedule.query.filter(
-                                ScanSchedule.is_active == True,
-                                ScanSchedule.next_run <= now
-                            ).all()
-                            
-                            for schedule in due_schedules:
-                                scan = ScanResult(
-                                    user_id=schedule.user_id,
-                                    input_ip=schedule.input_ip,
-                                    subnet_mask=schedule.subnet_mask,
-                                    scan_type=schedule.scan_type,
-                                    ports=schedule.ports,
-                                    network_cidr=schedule.network_cidr,
-                                    exclude_targets=schedule.exclude_targets,
-                                    credential_ids=schedule.credential_ids,
-                                    timing_template=schedule.timing_template,
-                                    audit_credentials=schedule.audit_credentials,
-                                    status="pending"
-                                )
-                                db.session.add(scan)
-                                db.session.commit()
-                                
-                                background_app = current_app._get_current_object()
-                                threading.Thread(
-                                    target=execute_scan,
-                                    args=(background_app, scan.id, schedule.audit_credentials),
-                                    daemon=True
-                                ).start()
-                                
-                                schedule.last_run = now
-                                if schedule.frequency == "hourly":
-                                    schedule.next_run = now + timedelta(hours=1)
-                                elif schedule.frequency == "daily":
-                                    schedule.next_run = now + timedelta(days=1)
-                                elif schedule.frequency == "weekly":
-                                    schedule.next_run = now + timedelta(weeks=1)
-                                elif schedule.frequency == "monthly":
-                                    schedule.next_run = now + timedelta(days=30)
-                                else:
-                                    schedule.next_run = now + timedelta(days=1)
-                                db.session.commit()
-                except Exception as e:
-                    import sys
-                    print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)
-                time.sleep(30)
-
-        threading.Thread(target=run_scheduler_loop, daemon=True).start()
+    if (
+        app.config.get("START_SCHEDULER", True)
+        and not app.config.get("TESTING", False)
+    ):
+        start_scheduler(app)
 
     with app.app_context():
-        try:
-            backfill_legacy_scans()
-        except Exception:
-            pass
         if app.config.get("SEED_DEMO_DATA"):
             try:
                 seed_mock_security_data()
@@ -500,6 +444,64 @@ def create_app(config=None):
             pass
 
     return app
+
+def start_scheduler(app):
+    def run_scheduler_loop():
+        time.sleep(5)
+        while True:
+            try:
+                with app.app_context():
+                    if is_scan_frozen():
+                        pass
+                    else:
+                        now = datetime.now(timezone.utc).replace(tzinfo=None)
+                        due_schedules = ScanSchedule.query.filter(
+                            ScanSchedule.is_active == True,
+                            ScanSchedule.next_run <= now
+                        ).all()
+                        
+                        for schedule in due_schedules:
+                            scan = ScanResult(
+                                user_id=schedule.user_id,
+                                input_ip=schedule.input_ip,
+                                subnet_mask=schedule.subnet_mask,
+                                scan_type=schedule.scan_type,
+                                ports=schedule.ports,
+                                network_cidr=schedule.network_cidr,
+                                exclude_targets=schedule.exclude_targets,
+                                credential_ids=schedule.credential_ids,
+                                timing_template=schedule.timing_template,
+                                audit_credentials=schedule.audit_credentials,
+                                status="pending"
+                            )
+                            db.session.add(scan)
+                            db.session.commit()
+                            
+                            background_app = app
+                            threading.Thread(
+                                target=execute_scan,
+                                args=(background_app, scan.id, schedule.audit_credentials),
+                                daemon=True
+                            ).start()
+                            
+                            schedule.last_run = now
+                            if schedule.frequency == "hourly":
+                                schedule.next_run = now + timedelta(hours=1)
+                            elif schedule.frequency == "daily":
+                                schedule.next_run = now + timedelta(days=1)
+                            elif schedule.frequency == "weekly":
+                                schedule.next_run = now + timedelta(weeks=1)
+                            elif schedule.frequency == "monthly":
+                                schedule.next_run = now + timedelta(days=30)
+                            else:
+                                schedule.next_run = now + timedelta(days=1)
+                            db.session.commit()
+            except Exception as e:
+                import sys
+                print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)
+            time.sleep(30)
+
+    threading.Thread(target=run_scheduler_loop, daemon=True).start()
 
 def seed_mock_security_data():
     try:
@@ -605,57 +607,7 @@ def seed_mock_security_data():
     except Exception as e:
         print(f"Error seeding mock security data: {str(e)}")
 
-def backfill_legacy_scans():
-    try:
-        if Asset.query.first() is not None:
-            return
-            
-        completed_scans = ScanResult.query.filter_by(status="completed").order_by(ScanResult.created_at.asc()).all()
-        if not completed_scans:
-            return
-            
-        from services.anomaly_service import evaluate_host_anomalies
-        from services.rule_service import evaluate_rules_for_host
-        
-        for scan in completed_scans:
-            if not scan.result_data:
-                continue
-            try:
-                data = json.loads(scan.result_data)
-                hosts = data.get("hosts", [])
-                for host in hosts:
-                    ip = host.get("address")
-                    mac = host.get("mac_address", "").strip().lower() if host.get("mac_address") else None
-                    vendor = host.get("mac_vendor")
-                    hostname = host.get("hostname")
-                    
-                    asset_match = None
-                    if mac:
-                        asset_match = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
-                    if not asset_match:
-                        asset_match = Asset.query.filter_by(ip_address=ip).first()
-                        
-                    if not asset_match:
-                        asset_match = Asset(
-                            name=hostname or f"Device {ip}",
-                            ip_address=ip,
-                            mac_address=mac,
-                            mac_vendor=vendor,
-                            is_trusted=True,
-                            last_seen=scan.created_at
-                        )
-                        db.session.add(asset_match)
-                        db.session.commit()
-                    else:
-                        asset_match.last_seen = scan.created_at
-                        db.session.commit()
-                        
-                    evaluate_host_anomalies(host, scan.id)
-                    evaluate_rules_for_host(host, asset_match, scan.user_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
+
 
 def cleanup_stale_scans():
     stale_threshold = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=30)
@@ -674,9 +626,8 @@ def cleanup_stale_scans():
     if stale_scans:
         db.session.commit()
 
-app = create_app()
-
 if __name__ == "__main__":
     import os
+    app = create_app()
     debug_val = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     app.run(debug=debug_val, host="127.0.0.1")

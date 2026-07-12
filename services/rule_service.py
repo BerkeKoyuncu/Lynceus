@@ -128,9 +128,10 @@ def seed_default_rules(user_id):
         db.session.add(rule)
     db.session.commit()
 
-def calculate_finding_fingerprint(ip_address, port, service, source_type, source_id_or_cve):
+def calculate_finding_fingerprint(ip_address, port, service, source_type, source_id_or_cve, protocol="tcp"):
     import hashlib
-    raw_str = f"{ip_address}:{port}:{service or ''}:{source_type}:{source_id_or_cve or ''}"
+    proto = (protocol or "tcp").lower().strip()
+    raw_str = f"{ip_address}:{proto}:{port}:{service or ''}:{source_type}:{source_id_or_cve or ''}"
     return hashlib.sha256(raw_str.encode("utf-8")).hexdigest()
 
 def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None):
@@ -179,18 +180,20 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                         # Find service info for this port
                         new_service = None
                         new_version = None
+                        new_protocol = "tcp"
                         for pinfo in ports:
                             if int(pinfo.get("port") or 0) == cp:
                                 new_service = pinfo.get("service")
                                 new_version = pinfo.get("version_display") or pinfo.get("version")
+                                new_protocol = (pinfo.get("protocol") or "tcp").lower()
                                 break
                         new_evidence = f"New port {cp} was detected. It was not open in previous scans."
-                        new_fp = calculate_finding_fingerprint(ip, cp, new_service, "rule", rule.id)
+                        new_fp = calculate_finding_fingerprint(ip, cp, new_service, "rule", rule.id, protocol=new_protocol)
                         existing_new = SecurityFinding.query.filter_by(asset_id=asset.id, fingerprint=new_fp).first()
                         if not existing_new:
                             existing_new = SecurityFinding.query.filter_by(
                                 asset_id=asset.id, ip_address=ip, port=cp,
-                                source_type="rule", source_rule_id=rule.id
+                                protocol=new_protocol, source_type="rule", source_rule_id=rule.id
                             ).first()
                         if existing_new:
                             existing_new.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -201,7 +204,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                                 existing_new.status = "open"
                         else:
                             db.session.add(SecurityFinding(
-                                asset_id=asset.id, ip_address=ip, port=cp,
+                                asset_id=asset.id, ip_address=ip, port=cp, protocol=new_protocol,
                                 service=new_service or "unknown", version=new_version,
                                 severity=rule.severity, evidence=new_evidence, status="open",
                                 remediation_note=rule.remediation_text,
@@ -214,6 +217,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
             continue  # new_port rule handled above; skip the regular matched block
 
         if not matched:
+            matched_protocol = "tcp"
             for pinfo in ports:
                 p_num = int(pinfo.get("port") or 0)
                 service = (pinfo.get("service") or "").lower()
@@ -231,6 +235,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                             matched_port = p_num
                             matched_service = service
                             matched_version = version
+                            matched_protocol = (pinfo.get("protocol") or "tcp").lower()
                             evidence = f"Port condition matched: Port {p_num} is open."
                     elif cond.startswith("service:"):
                         cond_svc = cond.split(":")[1]
@@ -240,12 +245,14 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                                 matched_port = p_num
                                 matched_service = service
                                 matched_version = version
+                                matched_protocol = (pinfo.get("protocol") or "tcp").lower()
                                 evidence = f"Service condition matched: Unrecognized service on port {p_num}."
                         elif cond_svc in service:
                             matched = True
                             matched_port = p_num
                             matched_service = service
                             matched_version = version
+                            matched_protocol = (pinfo.get("protocol") or "tcp").lower()
                             evidence = f"Service condition matched: Service '{service}' is open on port {p_num}."
 
                 # Special case: Redis anonymous auth check
@@ -275,7 +282,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
 
         if matched:
             # Create or update SecurityFinding record
-            fp = calculate_finding_fingerprint(ip, matched_port or 0, matched_service, "rule", rule.id)
+            fp = calculate_finding_fingerprint(ip, matched_port or 0, matched_service, "rule", rule.id, protocol=matched_protocol)
             
             existing_finding = SecurityFinding.query.filter_by(
                 asset_id=asset.id,
@@ -287,6 +294,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                     asset_id=asset.id,
                     ip_address=ip,
                     port=matched_port or 0,
+                    protocol=matched_protocol,
                     service=matched_service or "unknown",
                     source_type="rule",
                     source_rule_id=rule.id
@@ -313,6 +321,7 @@ def evaluate_rules_for_host(host, asset, user_id, prev_ports=None, scan_id=None)
                     asset_id=asset.id,
                     ip_address=ip,
                     port=matched_port or 0,
+                    protocol=matched_protocol,
                     service=matched_service or "unknown",
                     version=matched_version,
                     severity=rule.severity,
@@ -334,6 +343,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
     Saves external CVE scan results into the SecurityFinding table.
     """
     p_num = int(port_info.get("port") or 0)
+    protocol = (port_info.get("protocol") or "tcp").lower()
     service = port_info.get("service") or "unknown"
     version = port_info.get("version_display") or port_info.get("version") or ""
     
@@ -357,7 +367,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
         else:
             severity = "Low"
 
-        fp = calculate_finding_fingerprint(ip_address, p_num, service, "cve", cve_id)
+        fp = calculate_finding_fingerprint(ip_address, p_num, service, "cve", cve_id, protocol=protocol)
 
         existing_finding = SecurityFinding.query.filter_by(
             asset_id=asset.id,
@@ -369,6 +379,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
                 asset_id=asset.id,
                 ip_address=ip_address,
                 port=p_num,
+                protocol=protocol,
                 cve=cve_id
             ).first()
 
@@ -391,6 +402,7 @@ def evaluate_cve_findings(asset, ip_address, port_info, cve_list, scan_id=None):
                 asset_id=asset.id,
                 ip_address=ip_address,
                 port=p_num,
+                protocol=protocol,
                 service=service,
                 version=version,
                 cve=cve_id,
@@ -458,7 +470,9 @@ def validate_rule_conditions(port_service_condition, scope, severity, criticalit
 
 def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_id, 
                                 scan_type, requested_ports, audit_credentials=False, 
-                                credential_ids=None, current_open_ports=None):
+                                credential_ids=None, current_open_ports=None,
+                                cve_failed_ports=None, audited_endpoints=None,
+                                scanned_endpoints=None):
     """
     After a scan, marks findings that were not observed in this scan as 'not_observed'.
     Only does this if the host was seen online (status='up') during the scan.
@@ -468,17 +482,56 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
 
     if current_open_ports is None:
         current_open_ports = []
+        
+    if cve_failed_ports is None:
+        cve_failed_ports = set()
+        
+    if audited_endpoints is None:
+        audited_endpoints = {}
 
-    # Helper to check if a port was scanned
-    def is_port_scanned(port):
+    # Build set of open endpoints: (protocol, port)
+    # If the caller passed a set/list of tuples, use it. Otherwise construct assuming 'tcp'
+    current_open_endpoints = set()
+    if current_open_ports:
+        for item in current_open_ports:
+            if isinstance(item, tuple):
+                current_open_endpoints.add((item[0].lower(), int(item[1])))
+            else:
+                current_open_endpoints.add(("tcp", int(item)))
+
+    # Parse scanned_endpoints into a set of (protocol, port)
+    scanned_endpoints_set = set()
+    if scanned_endpoints:
+        for proto, p in scanned_endpoints:
+            scanned_endpoints_set.add((proto.lower(), int(p)))
+
+    # Helper to check if a specific endpoint was scanned
+    def is_endpoint_scanned(protocol, port):
         if scan_type == "ping_sweep":
             return False
 
+        proto_lower = (protocol or "tcp").lower()
+        
+        # If we have actual scanned endpoints from XML scaninfo, use it
+        if scanned_endpoints_set:
+            return (proto_lower, port) in scanned_endpoints_set
+
+        # Fallback to estimation based on scan type and requested_ports
         if requested_ports and requested_ports.strip():
             tokens = [t.strip().lower() for t in requested_ports.split(",") if t.strip()]
             for token in tokens:
-                if token.startswith("t:") or token.startswith("u:"):
+                token_proto = None
+                if token.startswith("t:"):
+                    token_proto = "tcp"
                     token = token[2:]
+                elif token.startswith("u:"):
+                    token_proto = "udp"
+                    token = token[2:]
+                
+                # If token has a specific protocol, verify it matches
+                if token_proto and token_proto != proto_lower:
+                    continue
+                    
                 if "-" in token:
                     try:
                         start, end = token.split("-")
@@ -505,14 +558,17 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
                 9100, 9999, 32768, 49152, 49153, 49154, 49155, 49156, 49157
             }
             if scan_type in ["fast", "quick"]:
-                return port in NMAP_TOP_100
+                return proto_lower == "tcp" and port in NMAP_TOP_100
             elif scan_type == "udp":
                 common_udp = {
                     53, 67, 68, 69, 123, 135, 137, 138, 139, 161, 162, 445, 500, 514, 
                     520, 631, 1434, 1900, 4500, 5353, 5355
                 }
-                return port in common_udp or port < 1024
+                return proto_lower == "udp" and (port in common_udp or port < 1024)
             else:
+                # Default TCP scan
+                if proto_lower != "tcp":
+                    return False
                 common_high_tcp = {
                     1433, 1521, 2049, 3000, 3128, 3306, 3389, 4899, 5000, 5432, 
                     5666, 5900, 6379, 8000, 8080, 8081, 8443, 8888, 9000, 9092, 9100
@@ -525,29 +581,27 @@ def reconcile_findings_for_scan(asset, host_online, observed_fingerprints, scan_
     ).all()
 
     for finding in active_findings:
+        finding_protocol = (finding.protocol or "tcp").lower()
         if finding.fingerprint and finding.fingerprint not in observed_fingerprints:
-            # If the port wasn't even scanned, we can't assume anything about it!
-            if not is_port_scanned(finding.port):
+            # If the endpoint wasn't even scanned, we can't assume anything about it!
+            if not is_endpoint_scanned(finding_protocol, finding.port):
                 continue
 
-            # If the port is now closed, we definitely reconcile it
-            if finding.port not in current_open_ports:
+            # If the endpoint is now closed, we definitely reconcile it
+            if (finding_protocol, finding.port) not in current_open_endpoints:
                 finding.status = "not_observed"
                 continue
 
             # Port is still open, check based on source type
             if finding.source_type == "cve":
-                # Only reconcile if version detection ran in this scan
+                # Only reconcile if version detection ran in this scan and CVE search succeeded
                 if scan_type in ["service_version", "detailed", "aggressive", "vuln"]:
-                    finding.status = "not_observed"
+                    if finding.port not in cve_failed_ports:
+                        finding.status = "not_observed"
             elif finding.source_type == "credential_audit":
-                # Only reconcile if credential audit was active and applicable to this service/port
-                svc_lower = (finding.service or "").lower()
-                is_audited_service = (
-                    finding.port in [21, 6379, 80, 8080, 443, 8443] or
-                    "ftp" in svc_lower or "redis" in svc_lower or "http" in svc_lower
-                )
-                if (audit_credentials or credential_ids) and is_audited_service:
+                # Only reconcile if the audit completed successfully and marked the port as "safe"
+                audit_status = audited_endpoints.get((finding_protocol, finding.port))
+                if audit_status == "safe":
                     finding.status = "not_observed"
             else:
                 # Other types (rules, etc.) on open ports can be reconciled because rule matching ran

@@ -99,16 +99,17 @@ def is_version_affected(user_ver, match_obj, api_product):
 def fetch_cves_for_query(product, version=None, cpe_list=None):
     """
     Queries the CIRCL CVE API for a service and version, using CPE list to extract accurate vendor/product fields if available.
+    Returns: {"success": True/False, "cves": [...], "error": ...}
     """
     if not product or product == "-":
-        return []
+        return {"success": True, "cves": []}
         
     version_clean = version.strip() if version else ""
     product_clean = product.lower().strip()
     
     cache_key = (product_clean, version_clean, tuple(cpe_list) if cpe_list else ())
     if cache_key in CVE_CACHE:
-        return CVE_CACHE[cache_key]
+        return {"success": True, "cves": CVE_CACHE[cache_key]}
 
     cpe_vendor = None
     cpe_product = None
@@ -146,6 +147,7 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
 
     cpe_success = False
     all_items = []
+    first_error = None
     
     # Try querying using the parsed/cpe vendor and product
     url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
@@ -157,10 +159,9 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
         all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
-        if all_items:
-            cpe_success = True
-    except Exception:
-        pass
+        cpe_success = True
+    except Exception as e:
+        first_error = str(e)
 
     # Fallback to string query parsing if CPE-based search failed/empty and we initially used CPE
     if not cpe_success and cpe_list:
@@ -174,8 +175,12 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode("utf-8"))
             all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
-        except Exception:
-            pass
+            cpe_success = True
+        except Exception as e:
+            first_error = str(e)
+
+    if not cpe_success and not all_items:
+        return {"success": False, "cves": [], "error": first_error or "API query failed"}
 
     try:
         seen_cves = set()
@@ -257,9 +262,9 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
         filtered_cves.sort(key=lambda x: x["cvss"] if x["cvss"] is not None else -1, reverse=True)
         filtered_cves = filtered_cves[:15]
         CVE_CACHE[cache_key] = filtered_cves
-        return filtered_cves
-    except Exception:
-        return []
+        return {"success": True, "cves": filtered_cves}
+    except Exception as e:
+        return {"success": False, "cves": [], "error": str(e)}
 
 def create_credential_audit_finding(asset, ip_address, port_info, audit_res, scan_id=None):
     """
@@ -268,11 +273,12 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
     """
     from services.rule_service import calculate_finding_fingerprint
     p_num = int(port_info.get("port") or 0)
+    protocol = (port_info.get("protocol") or "tcp").lower()
     service = port_info.get("service") or "unknown"
     version = port_info.get("version_display") or port_info.get("version") or ""
     message = audit_res.get("message", "Weak or default credentials confirmed.")
 
-    fp = calculate_finding_fingerprint(ip_address, p_num, service, "credential_audit", service)
+    fp = calculate_finding_fingerprint(ip_address, p_num, service, "credential_audit", service, protocol=protocol)
 
     existing = SecurityFinding.query.filter_by(
         asset_id=asset.id, fingerprint=fp
@@ -280,7 +286,7 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
     if not existing:
         existing = SecurityFinding.query.filter_by(
             asset_id=asset.id, ip_address=ip_address, port=p_num,
-            source_type="credential_audit"
+            protocol=protocol, source_type="credential_audit"
         ).first()
 
     if existing:
@@ -295,6 +301,7 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
             asset_id=asset.id,
             ip_address=ip_address,
             port=p_num,
+            protocol=protocol,
             service=service,
             version=version,
             severity="Critical",
@@ -752,9 +759,10 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 pass
 
         if nmap_result["success"]:
-            # Pass 1: Match/create assets and save observations for all scanned hosts.
-            # This ensures all host observation records are in the database before Pass 2
-            # evaluates anomalies (such as MAC spoofing checks).
+            # Pass 1: Match/create assets and save pre-scan snapshots on host dicts,
+            # then write observations for all scanned hosts.
+            # No updates to existing asset details (like IP or MAC) are written to DB yet,
+            # preserving the baseline state needed for accurate anomaly detection.
             for host in hosts:
                 ip = host.get("address")
                 mac = host.get("mac_address")
@@ -787,19 +795,11 @@ def execute_scan(app, scan_id, audit_credentials=False):
                     host["is_new_rogue"] = True
                 else:
                     host["is_new_rogue"] = False
-                    # Update fields that we need for mapping/identification
-                    asset_match.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
-                    if asset_match.ip_address != ip:
-                        asset_match.ip_address = ip
-                    if mac and not asset_match.mac_address:
-                        asset_match.mac_address = mac.strip().lower()
-                    if vendor and not asset_match.mac_vendor:
-                        asset_match.mac_vendor = vendor
-                    if hostname and (not asset_match.name or asset_match.name.startswith("Device ")):
-                        asset_match.name = hostname
-                    if asset_match.device_type == "Unknown" or not asset_match.device_type:
-                        asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
-                    db.session.commit()
+
+                # Store snapshot values on the host dict for Pass 2 evaluation
+                host["_asset_id"] = asset_match.id
+                host["_expected_ip"] = asset_match.ip_address
+                host["_expected_mac"] = asset_match.mac_address
 
                 # Save current scan snapshot observation
                 record_observation(
@@ -814,11 +814,35 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 )
 
             # Pass 2: Evaluate security anomalies.
-            # Observations for all hosts in the current scan exist, making evaluation sequence-independent.
+            # Evaluates anomalies using pre-scan snapshots, making it sequence-independent
+            # and preserving correct IP change detection logic.
             for host in hosts:
                 anomaly_res = evaluate_host_anomalies(host, scan_result.id)
                 if anomaly_res:
                     host["mac_anomaly"] = anomaly_res
+
+            # Pass 3: Update Asset details in DB with the newly scanned values.
+            for host in hosts:
+                asset_id = host.get("_asset_id")
+                if asset_id:
+                    asset_match = db.session.get(Asset, asset_id)
+                    if asset_match:
+                        ip = host.get("address")
+                        mac = host.get("mac_address")
+                        vendor = host.get("mac_vendor")
+                        hostname = host.get("hostname")
+
+                        asset_match.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+                        if asset_match.ip_address != ip:
+                            asset_match.ip_address = ip
+                        if mac and not asset_match.mac_address:
+                            asset_match.mac_address = mac.strip().lower()
+                        if vendor and not asset_match.mac_vendor:
+                            asset_match.mac_vendor = vendor
+                        if hostname and (not asset_match.name or asset_match.name.startswith("Device ")):
+                            asset_match.name = hostname
+                        if asset_match.device_type == "Unknown" or not asset_match.device_type:
+                            asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
 
             db.session.commit()
 
@@ -906,6 +930,7 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 ports_list = host.get("ports", [])
+                audited_endpoints = {}
                 for port_info in ports_list:
                     p_num = int(port_info.get("port") or 0)
                     service = (port_info.get("service") or "").lower()
@@ -925,9 +950,13 @@ def execute_scan(app, scan_id, audit_credentials=False):
 
                     if audit_res:
                         port_info["credential_audit"] = audit_res
+                        status = audit_res.get("status")
+                        if status in ["safe", "vulnerable"]:
+                            audited_endpoints[(protocol, p_num)] = status
                         # Create a finding immediately if vulnerability confirmed
-                        if asset and audit_res.get("status") == "vulnerable":
+                        if asset and status == "vulnerable":
                             create_credential_audit_finding(asset, ip, port_info, audit_res, scan_id=scan_result.id)
+                host["_audited_endpoints"] = audited_endpoints
 
         # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
         if nmap_result["success"]:
@@ -945,26 +974,33 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 if not asset:
                     continue
+                cve_failed_ports = set()
                 for port_info in host.get("ports", []):
                     # Use 'product' for VENDOR_PRODUCT_MAP lookup (e.g. 'OpenSSH' not 'ssh')
                     product = port_info.get("product") or ""
                     service = port_info.get("service") or ""
                     raw_version = port_info.get("version") or ""
                     cpe_list = port_info.get("cpe") or []
+                    p_num = int(port_info.get("port") or 0)
 
                     # Build lookup key: prefer product name, fall back to service name
                     lookup_key = product.lower().strip() if product else service.lower().strip()
 
                     if lookup_key and lookup_key != "-":
-                        cves = fetch_cves_for_query(lookup_key, version=raw_version, cpe_list=cpe_list)
-                        if cves:
-                            evaluate_cve_findings(
-                                asset=asset,
-                                ip_address=ip,
-                                port_info=port_info,
-                                cve_list=cves,
-                                scan_id=scan_result.id
-                            )
+                        cves_res = fetch_cves_for_query(lookup_key, version=raw_version, cpe_list=cpe_list)
+                        if cves_res.get("success"):
+                            cves = cves_res.get("cves", [])
+                            if cves:
+                                evaluate_cve_findings(
+                                    asset=asset,
+                                    ip_address=ip,
+                                    port_info=port_info,
+                                    cve_list=cves,
+                                    scan_id=scan_result.id
+                                )
+                        else:
+                            cve_failed_ports.add(p_num)
+                host["_cve_failed_ports"] = cve_failed_ports
 
         # 7. Finding lifecycle reconciliation — mark unobserved findings 'not_observed'
         if nmap_result["success"]:
@@ -977,12 +1013,19 @@ def execute_scan(app, scan_id, audit_credentials=False):
                 ).all()
             )
             online_ips = {h.get("address") for h in hosts if h.get("status") == "up"}
+            scanned_endpoints = nmap_result.get("scanned_endpoints", [])
             for host in hosts:
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 if asset:
                     host_online = ip in online_ips or host.get("status") == "up"
-                    current_open_ports = [int(p.get("port") or 0) for p in host.get("ports", [])]
+                    current_open_endpoints = [
+                        ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0))
+                        for p in host.get("ports", [])
+                        if p.get("state") == "open"
+                    ]
+                    cve_failed_ports = host.get("_cve_failed_ports", set())
+                    audited_endpoints = host.get("_audited_endpoints", {})
                     reconcile_findings_for_scan(
                         asset=asset,
                         host_online=host_online,
@@ -992,7 +1035,10 @@ def execute_scan(app, scan_id, audit_credentials=False):
                         requested_ports=scan_result.ports,
                         audit_credentials=scan_result.audit_credentials,
                         credential_ids=scan_result.credential_ids,
-                        current_open_ports=current_open_ports
+                        current_open_ports=current_open_endpoints,
+                        cve_failed_ports=cve_failed_ports,
+                        audited_endpoints=audited_endpoints,
+                        scanned_endpoints=scanned_endpoints
                     )
 
         result_payload = {

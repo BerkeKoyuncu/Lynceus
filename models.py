@@ -226,6 +226,7 @@ class SecurityFinding(db.Model):
     asset_id = db.Column(db.Integer, db.ForeignKey("asset.id", ondelete="CASCADE"), nullable=True)
     ip_address = db.Column(db.String(45), nullable=False)
     port = db.Column(db.Integer, nullable=False)
+    protocol = db.Column(db.String(10), nullable=False, default="tcp")
     service = db.Column(db.String(50), nullable=True)
     version = db.Column(db.String(50), nullable=True)
     cve = db.Column(db.String(50), nullable=True)

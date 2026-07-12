@@ -512,6 +512,37 @@ def stop_scan_process(scan_id):
     return False
 
 
+def extract_scanned_endpoints_from_xml(xml_output):
+    endpoints = []
+    if not xml_output:
+        return endpoints
+    try:
+        root = ET.fromstring(xml_output)
+        for scaninfo in root.findall("scaninfo"):
+            protocol = scaninfo.get("protocol") or "tcp"
+            services_str = scaninfo.get("services")
+            if services_str:
+                for part in services_str.split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    if "-" in part:
+                        try:
+                            start, end = part.split("-")
+                            for p in range(int(start), int(end) + 1):
+                                endpoints.append((protocol.lower(), p))
+                        except ValueError:
+                            pass
+                    else:
+                        try:
+                            endpoints.append((protocol.lower(), int(part)))
+                        except ValueError:
+                            pass
+    except Exception:
+        pass
+    return endpoints
+
+
 def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_template="4", scan_id=None):
     """
     Runs an Nmap scan and returns structured results.
@@ -669,9 +700,11 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             stderr = completed_process.stderr
 
         hosts = []
+        scanned_endpoints = []
 
         if stdout:
             hosts = parse_nmap_xml(stdout)
+            scanned_endpoints = extract_scanned_endpoints_from_xml(stdout)
 
         # Determine if target is a single host or a subnet range
         is_single_host = True
@@ -716,6 +749,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
                                 stdout = fallback_stdout
                                 stderr = fallback_process.stderr
                                 hosts = fallback_hosts
+                                scanned_endpoints = extract_scanned_endpoints_from_xml(fallback_stdout)
                                 is_fallback = True
                                 original_command = " ".join(command)
                                 command = fallback_command
@@ -752,6 +786,7 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
                                     stdout = fallback_stdout
                                     stderr = fallback_process.stderr
                                     hosts = fallback_hosts
+                                    scanned_endpoints = extract_scanned_endpoints_from_xml(fallback_stdout)
                                     is_fallback = True
                                     original_command = " ".join(command)
                                     command = fallback_command
@@ -770,7 +805,8 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             "success": completed_process.returncode == 0,
             "command": " ".join(command),
             "output": final_output,
-            "hosts": hosts
+            "hosts": hosts,
+            "scanned_endpoints": scanned_endpoints
         }
 
     except ET.ParseError as error:
@@ -778,7 +814,8 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             "success": False,
             "command": " ".join(command),
             "output": f"Failed to parse Nmap XML output: {str(error)}",
-            "hosts": []
+            "hosts": [],
+            "scanned_endpoints": []
         }
 
     except subprocess.TimeoutExpired:
@@ -786,7 +823,8 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             "success": False,
             "command": " ".join(command),
             "output": "The scan timed out. The target network may be too large or unreachable.",
-            "hosts": []
+            "hosts": [],
+            "scanned_endpoints": []
         }
 
     except Exception as error:
@@ -794,7 +832,8 @@ def run_nmap_scan(target, scan_type, ports=None, exclude_targets=None, timing_te
             "success": False,
             "command": " ".join(command),
             "output": f"Unexpected error: {str(error)}",
-            "hosts": []
+            "hosts": [],
+            "scanned_endpoints": []
         }
     
 def is_ip_allowed(ip_str):
