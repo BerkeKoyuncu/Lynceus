@@ -14,7 +14,7 @@ from flask import current_app
 from sqlalchemy.orm import sessionmaker
 
 from models import db, User, ScanResult, ScanSchedule, SystemSetting, Asset, ScanCredential, SecurityFinding, SecurityAnomaly
-from scanner import run_nmap_scan
+from scanner import allow_scan_process_start, end_scan_process_attempt, run_nmap_scan
 from services.anomaly_service import evaluate_host_anomalies, record_observation
 from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules, reconcile_findings_for_scan
 from services.email_service import send_notification_email_async
@@ -989,10 +989,12 @@ def _independent_scheduler_claim_is_current(scan_id, claim_token):
         ownership_session.close()
 
 
-def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
+def scheduler_progress_checkpoint(scan_id, claim_token, force=False, phase=None):
     """Fence work and throttle progress writes outside the business session."""
     if not claim_token:
         return True
+    if phase is not None:
+        force = True
 
     key = (scan_id, claim_token)
     monotonic_now = time.monotonic()
@@ -1007,19 +1009,19 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False):
 
     progress_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
     try:
+        progress_values = {
+            ScanResult.scheduler_progress_at: datetime.now(timezone.utc).replace(
+                tzinfo=None
+            )
+        }
+        if phase is not None:
+            progress_values[ScanResult.scheduler_execution_phase] = phase
         updated = progress_session.query(ScanResult).filter(
             ScanResult.id == scan_id,
             ScanResult.status == "running",
             ScanResult.scheduler_dispatch_state == "started",
             ScanResult.scheduler_claim_token == claim_token,
-        ).update(
-            {
-                ScanResult.scheduler_progress_at: datetime.now(timezone.utc).replace(
-                    tzinfo=None
-                )
-            },
-            synchronize_session=False,
-        )
+        ).update(progress_values, synchronize_session=False)
         progress_session.commit()
     except Exception:
         progress_session.rollback()
@@ -1064,6 +1066,7 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                     ScanResult.scheduler_started_at: now,
                     ScanResult.scheduler_heartbeat_at: now,
                     ScanResult.scheduler_progress_at: now,
+                    ScanResult.scheduler_execution_phase: "starting",
                 },
                 synchronize_session=False,
             )
@@ -1071,6 +1074,8 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                 db.session.rollback()
                 return
             db.session.commit()
+
+        allow_scan_process_start(scan_id, scheduler_claim_token)
 
         heartbeat_stop = threading.Event()
         threading.Thread(
@@ -1090,6 +1095,7 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
     finally:
         if heartbeat_stop is not None:
             heartbeat_stop.set()
+        end_scan_process_attempt(scan_id, scheduler_claim_token)
         _clear_scheduler_progress_checkpoint(scan_id, scheduler_claim_token)
         try:
             from app import _dispatch_pending_scheduled_scans
@@ -1152,9 +1158,12 @@ def _execute_scan_body(
             
         combined_excludes_str = ",".join(combined_excludes) if combined_excludes else None
 
-        def report_nmap_progress(_phase):
+        def report_nmap_progress(phase):
             return scheduler_progress_checkpoint(
-                scan_id, scheduler_claim_token, force=True
+                scan_id,
+                scheduler_claim_token,
+                force=True,
+                phase=phase,
             )
 
         nmap_result = run_nmap_scan(
@@ -1165,9 +1174,15 @@ def _execute_scan_body(
             timing_template=scan_result.timing_template,
             scan_id=scan_result.id,
             progress_callback=report_nmap_progress,
+            process_token=scheduler_claim_token,
         )
 
-        if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, force=True):
+        if not scheduler_progress_checkpoint(
+            scan_id,
+            scheduler_claim_token,
+            force=True,
+            phase="post_processing",
+        ):
             return
 
         db.session.refresh(scan_result)
@@ -1206,7 +1221,9 @@ def _execute_scan_body(
                 pass
 
         if nmap_result["success"]:
-            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            if not scheduler_progress_checkpoint(
+                scan_id, scheduler_claim_token, phase="asset_processing"
+            ):
                 return
             # Pass 1: Match/create assets and save pre-scan snapshots on host dicts,
             # then write observations for all scanned hosts.
@@ -1264,7 +1281,9 @@ def _execute_scan_body(
                     open_ports=host.get("ports", [])
                 )
 
-            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            if not scheduler_progress_checkpoint(
+                scan_id, scheduler_claim_token, phase="anomaly_evaluation"
+            ):
                 return
             # Pass 2: Evaluate security anomalies.
             # Evaluates anomalies using pre-scan snapshots, making it sequence-independent
@@ -1276,7 +1295,9 @@ def _execute_scan_body(
                 if anomaly_res:
                     host["mac_anomaly"] = anomaly_res
 
-            if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+            if not scheduler_progress_checkpoint(
+                scan_id, scheduler_claim_token, phase="asset_update"
+            ):
                 return
             # Pass 3: Update Asset details in DB with the newly scanned values.
             for host in hosts:
@@ -1366,7 +1387,9 @@ def _execute_scan_body(
                         }
                         send_notification_email_async(setting_dict, subject, body_html)
 
-        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+        if not scheduler_progress_checkpoint(
+            scan_id, scheduler_claim_token, phase="credential_audit"
+        ):
             return
         # 4. Credential Audits (run BEFORE rule evaluation so rules can read audit results)
         if (audit_credentials or scan_result.credential_ids) and nmap_result["success"]:
@@ -1427,7 +1450,9 @@ def _execute_scan_body(
                             create_credential_audit_finding(asset, ip, port_info, audit_res, scan_id=scan_result.id)
                 host["_audited_endpoints"] = audited_endpoints
 
-        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+        if not scheduler_progress_checkpoint(
+            scan_id, scheduler_claim_token, phase="rule_evaluation"
+        ):
             return
         # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
         if nmap_result["success"]:
@@ -1446,7 +1471,9 @@ def _execute_scan_body(
                         scan_id=scan_result.id,
                     )
 
-        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+        if not scheduler_progress_checkpoint(
+            scan_id, scheduler_claim_token, phase="cve_evaluation"
+        ):
             return
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
@@ -1500,7 +1527,9 @@ def _execute_scan_body(
                 host["_cve_failed_ports"] = cve_failed_ports
                 host["_confirmed_unaffected_cves"] = confirmed_unaffected_cves
 
-        if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
+        if not scheduler_progress_checkpoint(
+            scan_id, scheduler_claim_token, phase="reconciliation"
+        ):
             return
         # 7. Finding lifecycle reconciliation — mark unobserved findings 'not_observed'
         if nmap_result["success"]:
@@ -1589,6 +1618,7 @@ def _execute_scan_body(
                     {
                         ScanResult.status: "completed",
                         ScanResult.scheduler_dispatch_state: "completed",
+                        ScanResult.scheduler_execution_phase: "completed",
                         ScanResult.result_data: serialized_result,
                         ScanResult.scheduler_heartbeat_at: datetime.now(timezone.utc).replace(tzinfo=None),
                     },
@@ -1603,6 +1633,7 @@ def _execute_scan_body(
                 scan_result.status = "completed"
                 if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "completed"
+                    scan_result.scheduler_execution_phase = "completed"
                 db.session.commit()
             
             try:
@@ -1620,6 +1651,7 @@ def _execute_scan_body(
                     {
                         ScanResult.status: "failed",
                         ScanResult.scheduler_dispatch_state: "failed",
+                        ScanResult.scheduler_execution_phase: "failed",
                         ScanResult.result_data: serialized_result,
                         ScanResult.scheduler_heartbeat_at: datetime.now(timezone.utc).replace(tzinfo=None),
                     },
@@ -1630,4 +1662,5 @@ def _execute_scan_body(
                 scan_result.status = "failed"
                 if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "failed"
+                    scan_result.scheduler_execution_phase = "failed"
             db.session.commit()

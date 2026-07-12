@@ -392,7 +392,8 @@ def test_expired_attempt_owned_by_another_process_fails_closed(app, monkeypatch)
 
         assert _dispatch_pending_scheduled_scans(app, now) == []
         db.session.refresh(job)
-        assert job.status == "failed"
+        assert job.status == "termination_failed"
+        assert job.scheduler_dispatch_state == "orphaned"
         assert "not retried" in job.result_data
         assert stop_calls == []
 
@@ -478,9 +479,69 @@ def test_hard_runtime_reports_failed_process_termination(app, monkeypatch, caplo
 
         assert _dispatch_pending_scheduled_scans(app, now) == []
         db.session.refresh(job)
-        assert job.status == "failed"
+        assert job.status == "termination_failed"
+        assert job.scheduler_dispatch_state == "orphaned"
         assert "could not be confirmed terminated" in job.result_data
         assert "Hard runtime termination failed" in caplog.text
+
+
+def test_failed_to_terminate_job_still_consumes_capacity(app, monkeypatch):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    started = []
+    monkeypatch.setattr("scanner.stop_scan_process", lambda scan_id: False)
+    monkeypatch.setattr(
+        "app.threading.Thread",
+        type(
+            "FakeThread",
+            (),
+            {
+                "__init__": lambda self, target, args, daemon: setattr(self, "args", args),
+                "start": lambda self: started.append(self.args[1]),
+            },
+        ),
+    )
+    app.config.update({"MAX_CONCURRENT_SCANS": 1, "MAX_SCAN_RUNTIME_SECONDS": 600})
+    with app.app_context():
+        user = User.query.first()
+        orphan = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.64",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.64/32",
+            status="running",
+            scheduler_dispatch_state="started",
+            scheduler_claim_token="cannot-stop",
+            scheduler_started_at=now - timedelta(seconds=601),
+            scheduler_heartbeat_at=now,
+            scheduler_progress_at=now,
+            scheduler_worker_id=app.config["SCAN_WORKER_ID"],
+            scheduler_process_id=os.getpid(),
+            scheduler_attempt_count=1,
+            scheduler_max_attempts=3,
+        )
+        queued = ScanResult(
+            user_id=user.id,
+            input_ip="192.0.2.65",
+            subnet_mask="32",
+            scan_type="fast",
+            network_cidr="192.0.2.65/32",
+            status="pending",
+            scheduled_for=now,
+            scheduler_dispatch_state="queued",
+            scheduler_attempt_count=0,
+            scheduler_max_attempts=3,
+        )
+        db.session.add_all([orphan, queued])
+        db.session.commit()
+
+        assert _dispatch_pending_scheduled_scans(app, now) == []
+        db.session.refresh(orphan)
+        db.session.refresh(queued)
+        assert orphan.status == "termination_failed"
+        assert orphan.scheduler_dispatch_state == "orphaned"
+        assert queued.scheduler_dispatch_state == "queued"
+        assert started == []
 
 
 def test_post_processing_stall_fails_closed_without_retry(app, monkeypatch):
@@ -514,7 +575,8 @@ def test_post_processing_stall_fails_closed_without_retry(app, monkeypatch):
 
         assert _dispatch_pending_scheduled_scans(app, now) == []
         db.session.refresh(job)
-        assert job.status == "failed"
+        assert job.status == "termination_failed"
+        assert job.scheduler_dispatch_state == "orphaned"
         assert "could not be safely stopped" in job.result_data
         assert job.scheduler_attempt_count == 1
 
@@ -557,6 +619,18 @@ def test_progress_timeout_and_runtime_config_are_ordered():
             "TESTING": True,
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 600,
         })
+    with pytest.raises(RuntimeError, match="720 seconds"):
+        create_app({
+            "TESTING": True,
+            "SCHEDULER_LEASE_SECONDS": 120,
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 719,
+        })
+    safe_app = create_app({
+        "TESTING": True,
+        "SCHEDULER_LEASE_SECONDS": 120,
+        "SCHEDULER_PROGRESS_TIMEOUT_SECONDS": 720,
+    })
+    assert safe_app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] == 720
     with pytest.raises(RuntimeError, match="MAX_SCAN_RUNTIME_SECONDS"):
         create_app({
             "TESTING": True,
@@ -768,13 +842,19 @@ def test_progress_checkpoint_does_not_commit_business_session(app):
         job_id = job.id
 
         job.result_data = "must remain uncommitted"
-        assert scheduler_progress_checkpoint(job_id, "checkpoint-token", force=True)
+        assert scheduler_progress_checkpoint(
+            job_id,
+            "checkpoint-token",
+            force=True,
+            phase="asset_processing",
+        )
         db.session.rollback()
 
         db.session.expire_all()
         persisted = db.session.get(ScanResult, job_id)
         assert persisted.result_data is None
         assert persisted.scheduler_progress_at is not None
+        assert persisted.scheduler_execution_phase == "asset_processing"
 
 
 def test_progress_ownership_check_does_not_use_business_session(app, monkeypatch):

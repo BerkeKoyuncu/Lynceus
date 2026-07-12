@@ -321,10 +321,12 @@ attempt-specific staging and idempotent application.
 Before a local expired attempt is retried, all Nmap subprocesses registered for
 that scan are stopped. Worker instance, host, and process identifiers are stored
 with each claim. An attempt owned by another process, or one whose local process
-cannot be confirmed stopped, fails closed instead of being retried; this avoids
-overlapping scans without pretending that the in-memory process registry works
-across workers. Deployments requiring cross-process retry should use an external
-worker queue or supervisor with a shared cancellation mechanism.
+cannot be confirmed stopped, enters `termination_failed/orphaned` instead of
+being retried. Orphaned attempts continue consuming concurrency capacity until
+termination is positively confirmed or an operator resolves the owning worker;
+this avoids overlapping scans without pretending that the in-memory process
+registry works across workers. Deployments requiring cross-process retry should
+use an external worker queue or supervisor with a shared cancellation mechanism.
 
 Manual, repeated, and scheduled scans all use this persisted queue. A database
 dispatcher lock serializes capacity reservation across web/scheduler processes,
@@ -345,8 +347,15 @@ callback before each subprocess, so sequential healthy fallbacks do not consume
 one shared 600-second progress window. Ownership checks and progress writes both
 use independent short-lived database sessions. A live heartbeat cannot extend
 either progress timeout or the absolute execution deadline. A hard runtime
-timeout fails immediately without retry and reports when local process
-termination could not be confirmed.
+timeout is never retried: it becomes failed after confirmed termination or
+orphaned when local termination cannot be confirmed.
+
+`SCHEDULER_PROGRESS_TIMEOUT_SECONDS` must be at least the 600-second Nmap timeout
+plus `SCHEDULER_LEASE_SECONDS`, providing shutdown and scheduling margin. Current
+execution phases (primary/fallback Nmap, host discovery, asset processing,
+credential audit, CVE evaluation, and reconciliation) are persisted for
+operational diagnosis. Claim-token process-start fencing prevents a subprocess
+from being launched in the gap between recovery cancellation and registry stop.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so

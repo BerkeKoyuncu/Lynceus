@@ -238,7 +238,10 @@ def admin_panel():
 
     scan_results = ScanResult.query.order_by(ScanResult.created_at.desc()).all()
     users = User.query.order_by(User.created_at.desc()).all()
-    has_active_scans = any(scan.status in ["pending", "running"] for scan in scan_results)
+    has_active_scans = any(
+        scan.status in ["pending", "running", "termination_failed"]
+        for scan in scan_results
+    )
 
     honeypot_logs = HoneypotLog.query.order_by(HoneypotLog.created_at.desc()).all()
     blocked_ips = HoneypotBlockedIP.query.order_by(HoneypotBlockedIP.created_at.desc()).all()

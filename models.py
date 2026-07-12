@@ -54,6 +54,7 @@ class ScanResult(db.Model):
     scheduler_started_at = db.Column(db.DateTime, nullable=True)
     scheduler_heartbeat_at = db.Column(db.DateTime, nullable=True)
     scheduler_progress_at = db.Column(db.DateTime, nullable=True)
+    scheduler_execution_phase = db.Column(db.String(50), nullable=True)
     scheduler_worker_id = db.Column(db.String(36), nullable=True)
     scheduler_worker_host = db.Column(db.String(255), nullable=True)
     scheduler_process_id = db.Column(db.Integer, nullable=True)

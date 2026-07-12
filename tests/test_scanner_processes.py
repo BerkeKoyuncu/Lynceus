@@ -1,6 +1,8 @@
 import threading
 import time
 
+import pytest
+
 import scanner
 
 
@@ -105,7 +107,7 @@ def test_sequential_nmap_fallbacks_refresh_progress(monkeypatch):
     monkeypatch.setattr(
         scanner,
         "execute_nmap_subprocess",
-        lambda command, scan_id=None: next(results),
+        lambda command, scan_id=None, process_token=None: next(results),
     )
 
     result = scanner.run_nmap_scan(
@@ -120,3 +122,72 @@ def test_sequential_nmap_fallbacks_refresh_progress(monkeypatch):
         "starting-primary-scan",
         "starting-privilege-fallback-scan",
     ]
+
+
+def test_ownership_loss_is_not_swallowed_by_single_host_fallback(monkeypatch):
+    monkeypatch.setattr(scanner, "find_nmap_executable", lambda: "nmap")
+    monkeypatch.setattr(
+        scanner,
+        "execute_nmap_subprocess",
+        lambda command, scan_id=None, process_token=None: (0, "", ""),
+    )
+
+    with pytest.raises(scanner.ScanOwnershipLost):
+        scanner.run_nmap_scan(
+            "192.0.2.20",
+            "fast",
+            progress_callback=lambda phase: phase != "starting-single-host-fallback-scan",
+        )
+
+
+def test_ownership_loss_is_not_swallowed_by_subnet_fallback(monkeypatch):
+    monkeypatch.setattr(scanner, "find_nmap_executable", lambda: "nmap")
+    monkeypatch.setattr(
+        scanner,
+        "execute_nmap_subprocess",
+        lambda command, scan_id=None, process_token=None: (0, "", ""),
+    )
+
+    with pytest.raises(scanner.ScanOwnershipLost):
+        scanner.run_nmap_scan(
+            "192.0.2.0/30",
+            "fast",
+            progress_callback=lambda phase: phase != "starting-host-discovery",
+        )
+
+
+def test_process_registered_during_stop_is_also_terminated(monkeypatch):
+    process = FakeProcess()
+    constructor_entered = threading.Event()
+    allow_constructor = threading.Event()
+
+    def delayed_popen(*args, **kwargs):
+        constructor_entered.set()
+        assert allow_constructor.wait(timeout=5)
+        return process
+
+    monkeypatch.setattr(scanner.subprocess, "Popen", delayed_popen)
+    scanner.active_processes.clear()
+    scanner.active_scan_process_tokens.clear()
+    scanner.allow_scan_process_start(300, "attempt-token")
+
+    worker = threading.Thread(
+        target=scanner.execute_nmap_subprocess,
+        args=(["nmap"], 300, "attempt-token"),
+    )
+    worker.start()
+    assert constructor_entered.wait(timeout=5)
+
+    stopped = []
+    stopper = threading.Thread(
+        target=lambda: stopped.append(scanner.stop_scan_process(300))
+    )
+    stopper.start()
+    allow_constructor.set()
+    stopper.join(timeout=5)
+    worker.join(timeout=5)
+
+    assert stopped == [True]
+    assert process.killed is True
+    assert 300 not in scanner.active_processes
+    assert 300 not in scanner.active_scan_process_tokens

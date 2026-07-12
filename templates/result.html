@@ -81,6 +81,8 @@
             <span class="badge success-badge">Completed</span>
             {% elif scan_result.status == "running" %}
             <span class="badge running-badge">Running</span>
+            {% elif scan_result.status == "termination_failed" %}
+            <span class="badge error-badge">Termination Failed</span>
             {% elif scan_result.status == "pending" %}
             <span class="badge pending-badge">Pending</span>
             {% elif scan_result.status == "failed" %}
@@ -97,6 +99,12 @@
         <th>Created At</th>
         <td>{{ scan_result.created_at|localtime }}</td>
     </tr>
+    {% if scan_result.scheduler_execution_phase %}
+    <tr>
+        <th>Execution Phase</th>
+        <td>{{ scan_result.scheduler_execution_phase|replace('_', ' ')|replace('-', ' ')|title }}</td>
+    </tr>
+    {% endif %}
 </table>
 
 <hr>
@@ -120,6 +128,17 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button btn-danger"
             style="margin: 0; padding: 8px 16px; font-size: 13px; font-weight: 700;">Stop Scan</button>
+    </form>
+</div>
+
+{% elif scan_result.status == "termination_failed" %}
+<div class="alert alert-error"
+    style="border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+    <strong>Termination could not be confirmed.</strong> This scan continues to
+    reserve concurrency capacity. Retry termination or inspect the owning worker.
+    <form method="POST" action="{{ url_for('stop_scan', scan_id=scan_result.id) }}" style="margin-top: 12px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="button btn-danger">Retry Termination</button>
     </form>
 </div>
 

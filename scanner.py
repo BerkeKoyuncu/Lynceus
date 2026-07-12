@@ -470,6 +470,7 @@ import threading
 
 active_processes = {}
 active_processes_lock = threading.Lock()
+active_scan_process_tokens = {}
 NMAP_SUBPROCESS_TIMEOUT_SECONDS = 600
 
 class CompletedProcessDummy:
@@ -478,15 +479,36 @@ class CompletedProcessDummy:
         self.stdout = stdout
         self.stderr = stderr
 
-def execute_nmap_subprocess(command, scan_id=None):
-    proc = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-    if scan_id is not None:
-        with active_processes_lock:
+def allow_scan_process_start(scan_id, process_token):
+    if scan_id is None or process_token is None:
+        return
+    with active_processes_lock:
+        active_scan_process_tokens[scan_id] = process_token
+
+
+def end_scan_process_attempt(scan_id, process_token):
+    if scan_id is None or process_token is None:
+        return
+    with active_processes_lock:
+        if active_scan_process_tokens.get(scan_id) == process_token:
+            active_scan_process_tokens.pop(scan_id, None)
+
+
+def execute_nmap_subprocess(command, scan_id=None, process_token=None):
+    with active_processes_lock:
+        if (
+            scan_id is not None
+            and process_token is not None
+            and active_scan_process_tokens.get(scan_id) != process_token
+        ):
+            return -1, "", "Scan attempt is no longer allowed to start Nmap."
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        if scan_id is not None:
             active_processes.setdefault(scan_id, set()).add(proc)
     try:
         stdout, stderr = proc.communicate(timeout=NMAP_SUBPROCESS_TIMEOUT_SECONDS)
@@ -507,6 +529,7 @@ def execute_nmap_subprocess(command, scan_id=None):
 
 def stop_scan_process(scan_id):
     with active_processes_lock:
+        active_scan_process_tokens.pop(scan_id, None)
         processes = list(active_processes.get(scan_id, set()))
     if not processes:
         return False
@@ -566,9 +589,13 @@ def extract_scanned_endpoints_from_xml(xml_output):
     return endpoints
 
 
+class ScanOwnershipLost(RuntimeError):
+    pass
+
+
 def _notify_scan_progress(progress_callback, phase):
     if progress_callback is not None and progress_callback(phase) is False:
-        raise RuntimeError("Scan ownership was lost before the next scan phase.")
+        raise ScanOwnershipLost("Scan ownership was lost before the next scan phase.")
 
 
 def run_nmap_scan(
@@ -579,6 +606,7 @@ def run_nmap_scan(
     timing_template="4",
     scan_id=None,
     progress_callback=None,
+    process_token=None,
 ):
     """
     Runs an Nmap scan and returns structured results.
@@ -708,7 +736,7 @@ def run_nmap_scan(
 
     try:
         _notify_scan_progress(progress_callback, "starting-primary-scan")
-        returncode, stdout, stderr = execute_nmap_subprocess(command, scan_id)
+        returncode, stdout, stderr = execute_nmap_subprocess(command, scan_id, process_token)
         completed_process = CompletedProcessDummy(returncode, stdout, stderr)
 
         # Check if SYN scan failed due to privilege/admin rights
@@ -732,7 +760,7 @@ def run_nmap_scan(
             command += ["-oX", "-", target]
 
             _notify_scan_progress(progress_callback, "starting-privilege-fallback-scan")
-            returncode_fb, stdout_fb, stderr_fb = execute_nmap_subprocess(command, scan_id)
+            returncode_fb, stdout_fb, stderr_fb = execute_nmap_subprocess(command, scan_id, process_token)
             completed_process = CompletedProcessDummy(returncode_fb, stdout_fb, stderr_fb)
             stdout = completed_process.stdout
             stderr = completed_process.stderr
@@ -776,7 +804,7 @@ def run_nmap_scan(
                 
                 try:
                     _notify_scan_progress(progress_callback, "starting-single-host-fallback-scan")
-                    retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id)
+                    retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id, process_token)
                     fallback_process = CompletedProcessDummy(retcode, f_stdout, f_stderr)
                     
                     if fallback_process.returncode == 0:
@@ -792,7 +820,9 @@ def run_nmap_scan(
                                 is_fallback = True
                                 original_command = " ".join(command)
                                 command = fallback_command
-                except Exception:
+                except ScanOwnershipLost:
+                    raise
+                except (OSError, ValueError, subprocess.SubprocessError, ET.ParseError):
                     pass
             else:
                 # Subnet: Run Python-based host discovery first to find online hosts
@@ -816,7 +846,7 @@ def run_nmap_scan(
                             fallback_command.append("-Pn")
                             
                         _notify_scan_progress(progress_callback, "starting-subnet-fallback-scan")
-                        retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id)
+                        retcode, f_stdout, f_stderr = execute_nmap_subprocess(fallback_command, scan_id, process_token)
                         fallback_process = CompletedProcessDummy(retcode, f_stdout, f_stderr)
                         
                         if fallback_process.returncode == 0:
@@ -832,7 +862,9 @@ def run_nmap_scan(
                                     is_fallback = True
                                     original_command = " ".join(command)
                                     command = fallback_command
-                except Exception:
+                except ScanOwnershipLost:
+                    raise
+                except (OSError, ValueError, subprocess.SubprocessError, ET.ParseError):
                     pass
 
         final_output = stderr if stderr else ""
@@ -850,6 +882,9 @@ def run_nmap_scan(
             "hosts": hosts,
             "scanned_endpoints": scanned_endpoints
         }
+
+    except ScanOwnershipLost:
+        raise
 
     except ET.ParseError as error:
         return {

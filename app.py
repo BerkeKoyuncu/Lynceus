@@ -106,10 +106,14 @@ def _validate_scheduler_config(app):
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be at least "
             "SCHEDULER_LEASE_SECONDS."
         )
-    if app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] <= NMAP_SUBPROCESS_TIMEOUT_SECONDS:
+    minimum_progress_timeout = (
+        NMAP_SUBPROCESS_TIMEOUT_SECONDS + app.config["SCHEDULER_LEASE_SECONDS"]
+    )
+    if app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] < minimum_progress_timeout:
         raise RuntimeError(
-            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be greater than the "
-            f"{NMAP_SUBPROCESS_TIMEOUT_SECONDS}-second Nmap subprocess timeout."
+            "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be at least the Nmap "
+            "subprocess timeout plus SCHEDULER_LEASE_SECONDS "
+            f"({minimum_progress_timeout} seconds)."
         )
     if app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"] >= app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"]:
         raise RuntimeError(
@@ -600,6 +604,19 @@ def _claim_scheduled_scan(schedule, now):
 def _fail_scheduler_job(job, message):
     job.status = "failed"
     job.scheduler_dispatch_state = "failed"
+    job.scheduler_execution_phase = "failed"
+    job.result_data = json.dumps({
+        "command": "N/A",
+        "output": message,
+        "hosts": [],
+    })
+
+
+def _mark_scheduler_termination_failed(job, message):
+    """Keep an unconfirmed execution active in concurrency accounting."""
+    job.status = "termination_failed"
+    job.scheduler_dispatch_state = "orphaned"
+    job.scheduler_execution_phase = "termination_failed"
     job.result_data = json.dumps({
         "command": "N/A",
         "output": message,
@@ -665,7 +682,11 @@ def _recover_expired_scan_jobs(
             )
         else:
             message = "Scan exceeded MAX_SCAN_RUNTIME_SECONDS and was not retried."
-        _fail_scheduler_job(job, message)
+        if stopped:
+            _fail_scheduler_job(job, message)
+            job.scheduler_execution_phase = "failed"
+        else:
+            _mark_scheduler_termination_failed(job, message)
 
     stalled_jobs = running_jobs.filter(
         or_(
@@ -691,7 +712,7 @@ def _recover_expired_scan_jobs(
             stopped = stop_scan_process(job.id)
 
         if not stopped:
-            _fail_scheduler_job(
+            _mark_scheduler_termination_failed(
                 job,
                 "Expired scan could not be safely stopped by its owning local "
                 "worker, so it was not retried.",
@@ -709,6 +730,7 @@ def _recover_expired_scan_jobs(
             job.scheduler_started_at = None
             job.scheduler_heartbeat_at = None
             job.scheduler_progress_at = None
+            job.scheduler_execution_phase = None
             job.scheduler_worker_id = None
             job.scheduler_worker_host = None
             job.scheduler_process_id = None
@@ -750,7 +772,9 @@ def _recover_scan_jobs_with_lock(app, now, commit=False):
 def _dispatch_pending_scheduled_scans(app, now=None):
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     eligible, retry_before, _ = _recover_scan_jobs_with_lock(app, now)
-    running_count = ScanResult.query.filter(ScanResult.status == "running").count()
+    running_count = ScanResult.query.filter(
+        ScanResult.status.in_(["running", "termination_failed"])
+    ).count()
     live_claims = ScanResult.query.filter(
         ScanResult.status == "pending",
         ScanResult.scheduler_dispatch_state == "claimed",
@@ -784,6 +808,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
                 ScanResult.scheduler_dispatch_state: "claimed",
                 ScanResult.scheduler_claimed_at: now,
                 ScanResult.scheduler_claim_token: claim_token,
+                ScanResult.scheduler_execution_phase: "claimed",
                 ScanResult.scheduler_worker_id: app.config["SCAN_WORKER_ID"],
                 ScanResult.scheduler_worker_host: socket.gethostname(),
                 ScanResult.scheduler_process_id: os.getpid(),

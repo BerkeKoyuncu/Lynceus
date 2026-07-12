@@ -263,17 +263,30 @@ def stop_scan(scan_id):
         flash("You are not authorised to stop this scan.", "error")
         return redirect(url_for("scan.scan"))
 
-    if scan_result.status in ["pending", "running"]:
+    if scan_result.status == "pending":
         scan_result.status = "cancelled"
-        if scan_result.scheduler_dispatch_state is not None:
-            scan_result.scheduler_dispatch_state = "cancelled"
+        scan_result.scheduler_dispatch_state = "cancelled"
+        scan_result.scheduler_execution_phase = "cancelled"
         db.session.commit()
-        
-        # Kill background Nmap process
-        from scanner import stop_scan_process
-        stop_scan_process(scan_result.id)
-        
         flash("Scan execution cancelled.", "success")
+    elif scan_result.status in ["running", "termination_failed"]:
+        from scanner import stop_scan_process
+        if stop_scan_process(scan_result.id):
+            scan_result.status = "cancelled"
+            scan_result.scheduler_dispatch_state = "cancelled"
+            scan_result.scheduler_execution_phase = "cancelled"
+            db.session.commit()
+            flash("Scan execution cancelled.", "success")
+        else:
+            scan_result.status = "termination_failed"
+            scan_result.scheduler_dispatch_state = "orphaned"
+            scan_result.scheduler_execution_phase = "termination_failed"
+            db.session.commit()
+            flash(
+                "The scan process could not be confirmed terminated and still "
+                "consumes concurrency capacity.",
+                "error",
+            )
     else:
         flash("Scan is not in a cancellable state.", "warning")
 
@@ -336,7 +349,8 @@ def history():
     ).all()
 
     has_active_scans = any(
-        scan.status in ["pending", "running"] for scan in scan_results
+        scan.status in ["pending", "running", "termination_failed"]
+        for scan in scan_results
     )
 
     return render_template(
