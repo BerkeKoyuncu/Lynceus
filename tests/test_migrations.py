@@ -193,25 +193,70 @@ def test_b5_orphan_can_reach_integrity_cleanup_revision():
         _cleanup_database(fd, path)
 
 
-def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild():
+@pytest.mark.parametrize(
+    ("table_name", "insert_sql"),
+    [
+        (
+            "scan_result",
+            "INSERT INTO scan_result ("
+            "id, user_id, input_ip, subnet_mask, scan_type, network_cidr, status"
+            ") VALUES (975, 999999, '203.0.113.75', '255.255.255.255', "
+            "'syn', '203.0.113.75/32', 'pending')",
+        ),
+        (
+            "scan_schedule",
+            "INSERT INTO scan_schedule ("
+            "id, user_id, name, input_ip, subnet_mask, scan_type, network_cidr, "
+            "frequency, next_run"
+            ") VALUES (975, 999999, 'Orphan schedule', '203.0.113.75', "
+            "'255.255.255.255', 'syn', '203.0.113.75/32', 'daily', "
+            "'2026-07-14 10:00:00')",
+        ),
+        (
+            "system_setting",
+            "INSERT INTO system_setting (id, user_id) VALUES (975, 999999)",
+        ),
+        (
+            "scan_credential",
+            "INSERT INTO scan_credential (id, user_id, name) "
+            "VALUES (975, 999999, 'Orphan credential')",
+        ),
+        (
+            "security_rule",
+            "INSERT INTO security_rule (id, user_id, name) "
+            "VALUES (975, 999999, 'Orphan rule')",
+        ),
+    ],
+    ids=[
+        "scan-result",
+        "scan-schedule",
+        "system-setting",
+        "scan-credential",
+        "security-rule",
+    ],
+)
+def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild(
+    table_name,
+    insert_sql,
+    capsys,
+):
     fd, path, app = _database_app()
     try:
         with app.app_context():
             upgrade(revision="d9a4e1c6f320")
 
         connection = sqlite3.connect(path)
-        connection.execute(
-            "INSERT INTO scan_result ("
-            "id, user_id, input_ip, subnet_mask, scan_type, network_cidr, status"
-            ") VALUES (975, 999999, '203.0.113.75', '255.255.255.255', "
-            "'syn', '203.0.113.75/32', 'pending')"
-        )
+        connection.execute(insert_sql)
         connection.commit()
         connection.close()
 
         with app.app_context(), pytest.raises(SystemExit) as error:
             upgrade()
         assert error.value.code == 1
+        assert (
+            f"{table_name}[id=975].user_id=999999"
+            in capsys.readouterr().err
+        )
 
         connection = sqlite3.connect(path)
         revision = connection.execute(
