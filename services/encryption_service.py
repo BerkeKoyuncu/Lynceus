@@ -2,6 +2,7 @@ import base64
 import hashlib
 import os
 from cryptography.fernet import Fernet
+from services.runtime_paths import ensure_runtime_directories, secret_dir
 
 def get_fernet_key(secret_string: str) -> bytes:
     # Hash the secret string using SHA-256 to get exactly 32 bytes
@@ -15,12 +16,11 @@ def get_or_create_local_secret(filename):
     If the file does not exist, generates a cryptographically secure random key
     and saves it.
     """
-    # Go up one level since we are in the services/ subdirectory
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    secret_file = os.path.join(root_dir, filename)
-    if os.path.exists(secret_file):
+    ensure_runtime_directories()
+    secret_file = secret_dir() / filename
+    if secret_file.exists():
         try:
-            with open(secret_file, "r", encoding="utf-8") as f:
+            with secret_file.open("r", encoding="utf-8") as f:
                 saved_key = f.read().strip()
                 if saved_key:
                     return saved_key
@@ -30,7 +30,7 @@ def get_or_create_local_secret(filename):
     import secrets
     new_key = secrets.token_hex(32)
     try:
-        with open(secret_file, "w", encoding="utf-8") as f:
+        with secret_file.open("w", encoding="utf-8") as f:
             f.write(new_key)
     except Exception:
         pass

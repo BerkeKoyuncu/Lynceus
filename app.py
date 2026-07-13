@@ -19,6 +19,7 @@ from services.encryption_service import get_flask_secret_key
 from services.scan_service import execute_scan
 from services.email_service import send_notification_email_async
 from scanner import NMAP_SUBPROCESS_TIMEOUT_SECONDS
+from services.runtime_paths import ensure_runtime_directories, resource_path
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -127,7 +128,13 @@ def _validate_scheduler_config(app):
         )
 
 def create_app(config=None):
-    app = Flask(__name__)
+    data_dir = ensure_runtime_directories()
+    app = Flask(
+        __name__,
+        instance_path=str(data_dir),
+        template_folder=str(resource_path("templates")),
+        static_folder=str(resource_path("static")),
+    )
     
     app.config["SECRET_KEY"] = get_flask_secret_key()
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
@@ -166,7 +173,7 @@ def create_app(config=None):
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
-    migrate.init_app(app, db)
+    migrate.init_app(app, db, directory=str(resource_path("migrations")))
 
     # Register blueprints
     from routes.auth import auth_bp
@@ -269,7 +276,11 @@ def create_app(config=None):
     # Decoystop and blocker
     @app.before_request
     def check_honeypot_and_blocking():
-        if request.path.startswith('/static/') or request.path == '/favicon.ico':
+        if (
+            request.path.startswith('/static/')
+            or request.path == '/favicon.ico'
+            or request.path == '/health'
+        ):
             return
 
         client_ip = get_client_ip()
@@ -371,6 +382,10 @@ def create_app(config=None):
             return redirect(url_for("auth.index"))
         return render_template("blocked.html", ip_address=client_ip, block=block)
 
+    @app.route("/health")
+    def health():
+        return {"status": "ok"}
+
     # CLI actions
     @app.cli.command("init-db")
     def init_db():
@@ -393,6 +408,43 @@ def create_app(config=None):
             click.echo("")
         except Exception as e:
             click.echo(f"Could not render terminal QR code: {str(e)}")
+
+    def is_windows_administrator():
+        if os.name != "nt":
+            return False
+        try:
+            import ctypes
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+
+    def authorise_admin_recovery(admin, windows_admin_recovery):
+        from werkzeug.security import check_password_hash
+
+        if windows_admin_recovery:
+            if not is_windows_administrator():
+                raise click.ClickException(
+                    "Windows Administrator privileges are required for local recovery."
+                )
+            return
+
+        attempts = 3
+        while attempts > 0:
+            current_pass_or_key = click.prompt(
+                "Enter current Admin password OR the App SECRET_KEY to authorise reset",
+                hide_input=True,
+            ).strip()
+            if (
+                check_password_hash(admin.password_hash, current_pass_or_key)
+                or current_pass_or_key == current_app.config.get("SECRET_KEY")
+            ):
+                return
+            attempts -= 1
+            click.echo(
+                "Authorisation failed. Incorrect password or secret key. "
+                f"{attempts} attempts remaining."
+            )
+        raise click.ClickException("Too many failed attempts. Reset aborted.")
 
     @app.cli.command("create-admin")
     def create_admin():
@@ -501,6 +553,50 @@ def create_app(config=None):
         seed_mock_security_data()
         click.echo("Demo security data seeded successfully.")
 
+    @app.cli.command("reset-admin-password")
+    @click.option(
+        "--windows-admin-recovery",
+        is_flag=True,
+        help="Authorise recovery using the elevated local Windows Administrator context.",
+    )
+    def reset_admin_password(windows_admin_recovery):
+        """Reset only the administrator password, preserving their 2FA secret."""
+        from werkzeug.security import generate_password_hash
+
+        admin = User.query.filter_by(is_admin=True).first()
+        if admin is None:
+            raise click.ClickException("No administrator account exists. Run create-admin first.")
+        authorise_admin_recovery(admin, windows_admin_recovery)
+        password = click.prompt(
+            "New Admin password",
+            hide_input=True,
+            confirmation_prompt=True,
+        )
+        if not password:
+            raise click.ClickException("Password cannot be empty.")
+        admin.password_hash = generate_password_hash(password)
+        db.session.commit()
+        click.echo(f"Administrator password reset successfully for {admin.email}.")
+
+    @app.cli.command("reset-admin-2fa")
+    @click.option(
+        "--windows-admin-recovery",
+        is_flag=True,
+        help="Authorise recovery using the elevated local Windows Administrator context.",
+    )
+    def reset_admin_2fa(windows_admin_recovery):
+        """Clear only admin 2FA so a new authenticator is enrolled at next login."""
+        admin = User.query.filter_by(is_admin=True).first()
+        if admin is None:
+            raise click.ClickException("No administrator account exists. Run create-admin first.")
+        authorise_admin_recovery(admin, windows_admin_recovery)
+        admin.otp_secret = None
+        db.session.commit()
+        click.echo(
+            f"Administrator 2FA reset successfully for {admin.email}. "
+            "A new authenticator will be enrolled at the next login."
+        )
+
     # Background threads
     import sys
     flask_run = os.environ.get("FLASK_RUN_FROM_CLI") == "true"
@@ -510,6 +606,9 @@ def create_app(config=None):
         "init-db",
         "cleanup-scans",
         "seed-demo-data",
+        "reset-admin-password",
+        "reset-admin-2fa",
+        "setup-admin",
     }
     is_management_cli = any(
         argument in management_commands for argument in sys.argv[1:]

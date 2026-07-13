@@ -37,6 +37,8 @@ Thumbs.db
 uploads/
 reports/
 exports/
+installer/build/
+installer/output/
 
 # Local application secret
 .secret_key

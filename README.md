@@ -448,6 +448,25 @@ http://<your-lan-ip>:7321   (waitress, LAN)
 
 ---
 
+## Windows Setup Package
+
+The `installer` directory contains a reproducible Windows 10/11 and Windows
+Server 2019/2022 x64 build pipeline. It bundles Python and all Python libraries,
+installs Lynceus as an automatic SYSTEM scheduled task, creates a desktop Control
+Panel shortcut, preserves data under `%ProgramData%\Lynceus`, applies database
+migrations, and starts the interactive admin creation CLI after setup.
+
+The Control Panel provides server start/stop/restart, browser launch, independent
+admin password and 2FA recovery, database upgrades, stale-scan cleanup, SQLite
+online backups, and log/data-folder access.
+
+Build instructions are in [`installer/README.md`](installer/README.md). A fully
+packaged Lynceus setup does not include Nmap/Npcap; install the official Nmap
+Windows package separately before using network scan features. Double-click
+`Create-Setup.cmd` to rebuild Lynceus after any application update.
+
+---
+
 ## Basic Usage
 
 1. Register or log in.
