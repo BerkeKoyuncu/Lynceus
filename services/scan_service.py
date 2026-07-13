@@ -23,6 +23,7 @@ from scanner import (
 from services.anomaly_service import evaluate_host_anomalies, record_observation
 from services.rule_service import evaluate_rules_for_host, evaluate_cve_findings, seed_default_rules, reconcile_findings_for_scan
 from services.email_service import send_notification_email_async
+from services.device_classifier import classify_device_type
 
 # Mapping for common services to NVD vendors/products
 VENDOR_PRODUCT_MAP = {
@@ -661,123 +662,7 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
     return {"status": "skipped", "message": "No HTTP Basic credentials were available to test"}
 
 def detect_device_type(hostname, mac_vendor, ports_list):
-    """
-    Auto-detects the device type based on hostname, mac vendor, and open ports.
-    """
-    hostname_lower = (hostname or "").lower()
-    vendor_lower = (mac_vendor or "").lower()
-    
-    open_ports = set()
-    for p in ports_list:
-        if isinstance(p, dict):
-            if p.get("state") != "open":
-                continue
-            port_val = p.get("port")
-        else:
-            port_val = p
-        try:
-            if port_val:
-                open_ports.add(int(port_val))
-        except ValueError:
-            pass
-
-    if any(k in hostname_lower for k in ["firewall", "fortigate", "pfsense", "opnsense", "checkpoint", "asa", "sonicwall"]):
-        return "Firewall"
-    if "firewall" in vendor_lower:
-        return "Firewall"
-        
-    is_voip = False
-    if any(k in hostname_lower for k in ["phone", "voip", "sip", "yealink", "grandstream", "snom", "fanvil", "polycom", "avaya", "mitel", "poly"]):
-        is_voip = True
-    elif any(k in vendor_lower for k in ["yealink", "grandstream", "snom", "fanvil", "polycom", "avaya", "mitel", "gigaset", "poly"]):
-        is_voip = True
-    elif any(p in open_ports for p in [2000, 5060, 5061]):
-        is_voip = True
-    elif "alcatel" in vendor_lower or "alcatel" in hostname_lower:
-        if not any(k in hostname_lower for k in ["switch", "sw-", "sw0", "router", "gateway", "gw-"]):
-            is_voip = True
-    elif "cisco" in vendor_lower or "cisco" in hostname_lower:
-        if any(k in hostname_lower for k in ["phone", "voip", "ata", "spa"]):
-            is_voip = True
-        elif any(p in open_ports for p in [2000, 5060, 5061]):
-            is_voip = True
-
-    if is_voip:
-        return "IP Phone"
-
-    is_camera = False
-    if any(k in hostname_lower for k in ["camera", "ipc", "cctv", "webcam", "dvr", "nvr"]):
-        is_camera = True
-    elif any(k in vendor_lower for k in ["hikvision", "dahua", "foscam", "reolink", "amcrest", "hanwha"]):
-        is_camera = True
-    elif "axis" in vendor_lower and "communications" in vendor_lower:
-        is_camera = True
-    elif 554 in open_ports:
-        is_camera = True
-
-    if is_camera:
-        return "IP Camera"
-
-    if any(k in vendor_lower for k in ["vmware", "qemu", "xen", "virtualbox", "proxmox"]):
-        return "Virtual Machine"
-    if any(k in hostname_lower for k in ["-vm", "vm-", "virtual-"]):
-        return "Virtual Machine"
-        
-    if any(k in hostname_lower for k in ["router", "gateway", "rt-", "gw-", "ubnt", "mikrotik"]):
-        return "Router"
-    if any(k in vendor_lower for k in ["cisco", "juniper", "ubiquiti", "mikrotik", "linksys", "netgear", "tp-link", "asus", "zyxel"]):
-        if 179 in open_ports or 520 in open_ports:
-            return "Router"
-        if any(k in hostname_lower for k in ["switch", "sw-", "sw0"]):
-            return "Switch"
-        return "Router"
-        
-    if any(k in hostname_lower for k in ["switch", "sw-", "catalyst", "procurve", "edge-sw"]):
-        return "Switch"
-    if "switch" in vendor_lower:
-        return "Switch"
-        
-    if any(k in hostname_lower for k in ["printer", "print", "copier", "epson", "hp-", "canon", "lexmark", "xerox", "brother"]):
-        return "Printer"
-    if any(p in open_ports for p in [515, 631, 9100]):
-        return "Printer"
-    if any(k in vendor_lower for k in ["epson", "canon", "lexmark", "brother", "xerox", "konica", "ricoh", "kyocera", "okidata"]):
-        return "Printer"
-        
-    if any(k in hostname_lower for k in ["android", "iphone", "ipad", "phone", "galaxy", "huawei", "xiaomi"]):
-        return "Mobile"
-    if any(k in vendor_lower for k in ["apple", "samsung", "huawei", "motorola", "htc", "xiaomi", "nokia", "oneplus"]):
-        if not any(p in open_ports for p in [80, 443, 22, 3389, 445]):
-            return "Mobile"
-
-    if any(k in hostname_lower for k in ["iot", "smart", "camera", "dvr", "nvr", "tv", "chromecast", "raspberry"]):
-        return "IoT"
-    if any(p in open_ports for p in [1883, 8883]):
-        return "IoT"
-    if any(k in vendor_lower for k in ["synology", "qnap"]):
-        return "IoT"
-        
-    server_ports = {3306, 5432, 1433, 1521, 389, 636, 110, 995, 143, 993, 25, 465, 587, 8080, 8443, 9000, 27017}
-    if any(p in open_ports for p in server_ports):
-        return "Server"
-    if "server" in hostname_lower:
-        return "Server"
-        
-    if any(k in hostname_lower for k in ["pc", "desktop", "laptop", "workstation", "client", "win10", "win11"]):
-        return "Workstation"
-    if any(p in open_ports for p in [139, 445, 3389]):
-        if "server" in hostname_lower:
-            return "Server"
-        return "Workstation"
-        
-    if 22 in open_ports or 23 in open_ports:
-        if any(k in vendor_lower for k in ["dell", "hp ", "hewlett", "supermicro", "vmware", "lenovo", "ibm", "fujitsu"]):
-            return "Server"
-        if "server" in hostname_lower:
-            return "Server"
-        return "Unknown"
-        
-    return "Unknown"
+    return classify_device_type(hostname, mac_vendor, ports_list)
 
 def format_local_datetime(dt):
     if not dt:

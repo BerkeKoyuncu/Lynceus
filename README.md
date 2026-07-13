@@ -411,18 +411,18 @@ python -m flask --app app cleanup-scans
 
 ```bash
 $env:START_SCHEDULER = "false"
-python -m flask --app app run
+python -m flask --app app run --port 7321
 ```
 
-The development server binds to `127.0.0.1:5000` by default. Debug mode is controlled by the `FLASK_DEBUG` environment variable (default: `false`).
+The development server binds to `127.0.0.1:7321` by default. Debug mode is controlled by the `FLASK_DEBUG` environment variable (default: `false`). Set `APP_PORT` when launching `app.py` or `wsgi.py`, or pass a different `--port` to Flask CLI, when an override is needed.
 
 **LAN/Production deployment with Waitress:**
 
 For local network deployment, use [Waitress](https://docs.pylonsproject.org/projects/waitress/) instead of the Flask development server:
 
 ```bash
-# Bind to all interfaces on port 5000
-waitress-serve --call --host 0.0.0.0 --port 5000 app:create_app
+# Bind to all interfaces on port 7321
+waitress-serve --call --host 0.0.0.0 --port 7321 app:create_app
 ```
 
 The scheduler is disabled by default. Run exactly one dedicated scheduler-enabled
@@ -430,7 +430,7 @@ process in production (never enable it in multiple web workers):
 
 ```powershell
 $env:START_SCHEDULER = "true"
-waitress-serve --call --host 0.0.0.0 --port 5000 app:create_app
+waitress-serve --call --host 0.0.0.0 --port 7321 app:create_app
 ```
 
 `flask run` is treated as a development/CLI process, so it does not start the
@@ -441,8 +441,8 @@ scheduler even when `START_SCHEDULER=true`.
 By default the application is reachable at:
 
 ```text
-http://127.0.0.1:5000   (development)
-http://<your-lan-ip>:5000   (waitress, LAN)
+http://127.0.0.1:7321   (development)
+http://<your-lan-ip>:7321   (waitress, LAN)
 ```
 
 

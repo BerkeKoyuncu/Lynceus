@@ -5,6 +5,9 @@ import urllib.request
 import pytest
 
 from services.scan_service import audit_ftp, audit_http_basic, audit_redis, detect_device_type
+from models import Asset, db
+from services.topology_service import classify_device, get_network_topology
+import services.topology_service as topology_service
 
 
 def test_ftp_timeout_returns_skipped(monkeypatch):
@@ -183,4 +186,121 @@ def test_http_basic_closes_successful_response(monkeypatch):
 
 def test_filtered_ports_do_not_affect_device_type():
     ports = [{"port": 554, "state": "filtered"}, {"port": 9100, "state": "closed"}]
-    assert detect_device_type("generic-host", "generic vendor", ports) not in {"Camera", "Printer"}
+    assert detect_device_type("generic-host", "generic vendor", ports) not in {"IP Camera", "Printer"}
+
+
+@pytest.mark.parametrize(
+    ("hostname", "vendor", "ports", "expected"),
+    [
+        (
+            "",
+            "ZTE",
+            [
+                {"port": 53, "state": "open", "service": "domain"},
+                {"port": 80, "state": "open", "service": "http"},
+                {"port": 139, "state": "open", "service": "netbios-ssn"},
+                {"port": 445, "state": "open", "service": "microsoft-ds"},
+            ],
+            "Router",
+        ),
+        (
+            "office-pc",
+            "Dell",
+            [{"port": 445, "state": "open", "service": "microsoft-ds"}],
+            "Workstation",
+        ),
+        (
+            "core-switch",
+            "Cisco Systems",
+            [{"port": 161, "state": "open", "service": "snmp"}],
+            "Switch",
+        ),
+        (
+            "db-server",
+            "Supermicro",
+            [{"port": 5432, "state": "open", "service": "postgresql"}],
+            "Server",
+        ),
+        (
+            "lobby-camera",
+            "Generic",
+            [{"port": 554, "state": "open", "service": "rtsp"}],
+            "IP Camera",
+        ),
+        (
+            "meeting-phone",
+            "Yealink",
+            [{"port": 5060, "state": "open", "service": "sip"}],
+            "IP Phone",
+        ),
+        (
+            "unlabelled",
+            "Generic Vendor",
+            [{"port": 80, "state": "open", "service": "http"}],
+            "Unknown",
+        ),
+    ],
+)
+def test_device_type_uses_combined_evidence(hostname, vendor, ports, expected):
+    assert detect_device_type(hostname, vendor, ports) == expected
+
+
+def test_scan_and_topology_use_the_same_classifier():
+    ports = [
+        {"port": 53, "state": "open", "service": "domain"},
+        {"port": 445, "state": "open", "service": "microsoft-ds"},
+    ]
+    scan_type = detect_device_type("", "ZTE", ports)
+    topology_type = classify_device(
+        "192.168.1.1",
+        "00:11:22:33:44:55",
+        "",
+        "ZTE",
+        ports,
+    )
+    assert scan_type == topology_type == "Router"
+
+
+def test_gateway_signal_overrides_ambiguous_endpoint_ports():
+    assert classify_device(
+        "192.168.1.1",
+        "00:11:22:33:44:55",
+        "generic-host",
+        "Generic Vendor",
+        [{"port": 445, "state": "open", "service": "microsoft-ds"}],
+        is_gateway=True,
+    ) == "Router"
+
+
+def test_topology_merges_inventory_asset_with_default_gateway(app, monkeypatch):
+    monkeypatch.setattr(topology_service, "detect_default_gateway", lambda: "192.168.1.1")
+    monkeypatch.setattr(topology_service, "get_system_arp_table", lambda: [])
+
+    with app.app_context():
+        gateway_asset = Asset(
+            name="Office Modem",
+            ip_address="192.168.1.1",
+            mac_address="00:11:22:33:44:55",
+            mac_vendor="Generic Router Vendor",
+            device_type="Router",
+            criticality="High",
+        )
+        db.session.add(gateway_asset)
+        db.session.commit()
+
+        topology = get_network_topology([gateway_asset])
+
+    ip_nodes = [
+        node
+        for node in topology["nodes"]
+        if node.get("ip") == "192.168.1.1"
+        or node.get("details", {}).get("ip") == "192.168.1.1"
+    ]
+    assert len(ip_nodes) == 1
+    assert ip_nodes[0]["id"] == "host_192.168.1.1"
+    assert ip_nodes[0]["details"]["network_role"] == "Default Gateway"
+    assert any(
+        edge["from"] == "host_192.168.1.1"
+        and edge["to"] == "subnet_192.168.1.0/24"
+        for edge in topology["edges"]
+    )

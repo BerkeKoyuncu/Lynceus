@@ -1,5 +1,9 @@
 from models import User
 
+
+def test_default_application_port(app):
+    assert app.config["APP_PORT"] == 7321
+
 def test_login_logout(client):
     # Register test user
     response = client.post("/register", data={

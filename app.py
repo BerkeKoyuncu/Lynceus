@@ -132,6 +132,7 @@ def create_app(config=None):
     app.config["SECRET_KEY"] = get_flask_secret_key()
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["APP_PORT"] = os.environ.get("APP_PORT", "7321")
     app.config["TRUST_PROXY"] = os.environ.get("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
     app.config["SEED_DEMO_DATA"] = os.environ.get("SEED_DEMO_DATA", "False").lower() in ("true", "1", "yes")
     app.config["START_SCHEDULER"] = (
@@ -153,6 +154,12 @@ def create_app(config=None):
 
     if config:
         app.config.update(config)
+    try:
+        app.config["APP_PORT"] = int(app.config["APP_PORT"])
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("APP_PORT must be an integer between 1 and 65535.") from error
+    if not 1 <= app.config["APP_PORT"] <= 65535:
+        raise RuntimeError("APP_PORT must be an integer between 1 and 65535.")
     _validate_scheduler_config(app)
     app.config.setdefault("SCAN_WORKER_ID", str(uuid.uuid4()))
 
@@ -1031,4 +1038,4 @@ if __name__ == "__main__":
     import os
     app = create_app()
     debug_val = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
-    app.run(debug=debug_val, host="127.0.0.1")
+    app.run(debug=debug_val, host="127.0.0.1", port=app.config["APP_PORT"])

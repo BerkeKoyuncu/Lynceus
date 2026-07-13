@@ -3,6 +3,7 @@ import subprocess
 import re
 import socket
 from models import Asset, SecurityAnomaly
+from services.device_classifier import classify_device_type
 
 def detect_default_gateway():
     """
@@ -57,48 +58,12 @@ def get_system_arp_table():
     return arp_entries
 
 def classify_device(ip, mac, hostname, vendor, open_ports, is_gateway=False):
-    """
-    Heuristic classifier for devices based on ports, vendor, and gateway status.
-    """
-    if is_gateway:
-        return "Router"
-
-    # Infrastructure keywords
-    infra_vendors = ["cisco", "ubiquiti", "mikrotik", "netgear", "d-link", "tp-link", "hp", "juniper", "huawei", "linksys"]
-    vendor_lower = (vendor or "").lower()
-    for brand in infra_vendors:
-        if brand in vendor_lower:
-            return "Switch"
-
-    # Ports check
-    port_nums = [int(p.get("port") or 0) for p in open_ports] if isinstance(open_ports, list) else []
-    # If SNMP is open, or Telnet + SSH are both open on infrastructure vendor
-    if 161 in port_nums or 162 in port_nums:
-        return "Switch"
-    
-    if (22 in port_nums or 23 in port_nums) and any(b in (hostname or "").lower() for b in ["switch", "router", "gateway", "ap-"]):
-        return "Router" if "router" in (hostname or "").lower() else "Switch"
-
-    # Standard endpoint classes
-    if any(os_keyword in (hostname or "").lower() for os_keyword in ["win", "pc", "desktop", "laptop"]):
-        return "Workstation"
-    host_lower = (hostname or "").lower()
-    
-    ports_set = {int(p.get("port", 0)) for p in open_ports if p.get("port")}
-    
-    if 53 in ports_set or 67 in ports_set or 68 in ports_set:
-        return "Network Switch"
-        
-    if "cisco" in vendor_lower or "netgear" in vendor_lower or "tp-link" in vendor_lower:
-        return "Network Switch"
-        
-    if 631 in ports_set or 9100 in ports_set or "printer" in host_lower or "hp" in vendor_lower:
-        return "Printer"
-        
-    if 22 in ports_set or 80 in ports_set or 443 in ports_set or 8080 in ports_set:
-        return "Server"
-        
-    return "Workstation"
+    return classify_device_type(
+        hostname,
+        vendor,
+        open_ports,
+        is_gateway=is_gateway,
+    )
 
 def get_network_topology(assets, scan_results=None):
     """
@@ -127,23 +92,78 @@ def get_network_topology(assets, scan_results=None):
     edges = []
     seen_nodes = set()
 
-    # Core node representing the default gateway or Lynceus itself
-    gateway_label = f"Gateway\n({gateway_ip})" if gateway_ip else "Lynceus Gateway"
-    gateway_id = f"gateway_{gateway_ip}" if gateway_ip else "gateway_core"
-    
-    nodes.append({
-        "id": gateway_id,
-        "label": gateway_label,
-        "type": "Router",
-        "title": "Default Gateway",
-        "color": {
-            "background": "#2d3748",
-            "border": "#1a202c"
-        },
-        "ip": gateway_ip or "0.0.0.0",
-        "mac": arp_map.get(gateway_ip, "N/A") if gateway_ip else "N/A",
-        "level": 0
-    })
+    # Use the inventory asset itself as the core when it is the default gateway.
+    # This avoids drawing the same modem/router as both Gateway and Host nodes.
+    gateway_asset = next(
+        (asset for asset in assets if asset.ip_address.strip() == gateway_ip),
+        None,
+    ) if gateway_ip else None
+    gateway_id = (
+        f"host_{gateway_ip}"
+        if gateway_asset is not None
+        else (f"gateway_{gateway_ip}" if gateway_ip else "gateway_core")
+    )
+
+    if gateway_asset is not None:
+        gateway_has_anomaly = (
+            gateway_asset.ip_address in anomaly_ips
+            or (
+                gateway_asset.mac_address
+                and gateway_asset.mac_address.lower() in anomaly_macs
+            )
+        )
+        if gateway_has_anomaly:
+            gateway_color = {"background": "#e53e3e", "border": "#9b2c2c"}
+            gateway_title = "Default Gateway / Active Anomalies"
+        elif not gateway_asset.is_trusted:
+            gateway_color = {"background": "#dd6b20", "border": "#9c4221"}
+            gateway_title = "Default Gateway / Untrusted Device"
+        else:
+            gateway_color = {"background": "#2d3748", "border": "#1a202c"}
+            gateway_title = "Default Gateway / Inventory Asset"
+
+        last_seen = (
+            gateway_asset.last_seen.strftime("%Y-%m-%d %H:%M:%S")
+            if gateway_asset.last_seen
+            else "Never"
+        )
+        nodes.append({
+            "id": gateway_id,
+            "label": f"{gateway_asset.name or 'Gateway'}\n({gateway_ip})",
+            "type": "Router",
+            "title": gateway_title,
+            "color": gateway_color,
+            "ip": gateway_ip,
+            "mac": gateway_asset.mac_address or arp_map.get(gateway_ip, "N/A"),
+            "details": {
+                "ip": gateway_ip,
+                "mac": gateway_asset.mac_address or "N/A",
+                "vendor": gateway_asset.mac_vendor or "Unknown",
+                "device_type": "Router",
+                "operating_system": gateway_asset.operating_system or "Unknown",
+                "criticality": gateway_asset.criticality or "Medium",
+                "is_trusted": gateway_asset.is_trusted,
+                "last_seen": last_seen,
+                "asset_id": gateway_asset.id,
+                "network_role": "Default Gateway",
+            },
+            "level": 0,
+        })
+    else:
+        gateway_label = f"Gateway\n({gateway_ip})" if gateway_ip else "Lynceus Gateway"
+        nodes.append({
+            "id": gateway_id,
+            "label": gateway_label,
+            "type": "Router",
+            "title": "Default Gateway",
+            "color": {
+                "background": "#2d3748",
+                "border": "#1a202c"
+            },
+            "ip": gateway_ip or "0.0.0.0",
+            "mac": arp_map.get(gateway_ip, "N/A") if gateway_ip else "N/A",
+            "level": 0
+        })
     seen_nodes.add(gateway_id)
 
     # Group assets by subnet
@@ -204,7 +224,11 @@ def get_network_topology(assets, scan_results=None):
                                             hop_ip = hop.get("ipaddr")
                                             if not hop_ip:
                                                 continue
-                                            hop_node_id = f"hop_{hop_ip}"
+                                            hop_node_id = (
+                                                gateway_id
+                                                if hop_ip == gateway_ip
+                                                else f"hop_{hop_ip}"
+                                            )
                                             if hop_node_id not in seen_nodes:
                                                 nodes.append({
                                                     "id": hop_node_id,
