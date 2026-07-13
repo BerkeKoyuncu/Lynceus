@@ -292,7 +292,7 @@ def admin_reset_user_2fa(user_id):
 @login_required
 @admin_required
 def admin_delete_user(user_id):
-    user = User.query.filter(User.id == user_id).with_for_update().first_or_404()
+    user = User.query.filter(User.id == user_id).first_or_404()
     if user.id == current_user.id:
         flash("You cannot delete your own account.", "error")
         return redirect(url_for("admin.admin_panel", tab="users"))
@@ -482,8 +482,8 @@ def admin_bulk_delete_users():
         if current_user.id in int_ids:
             flash("You cannot delete your own account in bulk delete.", "error")
             return redirect(url_for("admin.admin_panel", tab="users"))
-        locked_users = User.query.filter(User.id.in_(int_ids)).with_for_update().all()
-        for user in locked_users:
+        users_to_delete = User.query.filter(User.id.in_(int_ids)).all()
+        for user in users_to_delete:
             user.is_deleting = True
         db.session.flush()
         if ScanResult.query.filter(

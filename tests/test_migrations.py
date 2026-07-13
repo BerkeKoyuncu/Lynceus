@@ -59,8 +59,14 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         scan_indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(scan_result)").fetchall()
         }
-        scan_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(scan_result)").fetchall()
+        scan_table_info = connection.execute("PRAGMA table_info(scan_result)").fetchall()
+        scan_columns = {row[1] for row in scan_table_info}
+        scan_column_types = {row[1]: row[2] for row in scan_table_info}
+        audit_column_types = {
+            row[1]: row[2]
+            for row in connection.execute(
+                "PRAGMA table_info(scan_resolution_audit)"
+            ).fetchall()
         }
         user_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(user)").fetchall()
@@ -72,7 +78,7 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "c4f8a2d7e915"
+        assert revision == "d9a4e1c6f320"
         assert "ix_scan_result_scheduler_queue" in scan_indexes
         assert "ix_scan_result_scheduled_for" in scan_indexes
         assert {
@@ -84,6 +90,8 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         }.issubset(scan_columns)
         assert "is_deleting" in user_columns
         assert "scan_resolution_audit" in table_names
+        assert scan_column_types["status"] == "VARCHAR(32)"
+        assert audit_column_types["previous_status"] == "VARCHAR(32)"
     finally:
         _cleanup_database(fd, path)
 
@@ -172,7 +180,7 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         connection.close()
         assert rows == [(20, "198.51.100.20", "first")]
-        assert revision == "c4f8a2d7e915"
+        assert revision == "d9a4e1c6f320"
     finally:
         _cleanup_database(fd, path)
 

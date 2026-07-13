@@ -78,7 +78,7 @@ class ScanResult(db.Model):
     first_host = db.Column(db.String(45), nullable=True)
     last_host = db.Column(db.String(45), nullable=True)
 
-    status = db.Column(db.String(20), default="pending")
+    status = db.Column(db.String(32), default="pending")
 
     exclude_targets = db.Column(db.Text, nullable=True)
     credential_ids = db.Column(db.Text, nullable=True)
@@ -115,7 +115,7 @@ class ScanResolutionAudit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     scan_id = db.Column(db.Integer, nullable=False, index=True)
     admin_user_id = db.Column(db.Integer, nullable=False, index=True)
-    previous_status = db.Column(db.String(20), nullable=False)
+    previous_status = db.Column(db.String(32), nullable=False)
     worker_id = db.Column(db.String(36), nullable=True)
     worker_host = db.Column(db.String(255), nullable=True)
     process_id = db.Column(db.Integer, nullable=True)

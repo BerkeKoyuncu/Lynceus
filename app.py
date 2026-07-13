@@ -130,11 +130,7 @@ def create_app(config=None):
     app = Flask(__name__)
     
     app.config["SECRET_KEY"] = get_flask_secret_key()
-    # Support PostgreSQL dynamically via environment variable, fallback to SQLite
-    database_url = os.environ.get("DATABASE_URL") or "sqlite:///database.db"
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["TRUST_PROXY"] = os.environ.get("TRUST_PROXY", "False").lower() in ("true", "1", "yes")
     app.config["SEED_DEMO_DATA"] = os.environ.get("SEED_DEMO_DATA", "False").lower() in ("true", "1", "yes")
@@ -559,7 +555,7 @@ def _claim_scheduled_scan(schedule, now):
     schedule_user = User.query.filter(
         User.id == schedule.user_id,
         User.is_deleting.is_(False),
-    ).with_for_update().first()
+    ).first()
     if schedule_user is None:
         db.session.rollback()
         return None

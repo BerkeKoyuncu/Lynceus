@@ -75,8 +75,8 @@ def is_scan_frozen():
         return False
 
 
-def _lock_user_for_new_scan(user_id):
-    user = User.query.filter(User.id == user_id).with_for_update().first()
+def _user_available_for_new_scan(user_id):
+    user = User.query.filter(User.id == user_id).first()
     return user if user is not None and not user.is_deleting else None
 
 def validate_scan_request(
@@ -182,7 +182,7 @@ def validate_scan_request(
 @login_required
 def scan():
     if request.method == "POST":
-        if _lock_user_for_new_scan(current_user.id) is None:
+        if _user_available_for_new_scan(current_user.id) is None:
             flash("This account is being deleted and cannot start new scans.", "error")
             return redirect(url_for("scan.scan"))
         if is_scan_frozen():
@@ -369,7 +369,7 @@ def stop_scan(scan_id):
 @scan_bp.route("/scan/<int:scan_id>/repeat", methods=["POST"])
 @login_required
 def repeat_scan(scan_id):
-    if _lock_user_for_new_scan(current_user.id) is None:
+    if _user_available_for_new_scan(current_user.id) is None:
         flash("This account is being deleted and cannot start new scans.", "error")
         return redirect(url_for("scan.scan"))
     if is_scan_frozen():

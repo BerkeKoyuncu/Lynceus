@@ -26,7 +26,7 @@ The application provides user-based scan management, scan history, scheduled sca
 - Automatic network/CIDR calculation
 - Private, loopback, and link-local scan target validation
 - Background scan execution
-- Live scan status tracking: `pending`, `running`, `completed`, `failed`, and `cancelled`
+- Live scan status tracking: `pending`, `running`, `cancellation_requested`, `termination_failed`, `completed`, `failed`, and `cancelled`
 - Real-time scan control: Ability to stop/cancel running scans or repeat completed/failed/cancelled scans directly from the result screens
 - Custom Scan Timing selectors (T0 to T5) with dynamic CLI command preview updates to customise scan speed and stealth
 - Optional custom port range input
@@ -268,23 +268,8 @@ pip install -r requirements.txt
 
 ### 4. Configure the Database (Required)
 
-**SQLite (default — no configuration needed):**
-
-The application uses SQLite by default and stores its database in `database.db` in the project root.
-
-**PostgreSQL (optional):**
-
-Set the `DATABASE_URL` environment variable before running any commands:
-
-```bash
-# Linux/macOS
-export DATABASE_URL="postgresql://user:password@localhost/lynceus"
-
-# Windows PowerShell
-$env:DATABASE_URL = "postgresql://user:password@localhost/lynceus"
-```
-
-`psycopg[binary]` is included in `requirements.txt` and handles the PostgreSQL driver automatically.
+No database configuration is needed. Lynceus uses SQLite and stores its database
+in `database.db` in the project root.
 
 ### 5. Apply Database Migrations
 
@@ -379,9 +364,11 @@ application audit log is also emitted.
 Stop requests use status- and claim-token-fenced conditional updates. A pending
 cancel that loses a race to dispatch reloads the row and follows the running
 process-stop policy, while a concurrent completion or replacement claim cannot
-be overwritten by stale ORM state. User deletion locks and marks the account as
-`is_deleting`; manual, repeated, and scheduled scan creation locks the same user
-row and rejects new work until deletion completes or is rolled back.
+be overwritten by stale ORM state. User deletion marks the account as
+`is_deleting`; manual, repeated, and scheduled scan creation check this flag in
+their transactions and reject new work until deletion completes or is rolled
+back. SQLite serializes writes at database level; these checks are not row-level
+locking.
 
 The queue dispatcher also runs under `flask run`; schedule occurrence creation
 remains disabled there. Scan POST routes only commit a queued job and return, so
