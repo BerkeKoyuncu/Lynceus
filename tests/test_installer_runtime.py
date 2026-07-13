@@ -3,9 +3,11 @@ import builtins
 from installer import runtime
 
 
+# Verify that initial admin setup runs create admin and waits for enter behaves as expected.
 def test_initial_admin_setup_runs_create_admin_and_waits_for_enter(monkeypatch):
     calls = []
 
+    # Handle the fake cli operation.
     def fake_cli(args, *, standalone_mode=True):
         calls.append((args, standalone_mode))
 

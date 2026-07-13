@@ -6,37 +6,50 @@ from collections import defaultdict
 MIN_CLASSIFICATION_SCORE = 4
 
 
+# Handle the contains any operation.
 def _contains_any(text, keywords):
     return any(keyword in text for keyword in keywords)
 
 
+# Handle the normalise evidence operation.
 def _normalise_evidence(hostname, vendor, ports_list):
     open_ports = set()
     service_evidence = []
 
+    # Iterate over ports_list or [] and bind each item to port_info.
     for port_info in ports_list or []:
+        # Handle the branch where not isinstance(port_info, dict) evaluates to true.
         if not isinstance(port_info, dict):
+            # Run this block with structured exception handling.
             try:
                 open_ports.add(int(port_info))
+            # Handle an exception raised by the preceding protected block.
             except (TypeError, ValueError):
                 continue
             continue
 
         state = str(port_info.get("state") or "").lower()
+        # Handle the branch where state and state != 'open' evaluates to true.
         if state and state != "open":
             continue
+        # Run this block with structured exception handling.
         try:
             port = int(port_info.get("port"))
+        # Handle an exception raised by the preceding protected block.
         except (TypeError, ValueError):
             port = None
+        # Handle the branch where port evaluates to true.
         if port:
             open_ports.add(port)
 
+        # Iterate over ('service', 'product', 'version', 'extra_info') and bind each item to field.
         for field in ("service", "product", "version", "extra_info"):
             value = port_info.get(field)
+            # Handle the branch where value evaluates to true.
             if value:
                 service_evidence.append(str(value).lower())
         cpe_values = port_info.get("cpe") or []
+        # Handle the branch where isinstance(cpe_values, str) evaluates to true.
         if isinstance(cpe_values, str):
             cpe_values = [cpe_values]
         service_evidence.extend(str(value).lower() for value in cpe_values if value)
@@ -49,8 +62,10 @@ def _normalise_evidence(hostname, vendor, ports_list):
     )
 
 
+# Handle the classify device type operation.
 def classify_device_type(hostname, vendor, ports_list, *, is_gateway=False):
     """Classify a device using weighted identity, service, and port evidence."""
+    # Handle the branch where is_gateway evaluates to true.
     if is_gateway:
         return "Router"
 
@@ -62,7 +77,9 @@ def classify_device_type(hostname, vendor, ports_list, *, is_gateway=False):
     identity = f"{hostname} {vendor} {services}"
     scores = defaultdict(int)
 
+    # Handle the add operation.
     def add(device_type, points, condition):
+        # Handle the branch where condition evaluates to true.
         if condition:
             scores[device_type] += points
 
@@ -155,6 +172,7 @@ def classify_device_type(hostname, vendor, ports_list, *, is_gateway=False):
     )))
     add("Mobile", 4, _contains_any(services, ("android", "iphone os", "ios device")))
 
+    # Handle the branch where not scores evaluates to true.
     if not scores:
         return "Unknown"
 
@@ -163,6 +181,7 @@ def classify_device_type(hostname, vendor, ports_list, *, is_gateway=False):
         "Router", "Switch", "Server", "Workstation", "IoT", "Mobile",
     )
     best_score = max(scores.values())
+    # Handle the branch where best_score < MIN_CLASSIFICATION_SCORE evaluates to true.
     if best_score < MIN_CLASSIFICATION_SCORE:
         return "Unknown"
     return next(device_type for device_type in priority if scores[device_type] == best_score)

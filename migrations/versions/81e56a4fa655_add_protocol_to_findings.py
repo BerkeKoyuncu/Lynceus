@@ -16,11 +16,15 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
+    # Manage op.batch_alter_table('security_finding', schema=None) within this scoped block.
     with op.batch_alter_table('security_finding', schema=None) as batch_op:
         batch_op.add_column(sa.Column('protocol', sa.String(length=10), nullable=False, server_default='tcp'))
 
 
+# Handle the downgrade operation.
 def downgrade():
+    # Manage op.batch_alter_table('security_finding', schema=None) within this scoped block.
     with op.batch_alter_table('security_finding', schema=None) as batch_op:
         batch_op.drop_column('protocol')

@@ -12,6 +12,7 @@ from services.rule_service import evaluate_cve_findings, reconcile_findings_for_
 from services.anomaly_service import evaluate_host_anomalies
 from models import db, SecurityFinding, Asset, User, ScanResult, ScanSchedule
 
+# Verify that is version affected behaves as expected.
 def test_is_version_affected():
     # 1. Exact match / substring check
     match_1 = {"criteria": "cpe:2.3:a:apache:http_server:2.4.49:::"}
@@ -48,6 +49,7 @@ def test_is_version_affected():
     assert is_version_affected("invalid-version-string", match_1, "http_server") is False
 
 
+# Verify that confirmed cve version comparison handles ambiguous versions safely behaves as expected.
 def test_confirmed_cve_version_comparison_handles_ambiguous_versions_safely():
     exact = {"criteria": "cpe:2.3:a:vendor:product:1.0:*:*:*:*:*:*:*"}
     bounded = {
@@ -58,6 +60,7 @@ def test_confirmed_cve_version_comparison_handles_ambiguous_versions_safely():
     assert _cpe_version_state("1.2.4-rc1", bounded, "vendor", "product") == "unknown"
 
 
+# Verify that cve unaffected confirmation requires vendor and product match behaves as expected.
 def test_cve_unaffected_confirmation_requires_vendor_and_product_match():
     other_vendor = {
         "criteria": "cpe:2.3:a:other_vendor:product:*:*:*:*:*:*:*:*",
@@ -68,7 +71,9 @@ def test_cve_unaffected_confirmation_requires_vendor_and_product_match():
         == "unknown"
     )
 
+# Verify that evaluate cve findings behaves as expected.
 def test_evaluate_cve_findings(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         # Create a scan result to satisfy the ScanResult FK constraint
@@ -119,15 +124,19 @@ def test_evaluate_cve_findings(app):
         assert finding.port == 80
         assert finding.protocol == "tcp"
 
+# Verify that scheduler is disabled during tests behaves as expected.
 def test_scheduler_is_disabled_during_tests(app):
     assert app.config.get("TESTING") is True
 
+# Verify that scheduler thread not started behaves as expected.
 def test_scheduler_thread_not_started(app):
     # Verify that run_scheduler_loop background daemon thread is not active
     threads = [t.name for t in threading.enumerate()]
     assert not any("run_scheduler_loop" in t_name for t_name in threads)
 
+# Verify that ip change is detected before asset update behaves as expected.
 def test_ip_change_is_detected_before_asset_update(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -160,7 +169,9 @@ def test_ip_change_is_detected_before_asset_update(app):
         assert res["expected_ip"] == "192.168.1.100"
         assert res["found_ip"] == "192.168.1.200"
 
+# Verify that udp scan does not reconcile tcp finding behaves as expected.
 def test_udp_scan_does_not_reconcile_tcp_finding(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -201,7 +212,9 @@ def test_udp_scan_does_not_reconcile_tcp_finding(app):
         db.session.refresh(finding)
         assert finding.status == "open"
 
+# Verify that cve api failure preserves existing finding behaves as expected.
 def test_cve_api_failure_preserves_existing_finding(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -246,7 +259,9 @@ def test_cve_api_failure_preserves_existing_finding(app):
         assert finding.status == "open"  # Preserved because lookup failed
 
 
+# Verify that cve version string change does not prove remediation behaves as expected.
 def test_cve_version_string_change_does_not_prove_remediation(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         asset = Asset(name="CVE banner test", ip_address="192.0.2.20", is_trusted=True)
         db.session.add(asset)
@@ -284,7 +299,9 @@ def test_cve_version_string_change_does_not_prove_remediation(app):
         assert finding.status == "open"
 
 
+# Verify that cve closes only when explicitly confirmed unaffected behaves as expected.
 def test_cve_closes_only_when_explicitly_confirmed_unaffected(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         asset = Asset(name="Patched CVE test", ip_address="192.0.2.21", is_trusted=True)
         db.session.add(asset)
@@ -319,6 +336,7 @@ def test_cve_closes_only_when_explicitly_confirmed_unaffected(app):
         assert finding.status == "not_observed"
 
 
+# Verify that cve fetch returns and caches explicit unaffected evidence behaves as expected.
 def test_cve_fetch_returns_and_caches_explicit_unaffected_evidence(monkeypatch):
     record = {
         "containers": {
@@ -341,16 +359,21 @@ def test_cve_fetch_returns_and_caches_explicit_unaffected_evidence(monkeypatch):
     }).encode()
     calls = 0
 
+    # Group the state and behavior for Response.
     class Response:
+        # Handle the enter operation.
         def __enter__(self):
             return self
 
+        # Handle the exit operation.
         def __exit__(self, *args):
             pass
 
+        # Handle the read operation.
         def read(self):
             return payload
 
+    # Handle the urlopen operation.
     def urlopen(*args, **kwargs):
         nonlocal calls
         calls += 1
@@ -379,16 +402,19 @@ def test_cve_fetch_returns_and_caches_explicit_unaffected_evidence(monkeypatch):
     assert third["confirmed_unaffected_cves"] == ["CVE-2024-TEST"]
     assert calls == 2
 
+# Verify that cve api failure is not cached behaves as expected.
 def test_cve_api_failure_is_not_cached():
     # Make a query with a product name that raises an error or fails
     # Call fetch_cves_for_query, verify success is False
     # Verify that this is not added to CVE_CACHE
     original_urlopen = urllib.request.urlopen
     
+    # Handle the raise error operation.
     def raise_error(*args, **kwargs):
         raise Exception("Timeout connection error")
         
     urllib.request.urlopen = raise_error
+    # Run this block with structured exception handling.
     try:
         res = fetch_cves_for_query("NonExistentProductDefiniteFailure", "1.0")
         assert res["success"] is False
@@ -396,10 +422,13 @@ def test_cve_api_failure_is_not_cached():
         # Check cache
         cache_key = ("nonexistentproductdefinitefailure", "1.0", ())
         assert cache_key not in CVE_CACHE
+    # Run cleanup that must occur after the protected block.
     finally:
         urllib.request.urlopen = original_urlopen
 
+# Verify that ftp credential does not reconcile redis finding behaves as expected.
 def test_ftp_credential_does_not_reconcile_redis_finding(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -442,7 +471,9 @@ def test_ftp_credential_does_not_reconcile_redis_finding(app):
         db.session.refresh(finding)
         assert finding.status == "open"  # Redis finding remains open!
 
+# Verify that ping sweep does not reconcile port findings behaves as expected.
 def test_ping_sweep_does_not_reconcile_port_findings(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -481,7 +512,9 @@ def test_ping_sweep_does_not_reconcile_port_findings(app):
         db.session.refresh(finding)
         assert finding.status == "open"  # Port finding is NOT reconciled on ping sweep
 
+# Verify that not observed finding can update assignment behaves as expected.
 def test_not_observed_finding_can_update_assignment(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         asset = Asset(
@@ -511,11 +544,14 @@ def test_not_observed_finding_can_update_assignment(app):
         db.session.commit()
         
         db.session.refresh(finding)
+        # Handle the branch where user evaluates to true.
         if user:
             assert finding.assigned_user_id == user.id
         assert finding.status == "not_observed"  # Maintained status
 
+# Verify that not observed finding can update assignment via route behaves as expected.
 def test_not_observed_finding_can_update_assignment_via_route(app, client):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.filter_by(email="admin@test.com").first()
         user_id = user.id
@@ -568,7 +604,9 @@ def test_not_observed_finding_can_update_assignment_via_route(app, client):
         # Status should still be not_observed!
         assert f.status == "not_observed"
 
+# Verify that reconciliation filtered states behaves as expected.
 def test_reconciliation_filtered_states(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         asset = Asset(
             name="Filtered State Asset",
@@ -623,6 +661,7 @@ def test_reconciliation_filtered_states(app):
         db.session.refresh(finding)
         assert finding.status == "not_observed"
 
+# Verify that execute scan e2e serialization behaves as expected.
 def test_execute_scan_e2e_serialization(app, monkeypatch):
     # Mock run_nmap_scan
     def mock_scan(*args, **kwargs):
@@ -678,6 +717,7 @@ def test_execute_scan_e2e_serialization(app, monkeypatch):
         }
     monkeypatch.setattr("services.scan_service.fetch_cves_for_query", mock_fetch)
 
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         user = User.query.first()
         schedule = ScanSchedule(
@@ -740,6 +780,7 @@ def test_execute_scan_e2e_serialization(app, monkeypatch):
         assert "_asset_id" not in host
         assert "is_new_rogue" not in host
 
+# Verify that migration upgrade downgrade behaves as expected.
 def test_migration_upgrade_downgrade():
     import tempfile
     import os
@@ -747,6 +788,7 @@ def test_migration_upgrade_downgrade():
     from flask_migrate import upgrade, downgrade
 
     db_fd, db_path = tempfile.mkstemp()
+    # Run this block with structured exception handling.
     try:
         app = create_app({
             "TESTING": True,
@@ -754,6 +796,7 @@ def test_migration_upgrade_downgrade():
             "START_SCHEDULER": False
         })
         
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             # Run upgrade to head
             upgrade()
@@ -763,13 +806,17 @@ def test_migration_upgrade_downgrade():
             
             # Run upgrade back to head
             upgrade()
+    # Run cleanup that must occur after the protected block.
     finally:
         os.close(db_fd)
+        # Run this block with structured exception handling.
         try:
             os.unlink(db_path)
+        # Handle an exception raised by the preceding protected block.
         except OSError:
             pass
 
+# Verify that migration with legacy data behaves as expected.
 def test_migration_with_legacy_data():
     import tempfile
     import os
@@ -778,6 +825,7 @@ def test_migration_with_legacy_data():
     from flask_migrate import upgrade as run_upgrade
 
     db_fd, db_path = tempfile.mkstemp()
+    # Run this block with structured exception handling.
     try:
         app = create_app({
             "TESTING": True,
@@ -785,6 +833,7 @@ def test_migration_with_legacy_data():
             "START_SCHEDULER": False
         })
         
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             # Start at the real parent of the schema-alignment migration so the
             # normal 4b -> 3f -> 81 -> b5 chain is exercised.
@@ -932,9 +981,12 @@ def test_migration_with_legacy_data():
         assert row_anom[2] == "Legacy anomaly record"
 
         conn.close()
+    # Run cleanup that must occur after the protected block.
     finally:
         os.close(db_fd)
+        # Run this block with structured exception handling.
         try:
             os.unlink(db_path)
+        # Handle an exception raised by the preceding protected block.
         except OSError:
             pass

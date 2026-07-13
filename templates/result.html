@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 
 
+{# Render this branch when scan_result.status in ["pending", "running", "cancellation_requested"] evaluates to true. #}
 {% if scan_result.status in ["pending", "running", "cancellation_requested"] %}
 <meta http-equiv="refresh" content="3">
 {% endif %}
@@ -12,6 +14,7 @@
 <div
     style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
     <h2 style="margin: 0;">Scan Result</h2>
+    {# Render this branch when scan_result.status in ["completed", "failed", "cancelled"] evaluates to true. #}
     {% if scan_result.status in ["completed", "failed", "cancelled"] %}
     <form method="POST" action="{{ url_for('repeat_scan', scan_id=scan_result.id) }}" style="margin: 0;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -54,12 +57,15 @@
         <td>{{ scan_result.scan_type|scan_name }}</td>
     </tr>
 
+    {# Render this branch when scan_result.scan_type != "ping_sweep" evaluates to true. #}
     {% if scan_result.scan_type != "ping_sweep" %}
     <tr>
         <th>Scanned Ports</th>
         <td>
+            {# Render this branch when scan_result.ports evaluates to true. #}
             {% if scan_result.ports %}
             {{ scan_result.ports|replace(',', ', ') }}
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
             Default Ports
             {% endif %}
@@ -67,6 +73,7 @@
     </tr>
     {% endif %}
 
+    {# Render this branch when scan_result.exclude_targets evaluates to true. #}
     {% if scan_result.exclude_targets %}
     <tr>
         <th>Excluded Targets</th>
@@ -77,20 +84,28 @@
     <tr>
         <th>Status</th>
         <td>
+            {# Render this branch when scan_result.status == "completed" evaluates to true. #}
             {% if scan_result.status == "completed" %}
             <span class="badge success-badge">Completed</span>
+            {# Render this branch when scan_result.status == "running" evaluates to true. #}
             {% elif scan_result.status == "running" %}
             <span class="badge running-badge">Running</span>
+            {# Render this branch when scan_result.status == "termination_failed" evaluates to true. #}
             {% elif scan_result.status == "termination_failed" %}
             <span class="badge error-badge">Termination Failed</span>
+            {# Render this branch when scan_result.status == "cancellation_requested" evaluates to true. #}
             {% elif scan_result.status == "cancellation_requested" %}
             <span class="badge pending-badge">Cancellation Requested</span>
+            {# Render this branch when scan_result.status == "pending" evaluates to true. #}
             {% elif scan_result.status == "pending" %}
             <span class="badge pending-badge">Pending</span>
+            {# Render this branch when scan_result.status == "failed" evaluates to true. #}
             {% elif scan_result.status == "failed" %}
             <span class="badge error-badge">Failed</span>
+            {# Render this branch when scan_result.status == "cancelled" evaluates to true. #}
             {% elif scan_result.status == "cancelled" %}
             <span class="badge error-badge" style="background: #4b5563; color: #f3f4f6;">Cancelled</span>
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
             {{ scan_result.status }}
             {% endif %}
@@ -101,6 +116,7 @@
         <th>Created At</th>
         <td>{{ scan_result.created_at|localtime }}</td>
     </tr>
+    {# Render this branch when scan_result.scheduler_execution_phase evaluates to true. #}
     {% if scan_result.scheduler_execution_phase %}
     <tr>
         <th>Execution Phase</th>
@@ -111,6 +127,7 @@
 
 <hr>
 
+{# Render this branch when scan_result.status == "pending" evaluates to true. #}
 {% if scan_result.status == "pending" %}
 <div
     style="display: flex; align-items: center; gap: 15px; background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -122,6 +139,7 @@
     </form>
 </div>
 
+{# Render this branch when scan_result.status == "running" evaluates to true. #}
 {% elif scan_result.status == "running" %}
 <div
     style="display: flex; align-items: center; gap: 15px; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -133,6 +151,7 @@
     </form>
 </div>
 
+{# Render this branch when scan_result.status == "termination_failed" evaluates to true. #}
 {% elif scan_result.status == "termination_failed" %}
 <div class="alert alert-error"
     style="border-radius: 8px; padding: 15px; margin-bottom: 20px;">
@@ -142,6 +161,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="button btn-danger">Retry Termination</button>
     </form>
+    {# Render this branch when current_user.is_admin evaluates to true. #}
     {% if current_user.is_admin %}
     <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan_result.id) }}" style="margin-top: 8px;" onsubmit="return confirm('Confirm that the owning worker/process is no longer running before releasing capacity.');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -151,9 +171,11 @@
     {% endif %}
 </div>
 
+{# Render this branch when scan_result.status == "cancellation_requested" evaluates to true. #}
 {% elif scan_result.status == "cancellation_requested" %}
 <div class="alert alert-info" style="border-radius: 8px; padding: 15px; margin-bottom: 20px;">
     Cancellation is secured. Waiting for the owning worker to exit before releasing capacity.
+    {# Render this branch when current_user.is_admin evaluates to true. #}
     {% if current_user.is_admin %}
     <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan_result.id) }}" style="margin-top: 8px;" onsubmit="return confirm('Confirm that the owning worker/process crashed or is no longer running before releasing capacity.');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -163,6 +185,7 @@
     {% endif %}
 </div>
 
+{# Render this branch when scan_result.status == "cancelled" evaluates to true. #}
 {% elif scan_result.status == "cancelled" %}
 <div class="alert alert-error"
     style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-radius: 8px; padding: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; color: var(--text); font-weight: 500;">
@@ -173,12 +196,15 @@
     </div>
 </div>
 
+{# Render this branch when scan_result.status == "completed" or scan_result.status == "failed" evaluates to true. #}
 {% elif scan_result.status == "completed" or scan_result.status == "failed" %}
 
+{# Render this branch when parsed_result evaluates to true. #}
 {% if parsed_result %}
 <h3>Executed Command</h3>
 <pre>{{ parsed_result.command }}</pre>
 
+{# Render this branch when parsed_result.hosts evaluates to true. #}
 {% if parsed_result.hosts %}
 <h3>Discovered Hosts and Open Ports</h3>
 
@@ -296,7 +322,9 @@
         </div>
         <div id="table-tab" class="tab-pane">
             <div class="hosts-container">
+                {# Render one iteration for each item in host in parsed_result.hosts. #}
                 {% for host in parsed_result.hosts %}
+                {# Prepare the template value used by host_index = loop.index0. #}
                 {% set host_index = loop.index0 %}
                 <div class="host-section" data-ip="{{ host.address }}"
                     data-has-ports="{% if host.ports %}true{% else %}false{% endif %}">
@@ -304,14 +332,17 @@
                         style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <h4 style="margin: 0;">
                             Host: <span class="host-ip">{{ host.address }}</span>
+                            {# Render this branch when host.hostname evaluates to true. #}
                             {% if host.hostname %}
                             <span class="host-name">/ {{ host.hostname }}</span>
                             {% endif %}
                             <span class="badge success-badge">{{ host.status|capitalize }}</span>
                         </h4>
+                        {# Render this branch when host.mac_address evaluates to true. #}
                         {% if host.mac_address %}
                         <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
                             <strong>MAC:</strong> {{ host.mac_address }}
+                            {# Render this branch when host.mac_vendor evaluates to true. #}
                             {% if host.mac_vendor %}
                             <span class="host-vendor">({{ host.mac_vendor }})</span>
                             {% endif %}
@@ -319,13 +350,17 @@
                         {% endif %}
                     </div>
 
+                    {# Render this branch when host.mac_anomaly evaluates to true. #}
                     {% if host.mac_anomaly %}
                     <div
                         style="background-color: var(--error-bg); color: var(--error-text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; margin-bottom: 10px; font-size: 14px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                        {# Render this branch when host.mac_anomaly.type == 'mac_spoofing' evaluates to true. #}
                         {% if host.mac_anomaly.type == 'mac_spoofing' %}
                         <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
+                        {# Render this branch when host.mac_anomaly.type == 'ip_hijack' evaluates to true. #}
                         {% elif host.mac_anomaly.type == 'ip_hijack' %}
                         <i data-lucide="alert-circle"></i> IP Hijack Warning:
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                         <i data-lucide="shield-alert"></i> Rogue Device Alert:
                         {% endif %}
@@ -333,6 +368,7 @@
                     </div>
                     {% endif %}
 
+                    {# Render this branch when host.ports evaluates to true. #}
                     {% if host.ports %}
                     <table class="ports-table">
                         <thead>
@@ -346,7 +382,9 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {# Render one iteration for each item in port in host.ports. #}
                             {% for port in host.ports %}
+                            {# Prepare the template value used by port_index = loop.index0. #}
                             {% set port_index = loop.index0 %}
                             <tr class="port-row" data-port="{{ port.port }}" data-protocol="{{ port.protocol }}"
                                 data-state="{{ port.state }}" data-service="{{ port.service }}"
@@ -356,6 +394,7 @@
                                 <td>{{ port.state }}</td>
                                 <td>
                                     <strong>{{ port.service }}</strong>
+                                    {# Render this branch when port.credential_audit and port.credential_audit.status == 'vulnerable' evaluates to true. #}
                                     {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
                                     <div style="margin-top: 4px;">
                                         <span class="badge error-badge" style="font-size: 11px; font-weight: bold;">
@@ -366,12 +405,14 @@
                                 </td>
                                 <td>{{ port.version }}</td>
                                 <td>
+                                    {# Render this branch when port.version and port.version != "-" evaluates to true. #}
                                     {% if port.version and port.version != "-" %}
                                     <button type="button" class="cve-btn"
                                         onclick="toggleCVEs('{{ host_index }}-{{ port_index }}', '{{ port.version }}')">
                                         <i data-lucide="search"
                                             style="width: 12px; height: 12px; margin-right: 2px;"></i> CVEs
                                     </button>
+                                    {# Render the fallback branch when earlier conditions do not match. #}
                                     {% else %}
                                     <span class="text-muted">No version</span>
                                     {% endif %}
@@ -389,6 +430,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    {# Render the fallback branch when earlier conditions do not match. #}
                     {% else %}
                     <p class="no-ports-msg">No open ports found for this host.</p>
                     {% endif %}
@@ -423,10 +465,12 @@
         </div>
     </div>
 </div>
+{# Render the fallback branch when earlier conditions do not match. #}
 {% else %}
 <p>No hosts found.</p>
 {% endif %}
 
+{# Render this branch when parsed_result.output evaluates to true. #}
 {% if parsed_result.output %}
 <h3>Additional Output</h3>
 <pre>{{ parsed_result.output }}</pre>
@@ -435,6 +479,7 @@
 
 {% endif %}
 
+{# Render this branch when scan_result.status == "completed" or scan_result.status == "failed" evaluates to true. #}
 {% if scan_result.status == "completed" or scan_result.status == "failed" %}
 <div class="page-actions">
     <a href="{{ url_for('print_report', scan_id=scan_result.id) }}" target="_blank" class="button"
@@ -451,10 +496,13 @@
 <script id="network-subnet-cidr" type="text/plain">{{ scan_result.network_cidr if scan_result else '' }}</script>
 
 <script>
+    // Define the toggleCVEs client-side operation.
     function toggleCVEs(id, query) {
         const row = document.getElementById("cve-row-" + id);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!row) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (row.style.display === "table-row") {
             row.style.display = "none";
             return;
@@ -462,6 +510,7 @@
 
         // Close all other open CVE rows to keep the UI clean
         document.querySelectorAll(".cve-details-row").forEach(r => {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (r.id !== "cve-row-" + id) {
                 r.style.display = "none";
             }
@@ -483,34 +532,43 @@
 
         // Call the backend API
         fetch("/api/cves?query=" + encodeURIComponent(query))
+            // Run the callback for the associated client-side operation.
             .then(response => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!response.ok) {
                     throw new Error("HTTP error " + response.status);
                 }
                 return response.json();
             })
+            // Run the callback for the associated client-side operation.
             .then(data => {
                 loadingDiv.style.display = "none";
                 resultsDiv.style.display = "block";
                 resultsDiv.dataset.fetched = "true";
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!data || data.length === 0) {
                     resultsDiv.innerHTML = "<p class='no-cves'>No known vulnerabilities found for this version.</p>";
                     return;
                 }
 
                 let html = "<div class='cve-cards'>";
+                // Process one client-side item during each collection iteration.
                 data.forEach(cve => {
                     // Determine CVSS class based on score
                     let severityClass = "sev-low";
                     let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
 
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (cve.cvss >= 9.0) {
                         severityClass = "sev-critical";
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else if (cve.cvss >= 7.0) {
                         severityClass = "sev-high";
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else if (cve.cvss >= 4.0) {
                         severityClass = "sev-medium";
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else if (cve.cvss === null) {
                         severityClass = "sev-unknown";
                     }
@@ -528,6 +586,7 @@
                 html += "</div>";
                 resultsDiv.innerHTML = html;
             })
+            // Run the callback for the associated client-side operation.
             .catch(err => {
                 loadingDiv.style.display = "none";
                 resultsDiv.style.display = "block";
@@ -549,6 +608,7 @@
     let chartPortsByHost = null;
     let chartProtocols = null;
 
+    // Define the switchTab client-side operation.
     function switchTab(tabId, btn) {
         btn.parentNode.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
@@ -557,41 +617,55 @@
         contentContainer.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
 
         const targetPane = document.getElementById(tabId);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (targetPane) {
             targetPane.classList.add("active");
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (tabId === "topology-tab") {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!network) {
                     initTopologyMap();
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
+                    // Run the callback for the associated client-side operation.
                     setTimeout(() => {
                         network.fit();
                     }, 50); // Small timeout to ensure DOM layout is updated
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else if (tabId === "dashboard-tab") {
                 // Ensure charts resize/render correctly when tab is switched
                 setTimeout(() => {
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (chartHostStatus) chartHostStatus.resize();
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (chartCommonServices) chartCommonServices.resize();
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (chartPortsByHost) chartPortsByHost.resize();
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (chartProtocols) chartProtocols.resize();
                 }, 50);
             }
         }
     }
 
+    // Define the initTopologyMap client-side operation.
     function initTopologyMap() {
         const container = document.getElementById("topology-map");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
         nodesDataSet = new vis.DataSet();
         edgesDataSet = new vis.DataSet();
 
+        // Create the structured client-side object used by this operation.
         const data = {
             nodes: nodesDataSet,
             edges: edgesDataSet
         };
 
+        // Create the structured client-side object used by this operation.
         const options = {
             physics: {
                 enabled: document.getElementById("map-enable-physics").checked,
@@ -625,6 +699,7 @@
         network = new vis.Network(container, data, options);
 
         network.on("selectNode", function (params) {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (params.nodes.length > 0) {
                 showNodeDetails(params.nodes[0]);
             }
@@ -642,13 +717,17 @@
         });
     }
 
+    // Define the togglePhysics client-side operation.
     function togglePhysics(enabled) {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.setOptions({ physics: { enabled: enabled } });
         }
     }
 
+    // Define the resetMapCamera client-side operation.
     function resetMapCamera() {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.fit({
                 animation: {
@@ -659,17 +738,22 @@
         }
     }
 
+    // Define the hideNodeDetails client-side operation.
     function hideNodeDetails() {
         const panel = document.getElementById("node-details-panel");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (panel) {
             panel.style.display = "none";
         }
     }
 
+    // Define the showNodeDetails client-side operation.
     function showNodeDetails(nodeId) {
         const panel = document.getElementById("node-details-panel");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!panel) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId === "subnet") {
             panel.innerHTML = `
                 <button class="node-details-close" onclick="hideNodeDetails()">×</button>
@@ -681,36 +765,45 @@
             return;
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId.startsWith("host_")) {
             const ip = nodeId.replace("host_", "");
             const hostObj = networkHostsData.find(h => h.address === ip);
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!hostObj) return;
 
             let portsListHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (hostObj.ports && hostObj.ports.length > 0) {
                 portsListHtml = `
                     <div class="node-details-item" style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
                         <strong>Open Ports:</strong>
                         <ul style="margin: 6px 0 0 0; padding-left: 18px; font-size: 12px;">
+                            // Run the callback for the associated client-side operation.
                             ${hostObj.ports.map(p => `<li>${p.port}/${p.protocol} (${p.service})</li>`).join("")}
                         </ul>
                     </div>
                 `;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 portsListHtml = `<div class="node-details-item" style="color: var(--text-muted); font-style: italic;">No open ports found</div>`;
             }
 
             let macHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (hostObj.mac_address) {
                 macHtml = `<div class="node-details-item"><strong>MAC Address:</strong> ${hostObj.mac_address}</div>`;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (hostObj.mac_vendor) {
                     macHtml += `<div class="node-details-item"><strong>Vendor:</strong> ${hostObj.mac_vendor}</div>`;
                 }
             }
 
             let anomalyHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (hostObj.mac_anomaly) {
                 const anom = hostObj.mac_anomaly;
+                // Create the structured client-side object used by this operation.
                 const anomTitle = {
                     "mac_spoofing": '<i data-lucide="alert-triangle" class="icon-inline"></i> MAC Spoofing Alert',
                     "ip_hijack": '<i data-lucide="alert-circle" class="icon-inline"></i> IP Hijack Warning',
@@ -736,26 +829,31 @@
                 ${portsListHtml}
             `;
             panel.style.display = "block";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
             }
             return;
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId.startsWith("port_")) {
             const parts = nodeId.split("_");
             const ip = parts[1];
             const portNum = parts[2];
 
             const hostObj = networkHostsData.find(h => h.address === ip);
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!hostObj) return;
 
             const portObj = hostObj.ports.find(p => p.port.toString() === portNum);
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!portObj) return;
 
             let cveButtonHtml = "";
             let cveContainerHtml = "";
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (portObj.version && portObj.version !== "-") {
                 cveButtonHtml = `
                     <div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;">
@@ -773,6 +871,7 @@
             }
 
             let auditHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (portObj.credential_audit && portObj.credential_audit.status === "vulnerable") {
                 auditHtml = `
                     <div class="node-details-item" style="margin-top: 8px;">
@@ -796,6 +895,7 @@
                 ${cveContainerHtml}
             `;
             panel.style.display = "block";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
             }
@@ -803,8 +903,10 @@
         }
     }
 
+    // Define the loadMapNodeCVEs client-side operation.
     function loadMapNodeCVEs(ip, port, query) {
         const container = document.getElementById(`map-cve-container-${ip}-${port}`);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
         const loadingDiv = container.querySelector(".cve-loading");
@@ -814,6 +916,7 @@
         loadingDiv.style.display = "block";
         MathResultsDiv.style.display = "none";
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (MathResultsDiv.dataset.fetched === "true") {
             loadingDiv.style.display = "none";
             MathResultsDiv.style.display = "block";
@@ -821,25 +924,31 @@
         }
 
         fetch("/api/cves?query=" + encodeURIComponent(query))
+            // Run the callback for the associated client-side operation.
             .then(response => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!response.ok) throw new Error("HTTP error " + response.status);
                 return response.json();
             })
+            // Run the callback for the associated client-side operation.
             .then(data => {
                 loadingDiv.style.display = "none";
                 MathResultsDiv.style.display = "block";
                 MathResultsDiv.dataset.fetched = "true";
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!data || data.length === 0) {
                     MathResultsDiv.innerHTML = "<p class='no-cves' style='font-size: 11px;'>No known vulnerabilities found.</p>";
                     return;
                 }
 
                 let html = "<div class='cve-cards' style='grid-template-columns: 1fr; gap: 8px;'>";
+                // Process one client-side item during each collection iteration.
                 data.forEach(cve => {
                     let severityClass = "sev-low";
                     let scoreText = cve.cvss !== null ? cve.cvss.toFixed(1) : "N/A";
 
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (cve.cvss >= 9.0) severityClass = "sev-critical";
                     else if (cve.cvss >= 7.0) severityClass = "sev-high";
                     else if (cve.cvss >= 4.0) severityClass = "sev-medium";
@@ -858,6 +967,7 @@
                 html += "</div>";
                 MathResultsDiv.innerHTML = html;
             })
+            // Run the callback for the associated client-side operation.
             .catch(err => {
                 loadingDiv.style.display = "none";
                 MathResultsDiv.style.display = "block";
@@ -865,7 +975,9 @@
             });
     }
 
+    // Define the updateTopology client-side operation.
     function updateTopology() {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!network || !nodesDataSet || !edgesDataSet) return;
 
         const selectedNodes = network.getSelectedNodes();
@@ -878,6 +990,7 @@
         const newEdges = [];
 
         const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        // Create the structured client-side object used by this operation.
         const themeColors = {
             hostBg: isDark ? "#2D3325" : "#6E7D58", // --surface-soft / --olive (both are dark backgrounds)
             hostSelectedBg: "#B7C49A", // --sage
@@ -894,12 +1007,15 @@
         };
 
         let hasVisibleHosts = false;
+        // Process one client-side item during each collection iteration.
         hostSections.forEach(section => {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (section.style.display !== "none") {
                 hasVisibleHosts = true;
             }
         });
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (hasVisibleHosts) {
             newNodes.push({
                 id: "subnet",
@@ -952,28 +1068,36 @@
                     let borderCol = isDark ? "#A0A494" : "#3A3F2F";
                     let fillCol = isSelected ? "#B7C49A" : bgCol;
 
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (!isSelected) {
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (hostStatusType === "critical") {
                             bgCol = isDark ? "#4C241E" : "#E9C9BE";
                             borderCol = "#7A2E1E";
                             fillCol = bgCol;
+                        // Handle the fallback branch when earlier client-side conditions do not match.
                         } else if (hostStatusType === "vulnerable") {
                             bgCol = isDark ? "#483A20" : "#EFE3BC";
                             borderCol = "#745A1D";
                             fillCol = bgCol;
                         }
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else {
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (hostStatusType === "critical") {
                             borderCol = "#7A2E1E";
                             fillCol = isDark ? "#63352F" : "#F5D6D0";
+                        // Handle the fallback branch when earlier client-side conditions do not match.
                         } else if (hostStatusType === "vulnerable") {
                             borderCol = "#745A1D";
                             fillCol = isDark ? "#57482D" : "#F5ECD2";
+                        // Handle the fallback branch when earlier client-side conditions do not match.
                         } else {
                             fillCol = "#B7C49A";
                         }
                     }
 
+                    // Create the structured client-side object used by this operation.
                     const themeColors = {
                         hostBg: fillCol,
                         hostBorder: borderCol,
@@ -1005,6 +1129,7 @@
                     ctx.fillStyle = themeColors.ipText;
                     ctx.fillText(ipText, x, textY);
 
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (hostname) {
                         ctx.font = "italic 9px Inter, Segoe UI, sans-serif";
                         ctx.fillStyle = themeColors.hostNameText;
@@ -1013,9 +1138,11 @@
 
                     // 3. Draw Port Circles inside the Host Circle in a Ring/Circular pattern
                     ctx.textBaseline = "middle";
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (drawPorts) {
                         const portCount = hostPorts.length;
 
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (portCount === 1) {
                             // Draw a single port circle at the center
                             const px = x;
@@ -1041,6 +1168,7 @@
                             ctx.font = "normal 6px Inter, Segoe UI, sans-serif";
                             ctx.fillStyle = themeColors.portMutedText;
                             ctx.fillText(serviceName, px, py + 4);
+                        // Handle the fallback branch when earlier client-side conditions do not match.
                         } else {
                             // Draw multiple port circles in a ring pattern
                             const maxRing = 5;
@@ -1048,6 +1176,7 @@
                             const ringRadius = 24;
                             const portRadius = 11;
 
+                            // Iterate over the selected client-side values.
                             for (let i = 0; i < drawCount; i++) {
                                 // Spread symmetrically around the center
                                 const angle = (2 * Math.PI * i) / drawCount - Math.PI / 2;
@@ -1095,6 +1224,7 @@
                                 ctx.fillText("+" + (portCount - 5), px, py);
                             }
                         }
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else if (showPorts) {
                         // If showPorts is checked but host has no ports, display "No Ports" inside center
                         ctx.font = "9px Inter, Segoe UI, sans-serif";
@@ -1105,7 +1235,9 @@
             };
         };
 
+        // Process one client-side item during each collection iteration.
         hostSections.forEach(section => {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (section.style.display === "none") {
                 return;
             }
@@ -1116,7 +1248,9 @@
 
             const portRows = section.querySelectorAll(".port-row");
             let visiblePorts = [];
+            // Process one client-side item during each collection iteration.
             portRows.forEach(row => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (row.style.display !== "none") {
                     visiblePorts.push({
                         port: row.dataset.port,
@@ -1135,9 +1269,12 @@
 
             const hostObj = networkHostsData.find(h => h.address === ip);
             let hostStatusType = "secure";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (hostObj) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (hostObj.mac_anomaly) {
                     hostStatusType = "critical";
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else if (hostObj.ports && hostObj.ports.some(p => p.credential_audit && p.credential_audit.status === 'vulnerable')) {
                     hostStatusType = "vulnerable";
                 }
@@ -1192,18 +1329,22 @@
         edgesDataSet.remove(edgesToRemove);
         edgesDataSet.update(edgesToUpdate);
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (previousSelection && newNodesIds.includes(previousSelection)) {
             network.selectNodes([previousSelection]);
             showNodeDetails(previousSelection);
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             hideNodeDetails();
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.redraw();
         }
     }
 
+    // Define the filterResults client-side operation.
     function filterResults() {
         const ipQuery = document.getElementById("filter-ip").value.toLowerCase().trim();
         const portQuery = document.getElementById("filter-port").value.toLowerCase().trim();
@@ -1215,15 +1356,18 @@
 
         const hostSections = document.querySelectorAll(".host-section");
 
+        // Process one client-side item during each collection iteration.
         hostSections.forEach(section => {
             const ip = section.dataset.ip.toLowerCase();
             const hasPorts = section.dataset.hasPorts === "true";
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (onlyOpenPorts && !hasPorts) {
                 section.style.display = "none";
                 return;
             }
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (ipQuery !== "" && !ip.includes(ipQuery)) {
                 section.style.display = "none";
                 return;
@@ -1232,9 +1376,12 @@
             const portRows = section.querySelectorAll(".port-row");
             const cveRows = section.querySelectorAll(".cve-details-row");
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (portRows.length === 0) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (portQuery !== "" || protoQuery !== "" || stateQuery !== "" || serviceQuery !== "" || versionQuery !== "") {
                     section.style.display = "none";
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     section.style.display = "block";
                 }
@@ -1243,6 +1390,7 @@
 
             let visibleRowsCount = 0;
 
+            // Process one client-side item during each collection iteration.
             portRows.forEach((row, idx) => {
                 const port = row.dataset.port.toLowerCase();
                 const protocol = (row.dataset.protocol || "").toLowerCase();
@@ -1257,17 +1405,22 @@
                 const serviceMatches = serviceQuery === "" || service.includes(serviceQuery);
                 const versionMatches = versionQuery === "" || version.includes(versionQuery);
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (portMatches && protoMatches && stateMatches && serviceMatches && versionMatches) {
                     row.style.display = "table-row";
                     visibleRowsCount++;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     row.style.display = "none";
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (cveRow) cveRow.style.display = "none";
                 }
             });
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (visibleRowsCount > 0) {
                 section.style.display = "block";
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 section.style.display = "none";
             }
@@ -1278,6 +1431,7 @@
         updateDashboard();
     }
 
+    // Define the resetFilters client-side operation.
     function resetFilters() {
         document.getElementById("filter-ip").value = "";
         document.getElementById("filter-port").value = "";
@@ -1289,15 +1443,20 @@
         filterResults();
     }
 
+    // Define the toggleMapFullscreen client-side operation.
     function toggleMapFullscreen() {
         const container = document.getElementById("map-fullscreen-container");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!document.fullscreenElement) {
+            // Run the callback for the associated client-side operation.
             container.requestFullscreen().catch(err => {
                 console.error("Error enabling fullscreen:", err);
                 container.classList.add("fullscreen");
             });
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             document.exitFullscreen();
         }
@@ -1307,19 +1466,26 @@
     document.addEventListener("fullscreenchange", () => {
         const container = document.getElementById("map-fullscreen-container");
         const btn = document.getElementById("map-fullscreen-btn");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
         const isFullscreen = document.fullscreenElement === container;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (isFullscreen) {
             container.classList.add("fullscreen");
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (btn) btn.innerHTML = "Exit Fullscreen";
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             container.classList.remove("fullscreen");
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (btn) btn.innerHTML = "Fullscreen Mode";
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
+            // Run the callback for the associated client-side operation.
             setTimeout(() => {
                 network.setSize("100%", "100%");
                 network.redraw();
@@ -1340,11 +1506,15 @@
         let totalOpenPorts = 0;
         let versionedServicesCount = 0;
 
+        // Create the structured client-side object used by this operation.
         const serviceCounts = {};
+        // Create the structured client-side object used by this operation.
         const protocolCounts = { tcp: 0, udp: 0 };
         const portsByHost = [];
 
+        // Process one client-side item during each collection iteration.
         hostSections.forEach(section => {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (section.style.display === "none") return;
 
             totalHostsCount++;
@@ -1362,7 +1532,9 @@
             const portRows = section.querySelectorAll(".port-row");
             let visiblePortsCount = 0;
 
+            // Process one client-side item during each collection iteration.
             portRows.forEach(row => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (row.style.display === "none") return;
 
                 visiblePortsCount++;
@@ -1372,17 +1544,21 @@
                 const protocol = (row.dataset.protocol || "tcp").toLowerCase().trim();
                 const version = (row.dataset.version || "").trim();
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (service && service !== "-") {
                     serviceCounts[service] = (serviceCounts[service] || 0) + 1;
                 }
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (protocol) {
                     protocolCounts[protocol] = (protocolCounts[protocol] || 0) + 1;
                 }
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (version && version !== "-") {
                     versionedServicesCount++;
                 }
             });
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (visiblePortsCount > 0) {
                 portsByHost.push({ ip: ip, count: visiblePortsCount });
             }
@@ -1420,6 +1596,7 @@
         renderProtocolsChart(protocolCounts.tcp, protocolCounts.udp);
     }
 
+    // Define the getChartThemeColors client-side operation.
     function getChartThemeColors() {
         const isDark = document.documentElement.getAttribute("data-theme") === "dark";
         return {
@@ -1430,10 +1607,13 @@
         };
     }
 
+    // Define the renderHostStatusChart client-side operation.
     function renderHostStatusChart(active, inactive) {
         const canvas = document.getElementById("chart-host-status");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!canvas) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (chartHostStatus) {
             chartHostStatus.destroy();
         }
@@ -1471,10 +1651,13 @@
         });
     }
 
+    // Define the renderCommonServicesChart client-side operation.
     function renderCommonServicesChart(labels, data) {
         const canvas = document.getElementById("chart-common-services");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!canvas) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (chartCommonServices) {
             chartCommonServices.destroy();
         }
@@ -1523,10 +1706,13 @@
         });
     }
 
+    // Define the renderPortsByHostChart client-side operation.
     function renderPortsByHostChart(labels, data) {
         const canvas = document.getElementById("chart-ports-by-host");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!canvas) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (chartPortsByHost) {
             chartPortsByHost.destroy();
         }
@@ -1574,10 +1760,13 @@
         });
     }
 
+    // Define the renderProtocolsChart client-side operation.
     function renderProtocolsChart(tcp, udp) {
         const canvas = document.getElementById("chart-protocols");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!canvas) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (chartProtocols) {
             chartProtocols.destroy();
         }
@@ -1616,8 +1805,11 @@
 
     // Observe data-theme changes on <html> to update charts & network map dynamically
     if (window.MutationObserver) {
+        // Define the themeObserver client-side operation.
         const themeObserver = new MutationObserver((mutations) => {
+            // Process one client-side item during each collection iteration.
             mutations.forEach((mutation) => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (mutation.attributeName === "data-theme") {
                     updateDashboard();
                     updateTopology();

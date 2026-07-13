@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <!-- Include vis-network library -->
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
@@ -513,6 +514,7 @@
         const select = document.getElementById('filter-subnet');
         const subnets = [...new Set(rawHosts.map(h => h.subnet))].sort();
 
+        // Process one client-side item during each collection iteration.
         subnets.forEach(sub => {
             const opt = document.createElement('option');
             opt.value = sub;
@@ -524,16 +526,19 @@
     // Initialise Network Map
     function initMap() {
         const container = document.getElementById('network-map');
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
         nodesDataSet = new vis.DataSet();
         edgesDataSet = new vis.DataSet();
 
+        // Create the structured client-side object used by this operation.
         const data = {
             nodes: nodesDataSet,
             edges: edgesDataSet
         };
 
+        // Create the structured client-side object used by this operation.
         const options = {
             nodes: {
                 font: {
@@ -573,6 +578,7 @@
         network = new vis.Network(container, data, options);
 
         network.on("selectNode", function (params) {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (params.nodes.length > 0) {
                 selectedNodeId = params.nodes[0];
                 showDetails(selectedNodeId);
@@ -594,6 +600,7 @@
 
     // Center camera on nodes
     function centerMap() {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.fit({
                 animation: {
@@ -606,6 +613,7 @@
 
     // Toggle physics solver
     function togglePhysics(enabled) {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.setOptions({ physics: { enabled: enabled } });
         }
@@ -619,6 +627,7 @@
 
     // Rebuild visual nodes and edges from master list using active filters
     function buildTopology() {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!nodesDataSet || !edgesDataSet) return;
 
         const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -676,7 +685,9 @@
         // 2. Process unique subnets
         const visibleSubnets = [...new Set(filteredHosts.map(h => h.subnet))];
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (groupSubnets) {
+            // Process one client-side item during each collection iteration.
             visibleSubnets.forEach(sub => {
                 newNodes.push({
                     id: "sub_" + sub,
@@ -713,8 +724,10 @@
             // Adjust size based on criticality
             if (host.criticality === "Critical" || host.criticality === "High") {
                 size = 22;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else if (host.criticality === "Medium") {
                 size = 17;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 size = 12;
             }
@@ -723,9 +736,11 @@
             if (host.anomalies.length > 0) {
                 bg = themeColors.hostAnomalyBg;
                 border = themeColors.hostAnomalyBorder;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else if (!host.is_trusted) {
                 bg = themeColors.hostUntrustedBg;
                 border = themeColors.hostUntrustedBorder;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else if (host.is_asset) {
                 bg = themeColors.hostAssetBg;
                 border = themeColors.hostAssetBorder;
@@ -757,6 +772,7 @@
                     color: { color: themeColors.edgeColor, highlight: themeColors.edgeHighlight },
                     width: 1.5
                 });
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 // Direct connect to core if grouping is disabled
                 newEdges.push({
@@ -788,6 +804,7 @@
         if (selectedNodeId && newNodeIds.includes(selectedNodeId)) {
             network.selectNodes([selectedNodeId]);
             showDetails(selectedNodeId);
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             showWelcomePanel();
         }
@@ -801,6 +818,7 @@
         const criticality = document.getElementById('filter-criticality').value;
         const status = document.getElementById('filter-status').value;
 
+        // Run the callback for the associated client-side operation.
         return rawHosts.filter(h => {
             // 1. Text Search
             if (search) {
@@ -811,6 +829,7 @@
                 const ownerMatch = h.owner && h.owner.toLowerCase().includes(search);
                 const locationMatch = h.location && h.location.toLowerCase().includes(search);
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!ipMatch && !nameMatch && !macMatch && !vendorMatch && !ownerMatch && !locationMatch) {
                     return false;
                 }
@@ -833,10 +852,15 @@
 
             // 5. Status / Trust dropdown
             if (status) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (status === "asset" && !h.is_asset) return false;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (status === "known" && h.is_asset) return false;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (status === "trusted" && !h.is_trusted) return false;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (status === "untrusted" && h.is_trusted) return false;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (status === "anomaly" && h.anomalies.length === 0) return false;
             }
 
@@ -864,18 +888,22 @@
     function toggleFullscreen() {
         const container = document.getElementById('map-container');
         const btn = document.getElementById('fullscreen-btn');
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!container) return;
 
         container.classList.toggle('fullscreen');
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (container.classList.contains('fullscreen')) {
             btn.textContent = "Exit Fullscreen";
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             btn.textContent = "Fullscreen Mode";
         }
 
         // Trigger resize on vis-network
         if (network) {
+            // Run the callback for the associated client-side operation.
             setTimeout(() => {
                 network.redraw();
                 network.fit();
@@ -885,6 +913,7 @@
 
     // Close Inspector
     function closeInspector() {
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (network) {
             network.unselectNodes();
         }
@@ -895,6 +924,7 @@
     // Reset details panel state
     function showWelcomePanel() {
         const content = document.getElementById('inspector-content');
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!content) return;
 
         content.innerHTML = `
@@ -903,14 +933,17 @@
                 <p>Click on any host or subnet node in the map to inspect its details, status, and related configuration.</p>
             </div>
         `;
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     // Populate Inspector panel with dynamic HTML for selected node
     function showDetails(nodeId) {
         const content = document.getElementById('inspector-content');
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!content) return;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId === "core") {
             content.innerHTML = `
                 <div class="inspector-meta-item">
@@ -919,6 +952,7 @@
                 </div>
                 <div class="inspector-meta-item" style="margin-top: 10px;">
                     <span class="inspector-meta-label">Active Subnets</span>
+                    // Run the callback for the associated client-side operation.
                     <span class="inspector-meta-value">${[...new Set(rawHosts.map(h => h.subnet))].length} Unique Clusters</span>
                 </div>
                 <div class="inspector-meta-item">
@@ -929,6 +963,7 @@
             return;
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId.startsWith("sub_")) {
             const subnetName = nodeId.replace("sub_", "");
             const matchingHosts = rawHosts.filter(h => h.subnet === subnetName);
@@ -962,14 +997,18 @@
             return;
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (nodeId.startsWith("host_")) {
             const ip = nodeId.replace("host_", "");
             const host = rawHosts.find(h => h.ip === ip);
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!host) return;
 
             // Build Anomaly blocks
             let anomalyHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (host.anomalies.length > 0) {
+                // Process one client-side item during each collection iteration.
                 host.anomalies.forEach(anom => {
                     anomalyHtml += `
                         <div class="anomaly-alert-box">
@@ -989,6 +1028,7 @@
 
             // Action Forms and Links
             let actionsHtml = "";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (host.is_asset) {
                 actionsHtml += `
                     <a href="/admin/assets/${host.asset_id}/edit" class="inspector-btn inspector-btn-primary">
@@ -1078,6 +1118,7 @@
                 </div>
             `;
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (typeof lucide !== 'undefined') lucide.createIcons();
         }
     }
@@ -1089,8 +1130,11 @@
 
         // Recalculate on theme switches
         const checkbox = document.getElementById("theme-checkbox");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (checkbox) {
+            // Handle the registered browser event when it is emitted.
             checkbox.addEventListener("change", () => {
+                // Run the callback for the associated client-side operation.
                 setTimeout(() => {
                     buildTopology();
                 }, 100);

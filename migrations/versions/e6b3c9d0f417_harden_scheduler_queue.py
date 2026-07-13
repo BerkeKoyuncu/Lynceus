@@ -15,10 +15,12 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
+    # Handle the branch where 'honeypot_blocked_ip' in inspector.get_table_names() evaluates to true.
     if "honeypot_blocked_ip" in inspector.get_table_names():
         unique_constraints = inspector.get_unique_constraints("honeypot_blocked_ip")
         indexes = inspector.get_indexes("honeypot_blocked_ip")
@@ -30,6 +32,7 @@ def upgrade():
             and index.get("column_names") == ["ip_address"]
             for index in indexes
         )
+        # Handle the branch where not has_ip_unique evaluates to true.
         if not has_ip_unique:
             op.execute(
                 "DELETE FROM honeypot_blocked_ip "
@@ -41,6 +44,7 @@ def upgrade():
                 "SELECT MIN(id) AS keep_id FROM honeypot_blocked_ip GROUP BY ip_address"
                 ") AS deduplicated)"
             )
+            # Manage op.batch_alter_table('honeypot_blocked_ip') within this scoped block.
             with op.batch_alter_table("honeypot_blocked_ip") as batch_op:
                 batch_op.alter_column(
                     "ip_address", existing_type=sa.String(45), nullable=False
@@ -49,6 +53,7 @@ def upgrade():
                     "uq_honeypot_blocked_ip_ip_address", ["ip_address"]
                 )
 
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.add_column(
             sa.Column("scheduler_claim_token", sa.String(36), nullable=True)
@@ -82,7 +87,9 @@ def upgrade():
         )
 
 
+# Handle the downgrade operation.
 def downgrade():
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.drop_index("ix_scan_result_scheduled_for")
         batch_op.drop_index("ix_scan_result_scheduler_queue")

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <style>
@@ -98,7 +99,7 @@
         color: var(--success-text) !important;
     }
 
-    /* Risk seviyesine göre SVG göstergesi (Gauge) rengi */
+        /* Set the SVG gauge color according to the current risk level. */
     .status-high-gauge .gauge-fill {
         stroke: var(--error-text) !important;
     }
@@ -111,7 +112,7 @@
         stroke: var(--success-text) !important;
     }
 
-    /* Genel metin renk sınıfları */
+        /* Provide shared text color utility classes. */
     .text-high {
         color: var(--error-text) !important;
     }
@@ -478,6 +479,7 @@
         <span class="dashboard-card-footer">Scans triggered by your account</span>
     </a>
 
+    {# Render this branch when user_stats.running_scans > 0 evaluates to true. #}
     {% if user_stats.running_scans > 0 %}
     <a href="{{ url_for('history') }}" class="dashboard-card card-warning-border">
         <div class="dashboard-card-header">
@@ -490,6 +492,7 @@
         <p class="dashboard-card-value" style="color: var(--warning-text);">{{ user_stats.running_scans }}</p>
         <span class="dashboard-card-footer">Active scans in background</span>
     </a>
+    {# Render the fallback branch when earlier conditions do not match. #}
     {% else %}
     <a href="{{ url_for('schedules') }}" class="dashboard-card">
         <div class="dashboard-card-header">
@@ -503,8 +506,10 @@
     </a>
     {% endif %}
 
+    {# Render this branch when current_user.is_admin evaluates to true. #}
     {% if current_user.is_admin %}
     <a href="{{ url_for('settings', tab='honeypot') }}" class="dashboard-card">
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
         <a href="#" class="dashboard-card">
             {% endif %}
@@ -515,12 +520,15 @@
                 </div>
             </div>
             <p class="dashboard-card-value {% if honeypot_active %}text-success{% else %}text-muted{% endif %}">
+                {# Render this branch when honeypot_active evaluates to true. #}
                 {% if honeypot_active %}Active{% else %}Inactive{% endif %}
             </p>
             <span class="dashboard-card-footer">{{ honeypot_paths_count }} decoys monitoring suspicious paths</span>
         </a>
 
+        {# Render this branch when current_user.is_admin evaluates to true. #}
         {% if current_user.is_admin %}
+        {# Render this branch when admin_stats.active_anomalies > 0 evaluates to true. #}
         {% if admin_stats.active_anomalies > 0 %}
         <a href="{{ url_for('admin_panel', tab='anomalies') }}" class="dashboard-card card-error-border">
             <div class="dashboard-card-header">
@@ -534,6 +542,7 @@
             </p>
             <span class="dashboard-card-footer">MAC spoofing or rogue devices</span>
         </a>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
         <a href="{{ url_for('admin_panel', tab='anomalies') }}" class="dashboard-card">
             <div class="dashboard-card-header">
@@ -548,6 +557,7 @@
             <span class="dashboard-card-footer">MAC spoofing or rogue devices</span>
         </a>
         {% endif %}
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
         <a href="{{ url_for('settings', tab='smtp') }}" class="dashboard-card">
             <div class="dashboard-card-header">
@@ -557,6 +567,7 @@
                 </div>
             </div>
             <p class="dashboard-card-value {% if smtp_configured %}text-success{% else %}text-error{% endif %}">
+                {# Render this branch when smtp_configured evaluates to true. #}
                 {% if smtp_configured %}On{% else %}Off{% endif %}
             </p>
             <span class="dashboard-card-footer">SMTP email settings configuration</span>
@@ -564,6 +575,7 @@
         {% endif %}
 </div>
 
+{# Render this branch when current_user.is_admin evaluates to true. #}
 {% if current_user.is_admin %}
 {# Admin Additional Metrics Bar #}
 <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 28px;">
@@ -625,8 +637,10 @@
                     {{ risk_level }} Risk
                 </div>
                 <p class="risk-desc">
+                    {# Render this branch when risk_score == 0 evaluates to true. #}
                     {% if risk_score == 0 %}
                     Perfect security state! No active threats or configuration issues detected.
+                    {# Render this branch when risk_score < 35 evaluates to true. #}
                     {% elif risk_score < 35 %} Overall network posture is good. Address low severity recommendations to
                         optimize. {% elif risk_score < 70 %} Moderate security risk. Review untrusted devices and
                         configuration anomalies soon. {% else %} Critical attention required! Active threat events or
@@ -639,8 +653,10 @@
                 <i data-lucide="shield-alert" class="threat-title-icon text-{{ risk_level|lower }}"></i>
                 Risk Factors Breakdown
             </h3>
+            {# Render this branch when risk_factors evaluates to true. #}
             {% if risk_factors %}
             <div class="threat-list">
+                {# Render one iteration for each item in factor in risk_factors. #}
                 {% for factor in risk_factors %}
                 <div class="threat-item {{ factor.severity }}">
                     <div class="threat-badge-icon threat-icon-{{ factor.severity }} flex-shrink-0"
@@ -653,6 +669,7 @@
                 </div>
                 {% endfor %}
             </div>
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
             <div class="threat-success-state"
                 style="text-align: center; padding: 24px 16px; color: var(--success-text); background: rgba(220, 232, 209, 0.2); border-radius: var(--radius-md); border: 1px dashed var(--success-text);">
@@ -675,8 +692,10 @@
                 </h3>
                 <a href="{{ url_for('admin_assets') }}" class="view-all-link">Manage Inventory</a>
             </div>
+            {# Render this branch when highest_risk_assets evaluates to true. #}
             {% if highest_risk_assets %}
             <div class="risk-assets-list">
+                {# Render one iteration for each item in asset in highest_risk_assets. #}
                 {% for asset in highest_risk_assets %}
                 <div class="risk-asset-item">
                     <div class="risk-asset-info">
@@ -694,14 +713,17 @@
                             <span>Criticality: <strong>{{ asset.criticality }}</strong></span>
                             <span>•</span>
                             <span>
+                                {# Render this branch when asset.is_trusted evaluates to true. #}
                                 {% if asset.is_trusted %}
                                 <span style="color: var(--success-text); font-weight: 600;">Trusted</span>
+                                {# Render the fallback branch when earlier conditions do not match. #}
                                 {% else %}
                                 <span style="color: var(--error-text); font-weight: 700;">Untrusted</span>
                                 {% endif %}
                             </span>
                         </div>
                     </div>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <a href="/admin/assets/edit/{{ asset.id }}" class="asset-edit-btn" title="Edit Asset">
                         <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
@@ -710,6 +732,7 @@
                 </div>
                 {% endfor %}
             </div>
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
             <div class="risk-assets-empty">
                 <i data-lucide="database" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"></i>
@@ -737,6 +760,7 @@
 
         const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         const clockSpan = document.getElementById('current-date-span');
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (clockSpan) {
             clockSpan.textContent = formattedDate;
         }

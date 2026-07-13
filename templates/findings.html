@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <style>
     .findings-header {
@@ -438,6 +439,7 @@
     </form>
 </div>
 
+{# Render this branch when findings evaluates to true. #}
 {% if findings %}
 <div class="findings-table-wrapper">
     <table class="findings-table">
@@ -454,6 +456,7 @@
         </thead>
 
         <tbody>
+            {# Render one iteration for each item in finding in findings. #}
             {% for finding in findings %}
             <tr class="finding-row" tabindex="0" role="button" aria-expanded="false"
                 aria-controls="details-{{ finding.id }}" data-details-id="details-{{ finding.id }}">
@@ -464,6 +467,7 @@
                 <td>
                     {{ finding.service or 'Unknown' }}
 
+                    {# Render this branch when finding.version evaluates to true. #}
                     {% if finding.version %}
                     <span class="text-muted">
                         {{ finding.version }}
@@ -472,16 +476,19 @@
                 </td>
 
                 <td>
+                    {# Render this branch when finding.cve evaluates to true. #}
                     {% if finding.cve %}
                     <strong style="color: var(--primary-dark);">
                         {{ finding.cve }}
                     </strong>
 
+                    {# Render this branch when finding.cvss is not none evaluates to true. #}
                     {% if finding.cvss is not none %}
                     <span class="text-muted">
                         ({{ finding.cvss }})
                     </span>
                     {% endif %}
+                    {# Render the fallback branch when earlier conditions do not match. #}
                     {% else %}
                     <span class="text-muted">
                         Policy Violation
@@ -502,6 +509,7 @@
                 </td>
 
                 <td>
+                    {# Render this branch when finding.assigned_user evaluates to true. #}
                     {% if finding.assigned_user %}
                     <span class="user-summary">
                         <span class="user-avatar" style="
@@ -517,6 +525,7 @@
 
                         {{ finding.assigned_user.email.split('@')[0] }}
                     </span>
+                    {# Render the fallback branch when earlier conditions do not match. #}
                     {% else %}
                     <span class="text-muted">
                         Unassigned
@@ -548,14 +557,17 @@
                                     {{ finding.remediation_note or 'No remediation guidance available.' }}
                                 </p>
 
+                                {# Render this branch when finding.status == 'accepted_risk' evaluates to true. #}
                                 {% if finding.status == 'accepted_risk' %}
                                 <h4 style="margin-top: 15px;">
                                     Accepted Risk Expiry
                                 </h4>
 
                                 <p class="remediation-text">
+                                    {# Render this branch when finding.acceptance_expiry evaluates to true. #}
                                     {% if finding.acceptance_expiry %}
                                     {{ finding.acceptance_expiry|localtime }}
+                                    {# Render the fallback branch when earlier conditions do not match. #}
                                     {% else %}
                                     No expiry date has been defined.
                                     {% endif %}
@@ -563,6 +575,7 @@
                                 {% endif %}
                             </div>
 
+                            {# Render this branch when current_user.is_admin evaluates to true. #}
                             {% if current_user.is_admin %}
                             <div class="details-editor">
                                 <h4>Update Finding Details</h4>
@@ -578,6 +591,7 @@
 
                                     <select name="status" id="status-{{ finding.id }}" class="finding-status-select"
                                         data-finding-id="{{ finding.id }}">
+                                        {# Render this branch when finding.status == 'not_observed' evaluates to true. #}
                                         {% if finding.status == 'not_observed' %}
                                         <option value="not_observed" selected disabled>
                                             Not Observed — System Managed
@@ -608,6 +622,7 @@
                                         </option>
                                     </select>
 
+                                    {# Render this branch when finding.status == 'not_observed' evaluates to true. #}
                                     {% if finding.status == 'not_observed' %}
                                     <span class="form-help">
                                         Not Observed is assigned automatically
@@ -639,6 +654,7 @@
                                             Unassigned
                                         </option>
 
+                                        {# Render one iteration for each item in user in users. #}
                                         {% for user in users %}
                                         <option value="{{ user.id }}" {% if finding.assigned_user_id==user.id
                                             %}selected{% endif %}>
@@ -685,6 +701,7 @@
         </tbody>
     </table>
 </div>
+{# Render the fallback branch when earlier conditions do not match. #}
 {% else %}
 <div class="empty-state">
     <i data-lucide="shield-check" class="empty-state-icon" aria-hidden="true"></i>
@@ -698,14 +715,18 @@
 {% endif %}
 
 <script>
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", function () {
         const automaticFilters =
             document.querySelectorAll(".automatic-filter");
 
+        // Process one client-side item during each collection iteration.
         automaticFilters.forEach(function (filterElement) {
+            // Handle the registered browser event when it is emitted.
             filterElement.addEventListener("change", function () {
                 const parentForm = filterElement.closest("form");
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (parentForm) {
                     parentForm.submit();
                 }
@@ -715,8 +736,11 @@
         const findingRows =
             document.querySelectorAll(".finding-row");
 
+        // Process one client-side item during each collection iteration.
         findingRows.forEach(function (findingRow) {
+            // Handle the registered browser event when it is emitted.
             findingRow.addEventListener("click", function (event) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (isInteractiveElement(event.target)) {
                     return;
                 }
@@ -724,7 +748,9 @@
                 toggleFindingDetails(findingRow);
             });
 
+            // Handle the registered browser event when it is emitted.
             findingRow.addEventListener("keydown", function (event) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (event.key !== "Enter" && event.key !== " ") {
                     return;
                 }
@@ -737,7 +763,9 @@
         const findingStatusSelects =
             document.querySelectorAll(".finding-status-select");
 
+        // Process one client-side item during each collection iteration.
         findingStatusSelects.forEach(function (statusSelect) {
+            // Handle the registered browser event when it is emitted.
             statusSelect.addEventListener("change", function () {
                 const findingId =
                     statusSelect.dataset.findingId;
@@ -752,12 +780,15 @@
         const deleteForms =
             document.querySelectorAll(".delete-finding-form");
 
+        // Process one client-side item during each collection iteration.
         deleteForms.forEach(function (deleteForm) {
+            // Handle the registered browser event when it is emitted.
             deleteForm.addEventListener("submit", function (event) {
                 const shouldDelete = window.confirm(
                     "Are you sure you want to permanently delete this finding?"
                 );
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!shouldDelete) {
                     event.preventDefault();
                 }
@@ -765,6 +796,7 @@
         });
     });
 
+    // Define the isInteractiveElement client-side operation.
     function isInteractiveElement(target) {
         return Boolean(
             target.closest(
@@ -773,10 +805,12 @@
         );
     }
 
+    // Define the toggleFindingDetails client-side operation.
     function toggleFindingDetails(triggerRow) {
         const detailsId =
             triggerRow.dataset.detailsId;
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!detailsId) {
             return;
         }
@@ -784,6 +818,7 @@
         const detailsRow =
             document.getElementById(detailsId);
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!detailsRow) {
             return;
         }
@@ -802,6 +837,7 @@
         );
     }
 
+    // Define the toggleAcceptedRiskExpiry client-side operation.
     function toggleAcceptedRiskExpiry(findingId, status) {
         const expiryContainer =
             document.getElementById("expiry-" + findingId);
@@ -811,6 +847,7 @@
                 "expiry-date-" + findingId
             );
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!expiryContainer) {
             return;
         }
@@ -823,6 +860,7 @@
             shouldDisplay
         );
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!shouldDisplay && expiryInput) {
             expiryInput.value = "";
         }

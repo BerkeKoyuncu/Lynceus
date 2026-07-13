@@ -2,6 +2,7 @@ import pytest
 from app import create_app
 from models import db, ScanDispatchLock, User, SystemSetting
 
+# Handle the app operation.
 @pytest.fixture
 def app():
     # Set testing configuration
@@ -12,6 +13,7 @@ def app():
         "SECRET_KEY": "test_secret_key"
     })
     
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         db.create_all()
         db.session.add(ScanDispatchLock(id=1))
@@ -38,10 +40,12 @@ def app():
         
         db.drop_all()
 
+# Handle the client operation.
 @pytest.fixture
 def client(app):
     return app.test_client()
 
+# Handle the runner operation.
 @pytest.fixture
 def runner(app):
     return app.test_cli_runner()

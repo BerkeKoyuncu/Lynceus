@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <div class="compare-header-row">
     <h2>Scan Comparison</h2>
@@ -8,6 +9,7 @@
     </div>
 </div>
 
+{# Render this branch when not targets_match evaluates to true. #}
 {% if not targets_match %}
     <div class="alert-box warning-alert">
         <strong><i data-lucide="alert-circle" class="icon-inline"></i> Warning:</strong> You are comparing scans with different targets (Scan A: {{ scan_a.network_cidr }} vs Scan B: {{ scan_b.network_cidr }}). Some differences may be due to different targets.
@@ -22,6 +24,7 @@
         <h4 style="margin: 0 0 10px 0; font-size: 18px; color: var(--forest);">{{ scan_a.network_cidr }}</h4>
         <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Date:</strong> {{ scan_a.created_at|localtime }}</div>
         <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Type:</strong> {{ scan_a.scan_type|scan_name }}</div>
+        {# Render this branch when scan_a.ports evaluates to true. #}
         {% if scan_a.ports %}
             <div class="meta-item" style="font-size: 13px; color: var(--text-muted);"><strong>Ports:</strong> {{ scan_a.ports|replace(',', ', ') }}</div>
         {% endif %}
@@ -36,6 +39,7 @@
         <h4 style="margin: 0 0 10px 0; font-size: 18px; color: var(--forest);">{{ scan_b.network_cidr }}</h4>
         <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Date:</strong> {{ scan_b.created_at|localtime }}</div>
         <div class="meta-item" style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);"><strong>Type:</strong> {{ scan_b.scan_type|scan_name }}</div>
+        {# Render this branch when scan_b.ports evaluates to true. #}
         {% if scan_b.ports %}
             <div class="meta-item" style="font-size: 13px; color: var(--text-muted);"><strong>Ports:</strong> {{ scan_b.ports|replace(',', ', ') }}</div>
         {% endif %}
@@ -56,8 +60,10 @@
     </div>
     <div class="stat-card">
         <span class="stat-card-title">Newly Opened Ports</span>
+        {# Render this branch when total_added_ports > 0 evaluates to true. #}
         {% if total_added_ports > 0 %}
             <span class="stat-card-value text-error">+{{ total_added_ports }}</span>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <span class="stat-card-value">+{{ total_added_ports }}</span>
         {% endif %}
@@ -87,25 +93,30 @@
 {% if added_hosts %}
     <h3 class="section-title text-success"><i data-lucide="plus-circle" class="icon-inline text-success"></i> Newly Discovered Hosts ({{ added_hosts|length }})</h3>
     <div class="hosts-container">
+        {# Render one iteration for each item in host in added_hosts. #}
         {% for host in added_hosts %}
             <div class="host-section diff-added-card">
                 <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <h4 style="margin: 0;">
                         Host: <span class="host-ip">{{ host.address }}</span>
+                        {# Render this branch when host.hostname evaluates to true. #}
                         {% if host.hostname %}
                             <span class="host-name">/ {{ host.hostname }}</span>
                         {% endif %}
                         <span class="badge success-badge">New Host Discovered</span>
                     </h4>
+                    {# Render this branch when host.mac_address evaluates to true. #}
                     {% if host.mac_address %}
                     <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
                         <strong>MAC:</strong> {{ host.mac_address }}
+                        {# Render this branch when host.mac_vendor evaluates to true. #}
                         {% if host.mac_vendor %}
                             <span class="host-vendor">({{ host.mac_vendor }})</span>
                         {% endif %}
                     </div>
                     {% endif %}
                 </div>
+                {# Render this branch when host.ports evaluates to true. #}
                 {% if host.ports %}
                     <table class="ports-table">
                         <thead>
@@ -118,6 +129,7 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {# Render one iteration for each item in port in host.ports. #}
                             {% for port in host.ports %}
                             <tr class="port-row-added">
                                 <td><strong>{{ port.port }}</strong></td>
@@ -129,6 +141,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                {# Render the fallback branch when earlier conditions do not match. #}
                 {% else %}
                     <p class="no-ports-msg">No open ports found on this host.</p>
                 {% endif %}
@@ -141,25 +154,30 @@
 {% if removed_hosts %}
     <h3 class="section-title text-error"><i data-lucide="minus-circle" class="icon-inline text-error"></i> Hosts Went Offline ({{ removed_hosts|length }})</h3>
     <div class="hosts-container">
+        {# Render one iteration for each item in host in removed_hosts. #}
         {% for host in removed_hosts %}
             <div class="host-section diff-removed-card">
                 <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <h4 style="margin: 0;">
                         Host: <span class="host-ip text-line-through">{{ host.address }}</span>
+                        {# Render this branch when host.hostname evaluates to true. #}
                         {% if host.hostname %}
                             <span class="host-name text-line-through">/ {{ host.hostname }}</span>
                         {% endif %}
                         <span class="badge error-badge">Host Offline</span>
                     </h4>
+                    {# Render this branch when host.mac_address evaluates to true. #}
                     {% if host.mac_address %}
                     <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
                         <strong>MAC:</strong> <span class="text-line-through">{{ host.mac_address }}</span>
+                        {# Render this branch when host.mac_vendor evaluates to true. #}
                         {% if host.mac_vendor %}
                             <span class="host-vendor">({{ host.mac_vendor }})</span>
                         {% endif %}
                     </div>
                     {% endif %}
                 </div>
+                {# Render this branch when host.ports evaluates to true. #}
                 {% if host.ports %}
                     <p class="meta-item text-muted">Previously open ports before going offline:</p>
                     <table class="ports-table">
@@ -172,6 +190,7 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {# Render one iteration for each item in port in host.ports. #}
                             {% for port in host.ports %}
                             <tr class="port-row-removed">
                                 <td>{{ port.port }}</td>
@@ -182,6 +201,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                {# Render the fallback branch when earlier conditions do not match. #}
                 {% else %}
                     <p class="no-ports-msg">No ports were open before going offline.</p>
                 {% endif %}
@@ -194,19 +214,23 @@
 {% if modified_hosts %}
     <h3 class="section-title text-warning"><i data-lucide="alert-circle" class="icon-inline text-warning"></i> Modified Hosts ({{ modified_hosts|length }})</h3>
     <div class="hosts-container">
+        {# Render one iteration for each item in host in modified_hosts. #}
         {% for host in modified_hosts %}
             <div class="host-section diff-modified-card">
                 <div class="host-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                     <h4 style="margin: 0;">
                         Host: <span class="host-ip">{{ host.address }}</span>
+                        {# Render this branch when host.hostname evaluates to true. #}
                         {% if host.hostname %}
                             <span class="host-name">/ {{ host.hostname }}</span>
                         {% endif %}
                         <span class="badge running-badge">Changes Detected</span>
                     </h4>
+                    {# Render this branch when host.mac_address evaluates to true. #}
                     {% if host.mac_address %}
                     <div class="host-mac" style="font-size: 13px; color: var(--text-muted);">
                         <strong>MAC:</strong> {{ host.mac_address }}
+                        {# Render this branch when host.mac_vendor evaluates to true. #}
                         {% if host.mac_vendor %}
                             <span class="host-vendor">({{ host.mac_vendor }})</span>
                         {% endif %}
@@ -254,16 +278,20 @@
                             <td><strong>{{ port.port }}</strong></td>
                             <td>{{ port.protocol }}</td>
                             <td>
+                                {# Render this branch when port.service_a != port.service_b evaluates to true. #}
                                 {% if port.service_a != port.service_b %}
                                     <span class="text-opacity-60">{{ port.service_a }}</span> → <strong>{{ port.service_b }}</strong>
+                                {# Render the fallback branch when earlier conditions do not match. #}
                                 {% else %}
                                     <strong>{{ port.service_b }}</strong>
                                 {% endif %}
                             </td>
                             <td class="version-details-text">
+                                {# Render this branch when port.state_a != port.state_b evaluates to true. #}
                                 {% if port.state_a != port.state_b %}
                                     State: <span class="text-opacity-60">{{ port.state_a }}</span> → <strong>{{ port.state_b }}</strong><br>
                                 {% endif %}
+                                {# Render this branch when port.version_a != port.version_b evaluates to true. #}
                                 {% if port.version_a != port.version_b %}
                                     Version: <span class="text-opacity-60">{{ port.version_a }}</span> → <strong>{{ port.version_b }}</strong>
                                 {% endif %}
@@ -294,6 +322,7 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {# Render one iteration for each item in host in unchanged_hosts. #}
                     {% for host in unchanged_hosts %}
                     <tr>
                         <td><strong>{{ host.address }}</strong></td>

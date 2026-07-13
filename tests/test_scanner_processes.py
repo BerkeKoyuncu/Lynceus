@@ -6,31 +6,39 @@ import pytest
 import scanner
 
 
+# Group the state and behavior for FakeProcess.
 class FakeProcess:
+    # Handle the init operation.
     def __init__(self):
         self.release = threading.Event()
         self.returncode = 0
         self.killed = False
         self.waited = False
 
+    # Handle the communicate operation.
     def communicate(self, timeout=None):
         self.release.wait(timeout=5)
         return "", ""
 
+    # Handle the kill operation.
     def kill(self):
         self.killed = True
         self.release.set()
 
+    # Handle the wait operation.
     def wait(self, timeout=None):
         self.waited = True
+        # Handle the branch where not self.release.wait(timeout) evaluates to true.
         if not self.release.wait(timeout):
             raise scanner.subprocess.TimeoutExpired("nmap", timeout)
         return self.returncode
 
+    # Handle the poll operation.
     def poll(self):
         return self.returncode if self.release.is_set() else None
 
 
+# Verify that finished retry process does not unregister new attempt behaves as expected.
 def test_finished_retry_process_does_not_unregister_new_attempt(monkeypatch):
     first = FakeProcess()
     second = FakeProcess()
@@ -42,10 +50,12 @@ def test_finished_retry_process_does_not_unregister_new_attempt(monkeypatch):
         threading.Thread(target=scanner.execute_nmap_subprocess, args=(["nmap"], 42))
         for _ in range(2)
     ]
+    # Iterate over workers and bind each item to worker.
     for worker in workers:
         worker.start()
 
     deadline = time.monotonic() + 5
+    # Repeat this block while len(scanner.active_processes.get(42, set())) < 2 remains true.
     while len(scanner.active_processes.get(42, set())) < 2:
         assert time.monotonic() < deadline
         time.sleep(0.01)
@@ -58,6 +68,7 @@ def test_finished_retry_process_does_not_unregister_new_attempt(monkeypatch):
     assert 42 not in scanner.active_processes
 
 
+# Verify that stop scan kills every active attempt behaves as expected.
 def test_stop_scan_kills_every_active_attempt():
     first = FakeProcess()
     second = FakeProcess()
@@ -74,10 +85,12 @@ def test_stop_scan_kills_every_active_attempt():
     assert 99 not in scanner.active_processes
 
 
+# Verify that stop scan requires every process to terminate behaves as expected.
 def test_stop_scan_requires_every_process_to_terminate():
     healthy = FakeProcess()
     stuck = FakeProcess()
 
+    # Handle the fail wait operation.
     def fail_wait(timeout=None):
         stuck.waited = True
         raise scanner.subprocess.TimeoutExpired("nmap", timeout)
@@ -97,6 +110,7 @@ def test_stop_scan_requires_every_process_to_terminate():
     scanner.active_processes.clear()
 
 
+# Verify that sequential nmap fallbacks refresh progress behaves as expected.
 def test_sequential_nmap_fallbacks_refresh_progress(monkeypatch):
     host_xml = (
         '<?xml version="1.0"?><nmaprun><host><status state="up"/>'
@@ -128,6 +142,7 @@ def test_sequential_nmap_fallbacks_refresh_progress(monkeypatch):
     ]
 
 
+# Verify that ownership loss is not swallowed by single host fallback behaves as expected.
 def test_ownership_loss_is_not_swallowed_by_single_host_fallback(monkeypatch):
     monkeypatch.setattr(scanner, "find_nmap_executable", lambda: "nmap")
     monkeypatch.setattr(
@@ -136,6 +151,7 @@ def test_ownership_loss_is_not_swallowed_by_single_host_fallback(monkeypatch):
         lambda command, scan_id=None, process_token=None: (0, "", ""),
     )
 
+    # Manage pytest.raises(scanner.ScanOwnershipLost) within this scoped block.
     with pytest.raises(scanner.ScanOwnershipLost):
         scanner.run_nmap_scan(
             "192.0.2.20",
@@ -144,6 +160,7 @@ def test_ownership_loss_is_not_swallowed_by_single_host_fallback(monkeypatch):
         )
 
 
+# Verify that ownership loss is not swallowed by subnet fallback behaves as expected.
 def test_ownership_loss_is_not_swallowed_by_subnet_fallback(monkeypatch):
     monkeypatch.setattr(scanner, "find_nmap_executable", lambda: "nmap")
     monkeypatch.setattr(
@@ -152,6 +169,7 @@ def test_ownership_loss_is_not_swallowed_by_subnet_fallback(monkeypatch):
         lambda command, scan_id=None, process_token=None: (0, "", ""),
     )
 
+    # Manage pytest.raises(scanner.ScanOwnershipLost) within this scoped block.
     with pytest.raises(scanner.ScanOwnershipLost):
         scanner.run_nmap_scan(
             "192.0.2.0/30",
@@ -160,11 +178,13 @@ def test_ownership_loss_is_not_swallowed_by_subnet_fallback(monkeypatch):
         )
 
 
+# Verify that process registered during stop is also terminated behaves as expected.
 def test_process_registered_during_stop_is_also_terminated(monkeypatch):
     process = FakeProcess()
     constructor_entered = threading.Event()
     allow_constructor = threading.Event()
 
+    # Handle the delayed popen operation.
     def delayed_popen(*args, **kwargs):
         constructor_entered.set()
         assert allow_constructor.wait(timeout=5)
@@ -200,6 +220,7 @@ def test_process_registered_during_stop_is_also_terminated(monkeypatch):
     assert 300 not in scanner.active_scan_process_tokens
 
 
+# Verify that cross worker stop cannot revoke another process token behaves as expected.
 def test_cross_worker_stop_cannot_revoke_another_process_token():
     scanner.active_processes.clear()
     scanner.active_scan_process_tokens.clear()
@@ -213,6 +234,7 @@ def test_cross_worker_stop_cannot_revoke_another_process_token():
     scanner.active_scan_process_tokens.clear()
 
 
+# Verify that wrong process token cannot kill current attempt behaves as expected.
 def test_wrong_process_token_cannot_kill_current_attempt():
     process = FakeProcess()
     scanner.active_processes.clear()

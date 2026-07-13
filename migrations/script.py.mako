@@ -16,9 +16,11 @@ branch_labels = ${repr(branch_labels)}
 depends_on = ${repr(depends_on)}
 
 
+# Apply the schema changes generated for this migration revision.
 def upgrade():
     ${upgrades if upgrades else "pass"}
 
 
+# Reverse the schema changes generated for this migration revision.
 def downgrade():
     ${downgrades if downgrades else "pass"}

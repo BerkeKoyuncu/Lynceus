@@ -15,11 +15,14 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the repair orphaned references operation.
 def _repair_orphaned_references():
     inspector = sa.inspect(op.get_bind())
     tables = set(inspector.get_table_names())
 
+    # Handle the columns operation.
     def columns(table_name):
+        # Handle the branch where table_name not in tables evaluates to true.
         if table_name not in tables:
             return set()
         return {column["name"] for column in inspector.get_columns(table_name)}
@@ -33,18 +36,21 @@ def _repair_orphaned_references():
             "WHERE asset_id IS NOT NULL "
             "AND NOT EXISTS (SELECT 1 FROM asset WHERE asset.id = security_finding.asset_id)"
         )
+    # Handle the branch where 'assigned_user_id' in finding_columns and 'user' in tables evaluates to true.
     if "assigned_user_id" in finding_columns and "user" in tables:
         op.execute(
             "UPDATE security_finding SET assigned_user_id = NULL "
             "WHERE assigned_user_id IS NOT NULL "
             "AND NOT EXISTS (SELECT 1 FROM user WHERE user.id = security_finding.assigned_user_id)"
         )
+    # Handle the branch where 'scan_id' in finding_columns and 'scan_result' in tables evaluates to true.
     if "scan_id" in finding_columns and "scan_result" in tables:
         op.execute(
             "UPDATE security_finding SET scan_id = NULL "
             "WHERE scan_id IS NOT NULL "
             "AND NOT EXISTS (SELECT 1 FROM scan_result WHERE scan_result.id = security_finding.scan_id)"
         )
+    # Handle the branch where 'schedule_id' in columns('scan_result') and 'scan_schedule' in tables evaluates to true.
     if (
         "schedule_id" in columns("scan_result")
         and "scan_schedule" in tables
@@ -57,6 +63,7 @@ def _repair_orphaned_references():
 
     # Observations require both parents, so an orphan cannot be retained validly.
     observation_columns = columns("asset_observation")
+    # Handle the branch where {'asset_id', 'scan_id'}.issubset(observation_columns) and {'asset', 'scan_result'}.issubset(tables) evaluates to true.
     if (
         {"asset_id", "scan_id"}.issubset(observation_columns)
         and {"asset", "scan_result"}.issubset(tables)
@@ -68,8 +75,10 @@ def _repair_orphaned_references():
         )
 
 
+# Handle the assert foreign key integrity operation.
 def _assert_foreign_key_integrity():
     violations = op.get_bind().exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    # Handle the branch where violations evaluates to true.
     if violations:
         raise RuntimeError(
             "SQLite foreign-key violations remain after cleanup: "
@@ -77,9 +86,11 @@ def _assert_foreign_key_integrity():
         )
 
 
+# Handle the upgrade operation.
 def upgrade():
     _repair_orphaned_references()
 
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.alter_column(
             "scheduler_dispatch_state",
@@ -91,7 +102,9 @@ def upgrade():
     _assert_foreign_key_integrity()
 
 
+# Handle the downgrade operation.
 def downgrade():
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.alter_column(
             "scheduler_dispatch_state",

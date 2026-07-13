@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <style>
     .rules-header {
@@ -201,6 +202,7 @@
 
 <!-- Rules Grid -->
 <div class="rules-grid">
+    {# Render one iteration for each item in rule in rules. #}
     {% for rule in rules %}
     <div class="rule-card">
         <div class="rule-card-header">
@@ -212,8 +214,10 @@
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span class="severity-badge severity-{{ rule.severity }}">{{ rule.severity }}</span>
+                {# Render this branch when rule.enabled evaluates to true. #}
                 {% if rule.enabled %}
                 <span class="status-badge status-resolved">Enabled</span>
+                {# Render the fallback branch when earlier conditions do not match. #}
                 {% else %}
                 <span class="status-badge status-open">Disabled</span>
                 {% endif %}
@@ -221,6 +225,7 @@
         </div>
         <div class="rule-body">
             <strong>Remediation Note:</strong> {{ rule.remediation_text or 'No remediation details provided.' }}
+            {# Render this branch when rule.exception_list evaluates to true. #}
             {% if rule.exception_list %}
             <br><span class="text-muted" style="font-size: 11px;">Exceptions: {{ rule.exception_list }}</span>
             {% endif %}
@@ -304,8 +309,10 @@
 </div>
 
 <script>
+    // Define the toggleForm client-side operation.
     function toggleForm(formId) {
         const form = document.getElementById(formId);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (form) {
             form.classList.toggle('open');
         }

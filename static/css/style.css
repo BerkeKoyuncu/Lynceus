@@ -1,4 +1,5 @@
 :root {
+    /* Style the elements matched by :root. */
     --sand: #BFB28B;
     --beige: #DCD1B8;
     --olive: #6E7D58;
@@ -37,6 +38,7 @@
 }
 
 [data-theme="dark"] {
+    /* Style the elements matched by [data-theme="dark"]. */
     --background: #151811;
     --surface: #1E2218;
     --surface-soft: #272C1F;
@@ -66,6 +68,7 @@
 }
 
 * {
+    /* Style the elements matched by *. */
     box-sizing: border-box;
 }
 
@@ -87,10 +90,12 @@ td,
 .scan-desc-card,
 .host-section,
 .detail-card {
+    /* Style the elements matched by body, .topbar, .content-card, .auth-panel, .user-menu summary, .user-dropdown, input:no.... */
     transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.18s ease;
 }
 
 body {
+    /* Style the elements matched by body. */
     margin: 0;
     min-height: 100vh;
     font-family: Barlow, Inter, Segoe UI, Arial, sans-serif;
@@ -103,6 +108,7 @@ body {
 /* Top Navbar */
 
 .topbar {
+    /* Style the elements matched by .topbar. */
     position: sticky;
     top: 0;
     z-index: 50;
@@ -112,6 +118,7 @@ body {
 }
 
 .topbar-inner {
+    /* Style the elements matched by .topbar-inner. */
     width: 100%;
     padding: 8px 24px;
     display: flex;
@@ -121,18 +128,21 @@ body {
 }
 
 .topbar-left {
+    /* Style the elements matched by .topbar-left. */
     display: flex;
     align-items: center;
     gap: 16px;
 }
 
 .topbar-right {
+    /* Style the elements matched by .topbar-right. */
     display: flex;
     align-items: center;
     gap: 20px;
 }
 
 .sidebar-toggle-btn {
+    /* Style the elements matched by .sidebar-toggle-btn. */
     background: none;
     border: none;
     color: #FFFDF8;
@@ -146,21 +156,25 @@ body {
 }
 
 .sidebar-toggle-btn:hover {
+    /* Style the elements matched by .sidebar-toggle-btn:hover. */
     background: rgba(255, 253, 248, 0.12);
     transform: scale(1.05);
 }
 
 .sidebar-toggle-btn:active {
+    /* Style the elements matched by .sidebar-toggle-btn:active. */
     transform: scale(0.95);
 }
 
 /* User Dropdown */
 
 .user-menu {
+    /* Style the elements matched by .user-menu. */
     position: relative;
 }
 
 .user-menu summary {
+    /* Style the elements matched by .user-menu summary. */
     list-style: none;
     display: flex;
     align-items: center;
@@ -175,15 +189,18 @@ body {
 }
 
 .user-menu summary::-webkit-details-marker {
+    /* Style the elements matched by .user-menu summary::-webkit-details-marker. */
     display: none;
 }
 
 .user-menu summary:hover {
+    /* Style the elements matched by .user-menu summary:hover. */
     background: rgba(255, 253, 248, 0.12);
     transform: translateY(-1px);
 }
 
 .user-avatar {
+    /* Style the elements matched by .user-avatar. */
     width: 30px;
     height: 30px;
     border-radius: 8px;
@@ -196,6 +213,7 @@ body {
 }
 
 .user-email {
+    /* Style the elements matched by .user-email. */
     max-width: 190px;
     font-size: 13px;
     font-weight: 700;
@@ -205,11 +223,13 @@ body {
 }
 
 .dropdown-arrow {
+    /* Style the elements matched by .dropdown-arrow. */
     font-size: 12px;
     color: rgba(255, 253, 248, 0.65);
 }
 
 .user-dropdown {
+    /* Style the elements matched by .user-dropdown. */
     position: absolute;
     right: 0;
     top: calc(100% + 10px);
@@ -222,6 +242,7 @@ body {
 }
 
 .user-dropdown a {
+    /* Style the elements matched by .user-dropdown a. */
     display: block;
     padding: 10px 12px;
     border-radius: 7px;
@@ -235,19 +256,23 @@ body {
 }
 
 .user-dropdown a:hover {
+    /* Style the elements matched by .user-dropdown a:hover. */
     background: var(--surface-soft);
 }
 
 .user-dropdown a.logout-btn {
+    /* Style the elements matched by .user-dropdown a.logout-btn. */
     color: var(--error-text);
     font-weight: 800;
 }
 
 .user-dropdown a.logout-btn:hover {
+    /* Style the elements matched by .user-dropdown a.logout-btn:hover. */
     background: var(--error-bg);
 }
 
 .dropdown-divider {
+    /* Style the elements matched by .dropdown-divider. */
     border: 0;
     border-top: 1px solid var(--border);
     margin: 6px 0;
@@ -255,6 +280,7 @@ body {
 
 /* Brand Logo Styling */
 .brand {
+    /* Style the elements matched by .brand. */
     display: flex;
     align-items: center;
     gap: 12px;
@@ -264,6 +290,7 @@ body {
 }
 
 .brand-mark {
+    /* Style the elements matched by .brand-mark. */
     width: 42px;
     height: 42px;
     border-radius: 12px;
@@ -276,6 +303,7 @@ body {
 }
 
 .brand-text h1 {
+    /* Style the elements matched by .brand-text h1. */
     margin: 0;
     font-size: 24px;
     letter-spacing: -0.04em;
@@ -283,6 +311,7 @@ body {
 }
 
 .brand-text span {
+    /* Style the elements matched by .brand-text span. */
     display: block;
     margin-top: 1px;
     font-size: 12px;
@@ -292,12 +321,14 @@ body {
 /* Layout */
 
 .app-layout {
+    /* Style the elements matched by .app-layout. */
     display: flex;
     flex: 1;
     min-height: calc(100vh - 58px);
 }
 
 .sidebar {
+    /* Style the elements matched by .sidebar. */
     width: 260px;
     background: rgba(58, 63, 47, 0.96);
     backdrop-filter: blur(14px);
@@ -315,6 +346,7 @@ body {
 }
 
 .sidebar-group {
+    /* Style the elements matched by .sidebar-group. */
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -322,6 +354,7 @@ body {
 }
 
 .sidebar-group-header {
+    /* Style the elements matched by .sidebar-group-header. */
     background: none;
     border: none;
     display: flex;
@@ -341,11 +374,13 @@ body {
 }
 
 .sidebar-group-header:hover {
+    /* Style the elements matched by .sidebar-group-header:hover. */
     background: rgba(255, 253, 248, 0.08);
     color: #FFFDF8;
 }
 
 .sidebar-group-icon {
+    /* Style the elements matched by .sidebar-group-icon. */
     width: 18px;
     height: 18px;
     color: rgba(255, 253, 248, 0.5);
@@ -353,10 +388,12 @@ body {
 }
 
 .sidebar-group-header:hover .sidebar-group-icon {
+    /* Style the elements matched by .sidebar-group-header:hover .sidebar-group-icon. */
     color: #FFFDF8;
 }
 
 .sidebar-group-arrow {
+    /* Style the elements matched by .sidebar-group-arrow. */
     width: 16px;
     height: 16px;
     margin-left: auto;
@@ -365,14 +402,17 @@ body {
 }
 
 .sidebar-group-header:hover .sidebar-group-arrow {
+    /* Style the elements matched by .sidebar-group-header:hover .sidebar-group-arrow. */
     color: #FFFDF8;
 }
 
 .sidebar-group-header.expanded .sidebar-group-arrow {
+    /* Style the elements matched by .sidebar-group-header.expanded .sidebar-group-arrow. */
     transform: rotate(180deg);
 }
 
 .sidebar-menu {
+    /* Style the elements matched by .sidebar-menu. */
     list-style: none;
     padding: 0;
     margin: 0;
@@ -385,10 +425,12 @@ body {
 }
 
 .sidebar-menu.expanded {
+    /* Style the elements matched by .sidebar-menu.expanded. */
     max-height: 600px;
 }
 
 .sidebar-link {
+    /* Style the elements matched by .sidebar-link. */
     display: flex;
     align-items: center;
     gap: 12px;
@@ -403,6 +445,7 @@ body {
 }
 
 .sidebar-link:hover {
+    /* Style the elements matched by .sidebar-link:hover. */
     background: rgba(255, 253, 248, 0.06);
     color: #FFFDF8;
     transform: translateX(3px);
@@ -410,6 +453,7 @@ body {
 
 .sidebar-link.active,
 .sidebar-link.active span {
+    /* Style the elements matched by .sidebar-link.active, .sidebar-link.active span. */
     background: var(--sage);
     color: var(--forest) !important;
     font-weight: 700;
@@ -417,12 +461,14 @@ body {
 
 .sidebar-link.active:hover,
 .sidebar-link.active:hover span {
+    /* Style the elements matched by .sidebar-link.active:hover, .sidebar-link.active:hover span. */
     background: var(--sage) !important;
     color: var(--forest) !important;
     transform: none;
 }
 
 .sidebar-icon {
+    /* Style the elements matched by .sidebar-icon. */
     width: 16px;
     height: 16px;
     color: rgba(255, 253, 248, 0.5);
@@ -430,25 +476,30 @@ body {
 }
 
 .sidebar-link:hover .sidebar-icon {
+    /* Style the elements matched by .sidebar-link:hover .sidebar-icon. */
     color: #FFFDF8;
 }
 
 .sidebar-link.active .sidebar-icon {
+    /* Style the elements matched by .sidebar-link.active .sidebar-icon. */
     color: var(--forest) !important;
 }
 
 /* Collapsed Sidebar State styling */
 .sidebar.collapsed {
+    /* Style the elements matched by .sidebar.collapsed. */
     width: 70px;
     padding: 24px 8px;
     align-items: center;
 }
 
 .sidebar.collapsed .sidebar-group {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-group. */
     align-items: center;
 }
 
 .sidebar.collapsed .sidebar-group-header {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-group-header. */
     justify-content: center;
     padding: 12px;
     width: 44px;
@@ -459,15 +510,18 @@ body {
 
 .sidebar.collapsed .sidebar-group-header .group-title-text,
 .sidebar.collapsed .sidebar-group-header .sidebar-group-arrow {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-group-header .group-title-text, .sidebar.collapsed .sidebar.... */
     display: none;
 }
 
 .sidebar.collapsed .sidebar-menu {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-menu. */
     width: 100%;
     align-items: center;
 }
 
 .sidebar.collapsed .sidebar-link {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-link. */
     margin-left: 0;
     justify-content: center;
     padding: 12px;
@@ -478,14 +532,17 @@ body {
 }
 
 .sidebar.collapsed .sidebar-link span {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-link span. */
     display: none;
 }
 
 .sidebar.collapsed .sidebar-link:hover {
+    /* Style the elements matched by .sidebar.collapsed .sidebar-link:hover. */
     transform: scale(1.08);
 }
 
 .main-content {
+    /* Style the elements matched by .main-content. */
     flex: 1;
     padding: 36px;
     overflow-x: auto;
@@ -493,6 +550,7 @@ body {
 
 /* Auth Layout for login/register */
 .auth-layout {
+    /* Style the elements matched by .auth-layout. */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -501,11 +559,13 @@ body {
 }
 
 .auth-content {
+    /* Style the elements matched by .auth-content. */
     width: 100%;
     max-width: 460px;
 }
 
 .auth-panel {
+    /* Style the elements matched by .auth-panel. */
     width: 100%;
     max-width: 460px;
     margin: 42px auto;
@@ -517,16 +577,19 @@ body {
 }
 
 .auth-panel h2 {
+    /* Style the elements matched by .auth-panel h2. */
     text-align: center;
     margin-bottom: 24px;
 }
 
 .auth-panel form {
+    /* Style the elements matched by .auth-panel form. */
     max-width: none;
     margin-top: 0;
 }
 
 .auth-panel .auth-switch {
+    /* Style the elements matched by .auth-panel .auth-switch. */
     text-align: center;
     margin-bottom: 0;
 }
@@ -534,6 +597,7 @@ body {
 /* Typography */
 
 h2 {
+    /* Style the elements matched by h2. */
     margin: 0 0 14px;
     font-size: 30px;
     letter-spacing: -0.04em;
@@ -541,16 +605,19 @@ h2 {
 }
 
 h3 {
+    /* Style the elements matched by h3. */
     margin-top: 30px;
     color: var(--forest);
 }
 
 h4 {
+    /* Style the elements matched by h4. */
     margin-top: 24px;
     color: var(--olive);
 }
 
 p {
+    /* Style the elements matched by p. */
     color: var(--text-muted);
     line-height: 1.55;
 }
@@ -558,11 +625,13 @@ p {
 /* Forms */
 
 form {
+    /* Style the elements matched by form. */
     margin-top: 24px;
     max-width: 540px;
 }
 
 label {
+    /* Style the elements matched by label. */
     display: block;
     margin-top: 18px;
     margin-bottom: 7px;
@@ -572,6 +641,7 @@ label {
 
 input:not([type="checkbox"]):not([type="radio"]),
 select {
+    /* Style the elements matched by input:not([type="checkbox"]):not([type="radio"]), select. */
     width: 100%;
     padding: 13px 14px;
     border-radius: var(--radius-sm);
@@ -585,23 +655,27 @@ select {
 
 input:not([type="checkbox"]):not([type="radio"]):focus,
 select:focus {
+    /* Style the elements matched by input:not([type="checkbox"]):not([type="radio"]):focus, select:focus. */
     border-color: var(--olive);
     box-shadow: 0 0 0 4px rgba(110, 125, 88, 0.16);
 }
 
 input[type="checkbox"],
 input[type="radio"] {
+    /* Style the elements matched by input[type="checkbox"], input[type="radio"]. */
     width: auto;
     transition: none !important;
 }
 
 .password-field {
+    /* Style the elements matched by .password-field. */
     display: flex;
     align-items: stretch;
     width: 100%;
 }
 
 .password-field input {
+    /* Style the elements matched by .password-field input. */
     flex: 1;
     min-width: 0;
     border-top-right-radius: 0;
@@ -613,6 +687,7 @@ input[type="radio"] {
 button,
 .button,
 .page-actions a {
+    /* Style the elements matched by button, .button, .page-actions a. */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -632,6 +707,7 @@ button,
 }
 
 form > button {
+    /* Style the elements matched by form > button. */
     width: 100%;
     margin-top: 22px;
 }
@@ -639,11 +715,13 @@ form > button {
 button:hover,
 .button:hover,
 .page-actions a:hover {
+    /* Style the elements matched by button:hover, .button:hover, .page-actions a:hover. */
     background: var(--forest);
     transform: translateY(-1px);
 }
 
 .password-toggle {
+    /* Style the elements matched by .password-toggle. */
     flex: 0 0 48px;
     width: 48px;
     min-width: 48px;
@@ -662,17 +740,20 @@ button:hover,
 }
 
 .password-toggle:hover {
+    /* Style the elements matched by .password-toggle:hover. */
     background: var(--sage);
     color: var(--forest);
     transform: none;
 }
 
 .password-toggle:focus {
+    /* Style the elements matched by .password-toggle:focus. */
     outline: none;
     box-shadow: 0 0 0 4px rgba(110, 125, 88, 0.16);
 }
 
 .page-actions {
+    /* Style the elements matched by .page-actions. */
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
@@ -680,21 +761,25 @@ button:hover,
 }
 
 .page-actions a.secondary {
+    /* Style the elements matched by .page-actions a.secondary. */
     background: var(--sage);
     color: var(--forest);
 }
 
 .page-actions a.secondary:hover {
+    /* Style the elements matched by .page-actions a.secondary:hover. */
     background: var(--sand);
 }
 
 .auth-switch {
+    /* Style the elements matched by .auth-switch. */
     margin-top: 18px;
 }
 
 /* Tables */
 
 table {
+    /* Style the elements matched by table. */
     width: 100%;
     border-collapse: collapse;
     margin-top: 20px;
@@ -702,6 +787,7 @@ table {
 }
 
 th {
+    /* Style the elements matched by th. */
     text-align: left;
     color: var(--forest);
     font-size: 14px;
@@ -711,6 +797,7 @@ th {
 }
 
 td {
+    /* Style the elements matched by td. */
     padding: 13px 12px;
     border-bottom: 1px solid var(--border);
     color: var(--text);
@@ -718,21 +805,25 @@ td {
 }
 
 tr:hover td {
+    /* Style the elements matched by tr:hover td. */
     background: rgba(220, 209, 184, 0.18);
 }
 
 /* Links and Code Blocks */
 
 a {
+    /* Style the elements matched by a. */
     color: var(--olive);
     font-weight: 700;
 }
 
 a:hover {
+    /* Style the elements matched by a:hover. */
     color: var(--forest);
 }
 
 pre {
+    /* Style the elements matched by pre. */
     background: #1F241A;
     color: #F6F0DF;
     padding: 18px;
@@ -744,6 +835,7 @@ pre {
 }
 
 hr {
+    /* Style the elements matched by hr. */
     border: 0;
     border-top: 1px solid var(--border);
     margin: 26px 0;
@@ -752,6 +844,7 @@ hr {
 /* Badges */
 
 .badge {
+    /* Style the elements matched by .badge. */
     display: inline-block;
     padding: 6px 10px;
     border-radius: 999px;
@@ -760,21 +853,25 @@ hr {
 }
 
 .success-badge {
+    /* Style the elements matched by .success-badge. */
     background: var(--success-bg);
     color: var(--success-text);
 }
 
 .running-badge {
+    /* Style the elements matched by .running-badge. */
     background: var(--warning-bg);
     color: var(--warning-text);
 }
 
 .pending-badge {
+    /* Style the elements matched by .pending-badge. */
     background: var(--surface-soft);
     color: var(--text-muted);
 }
 
 .error-badge {
+    /* Style the elements matched by .error-badge. */
     background: var(--error-bg);
     color: var(--error-text);
 }
@@ -782,6 +879,7 @@ hr {
 /* Flash Messages */
 
 .flash-message {
+    /* Style the elements matched by .flash-message. */
     padding: 14px 16px;
     border-radius: var(--radius-md);
     margin-bottom: 10px;
@@ -789,6 +887,7 @@ hr {
 }
 
 .flash-wrapper {
+    /* Style the elements matched by .flash-wrapper. */
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -796,26 +895,31 @@ hr {
 }
 
 .flash-wrapper .flash-message {
+    /* Style the elements matched by .flash-wrapper .flash-message. */
     padding: 12px 18px;
     width: fit-content;
     box-shadow: 0 4px 12px rgba(58, 63, 47, 0.05);
 }
 
 .flash-message.success {
+    /* Style the elements matched by .flash-message.success. */
     background: var(--success-bg);
     color: var(--success-text);
 }
 
 .flash-message.error {
+    /* Style the elements matched by .flash-message.error. */
     background: var(--error-bg);
     color: var(--error-text);
 }
 
 .auth-flash-wrapper {
+    /* Style the elements matched by .auth-flash-wrapper. */
     margin-top: 14px;
 }
 
 .auth-flash-wrapper .flash-message {
+    /* Style the elements matched by .auth-flash-wrapper .flash-message. */
     margin-bottom: 0;
     font-size: 14px;
 }
@@ -823,22 +927,27 @@ hr {
 /* Responsive */
 
 @media (max-width: 850px) {
+    /* Apply the nested rules when (max-width: 850px) matches. */
     .topbar-inner {
+        /* Style the elements matched by .topbar-inner. */
         padding: 8px 16px;
     }
 
     .user-dropdown {
+        /* Style the elements matched by .user-dropdown. */
         right: 0;
         left: auto;
         transform: none;
     }
 
     .app-layout {
+        /* Style the elements matched by .app-layout. */
         flex-direction: column;
         min-height: calc(100vh - 58px);
     }
 
     .sidebar {
+        /* Style the elements matched by .sidebar. */
         position: fixed;
         bottom: 0;
         left: 0;
@@ -862,15 +971,18 @@ hr {
     }
 
     .sidebar::-webkit-scrollbar {
+        /* Style the elements matched by .sidebar::-webkit-scrollbar. */
         display: none; /* Safari and Chrome */
     }
 
     .sidebar.collapsed {
+        /* Style the elements matched by .sidebar.collapsed. */
         width: 100%; /* Ignore collapse on mobile */
         padding: 6px 16px;
     }
 
     .sidebar-group {
+        /* Style the elements matched by .sidebar-group. */
         display: flex;
         flex-direction: row;
         gap: 8px;
@@ -878,10 +990,12 @@ hr {
     }
 
     .sidebar-group-header {
+        /* Style the elements matched by .sidebar-group-header. */
         display: none !important;
     }
 
     .sidebar-menu {
+        /* Style the elements matched by .sidebar-menu. */
         display: flex !important;
         flex-direction: row !important;
         max-height: none !important;
@@ -890,6 +1004,7 @@ hr {
     }
 
     .sidebar-link {
+        /* Style the elements matched by .sidebar-link. */
         flex-direction: column;
         gap: 4px;
         padding: 6px 12px;
@@ -903,35 +1018,42 @@ hr {
     }
 
     .sidebar.collapsed .sidebar-link {
+        /* Style the elements matched by .sidebar.collapsed .sidebar-link. */
         border-radius: 8px;
         width: auto;
         height: auto;
     }
 
     .sidebar.collapsed .sidebar-link span {
+        /* Style the elements matched by .sidebar.collapsed .sidebar-link span. */
         display: block; /* Show text on mobile even if collapsed state is stored */
     }
 
     .sidebar-link:hover {
+        /* Style the elements matched by .sidebar-link:hover. */
         transform: none;
     }
 
     .sidebar-icon {
+        /* Style the elements matched by .sidebar-icon. */
         width: 18px;
         height: 18px;
     }
 
     .main-content {
+        /* Style the elements matched by .main-content. */
         padding: 20px;
         margin-bottom: 64px;
     }
 
     .auth-panel {
+        /* Style the elements matched by .auth-panel. */
         margin: 22px auto;
         padding: 28px;
     }
 
     table {
+        /* Style the elements matched by table. */
         display: block;
         overflow-x: auto;
         white-space: nowrap;
@@ -940,6 +1062,7 @@ hr {
 
 /* Scan Description Card */
 .scan-desc-card {
+    /* Style the elements matched by .scan-desc-card. */
     margin-top: 20px;
     padding: 20px;
     background: var(--surface-soft);
@@ -949,17 +1072,21 @@ hr {
 }
 
 @keyframes slideDown {
+    /* Define the slideDown animation sequence. */
     from {
+        /* Style the elements matched by from. */
         opacity: 0;
         transform: translateY(-8px);
     }
     to {
+        /* Style the elements matched by to. */
         opacity: 1;
         transform: translateY(0);
     }
 }
 
 .scan-desc-card h4 {
+    /* Style the elements matched by .scan-desc-card h4. */
     margin: 0 0 10px 0;
     font-size: 16px;
     color: var(--forest);
@@ -967,6 +1094,7 @@ hr {
 }
 
 .scan-desc-card p.desc-text {
+    /* Style the elements matched by .scan-desc-card p.desc-text. */
     margin: 0 0 16px 0;
     font-size: 14px;
     line-height: 1.5;
@@ -975,6 +1103,7 @@ hr {
 }
 
 .desc-meta-grid {
+    /* Style the elements matched by .desc-meta-grid. */
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 14px;
@@ -984,6 +1113,7 @@ hr {
 }
 
 .desc-meta-grid code {
+    /* Style the elements matched by .desc-meta-grid code. */
     display: block;
     background: rgba(58, 63, 47, 0.08);
     padding: 4px 8px;
@@ -994,26 +1124,31 @@ hr {
 }
 
 .privs-admin {
+    /* Style the elements matched by .privs-admin. */
     color: var(--error-text);
     font-weight: 700;
 }
 
 .privs-standard {
+    /* Style the elements matched by .privs-standard. */
     color: var(--success-text);
     font-weight: 700;
 }
 
 /* CVE Details Row & Cards */
 .cve-details-row td {
+    /* Style the elements matched by .cve-details-row td. */
     background: rgba(58, 63, 47, 0.03) !important;
     padding: 15px 20px !important;
 }
 
 .cve-container {
+    /* Style the elements matched by .cve-container. */
     padding: 5px 0;
 }
 
 .cve-loading {
+    /* Style the elements matched by .cve-loading. */
     font-size: 14px;
     color: var(--text-muted);
     font-style: italic;
@@ -1024,6 +1159,7 @@ hr {
 
 /* Spinner for cve loading */
 .cve-loading::before {
+    /* Style the elements matched by .cve-loading::before. */
     content: "";
     width: 16px;
     height: 16px;
@@ -1035,10 +1171,13 @@ hr {
 }
 
 @keyframes cveSpin {
+    /* Define the cveSpin animation sequence. */
     to { transform: rotate(360deg); }
+        /* Style the elements matched by to. */
 }
 
 .cve-cards {
+    /* Style the elements matched by .cve-cards. */
     display: grid;
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1046,6 +1185,7 @@ hr {
 }
 
 .cve-card {
+    /* Style the elements matched by .cve-card. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -1055,11 +1195,13 @@ hr {
 }
 
 .cve-card:hover {
+    /* Style the elements matched by .cve-card:hover. */
     transform: translateY(-1px);
     box-shadow: 0 4px 10px rgba(58, 63, 47, 0.08);
 }
 
 .cve-card-header {
+    /* Style the elements matched by .cve-card-header. */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1068,6 +1210,7 @@ hr {
 }
 
 .cve-id-link {
+    /* Style the elements matched by .cve-id-link. */
     font-weight: 800;
     color: var(--olive);
     text-decoration: none;
@@ -1075,11 +1218,13 @@ hr {
 }
 
 .cve-id-link:hover {
+    /* Style the elements matched by .cve-id-link:hover. */
     color: var(--forest);
     text-decoration: underline;
 }
 
 .cve-summary {
+    /* Style the elements matched by .cve-summary. */
     margin: 0;
     font-size: 13px;
     line-height: 1.5;
@@ -1087,6 +1232,7 @@ hr {
 }
 
 .cve-badge {
+    /* Style the elements matched by .cve-badge. */
     font-size: 11px;
     font-weight: 900;
     padding: 4px 8px;
@@ -1095,31 +1241,37 @@ hr {
 }
 
 .sev-critical {
+    /* Style the elements matched by .sev-critical. */
     background: #7A2E1E;
     color: white;
 }
 
 .sev-high {
+    /* Style the elements matched by .sev-high. */
     background: var(--error-bg);
     color: var(--error-text);
 }
 
 .sev-medium {
+    /* Style the elements matched by .sev-medium. */
     background: var(--warning-bg);
     color: var(--warning-text);
 }
 
 .sev-low {
+    /* Style the elements matched by .sev-low. */
     background: var(--success-bg);
     color: var(--success-text);
 }
 
 .sev-unknown {
+    /* Style the elements matched by .sev-unknown. */
     background: var(--surface-soft);
     color: var(--text-muted);
 }
 
 .no-cves {
+    /* Style the elements matched by .no-cves. */
     font-size: 13px;
     color: var(--success-text);
     background: var(--success-bg);
@@ -1131,6 +1283,7 @@ hr {
 }
 
 .cve-error {
+    /* Style the elements matched by .cve-error. */
     font-size: 13px;
     color: var(--error-text);
     background: var(--error-bg);
@@ -1143,6 +1296,7 @@ hr {
 
 /* Button style for cve check */
 .cve-btn {
+    /* Style the elements matched by .cve-btn. */
     background: var(--sage);
     color: var(--forest);
     border: 0;
@@ -1155,12 +1309,14 @@ hr {
 }
 
 .cve-btn:hover {
+    /* Style the elements matched by .cve-btn:hover. */
     background: var(--sand);
     transform: translateY(-1px);
 }
 
 /* Filter Panel */
 .filter-panel {
+    /* Style the elements matched by .filter-panel. */
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -1172,6 +1328,7 @@ hr {
 }
 
 .filter-grid {
+    /* Style the elements matched by .filter-grid. */
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
@@ -1179,12 +1336,14 @@ hr {
 }
 
 .filter-field {
+    /* Style the elements matched by .filter-field. */
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
 .filter-field label {
+    /* Style the elements matched by .filter-field label. */
     margin: 0;
     font-size: 13px;
     font-weight: 700;
@@ -1193,6 +1352,7 @@ hr {
 
 .filter-field input,
 .filter-field select {
+    /* Style the elements matched by .filter-field input, .filter-field select. */
     padding: 10px 12px;
     font-size: 14px;
     border-radius: var(--radius-sm);
@@ -1206,11 +1366,13 @@ hr {
 
 .filter-field input:focus,
 .filter-field select:focus {
+    /* Style the elements matched by .filter-field input:focus, .filter-field select:focus. */
     border-color: var(--olive);
     box-shadow: 0 0 0 4px rgba(110, 125, 88, 0.16);
 }
 
 .filter-footer {
+    /* Style the elements matched by .filter-footer. */
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
@@ -1222,16 +1384,19 @@ hr {
 }
 
 .filter-checkbox-wrap {
+    /* Style the elements matched by .filter-checkbox-wrap. */
     display: flex;
     align-items: center;
 }
 
 .filter-group-checkbox {
+    /* Style the elements matched by .filter-group-checkbox. */
     display: flex;
     align-items: center;
 }
 
 .filter-group-checkbox label {
+    /* Style the elements matched by .filter-group-checkbox label. */
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1243,6 +1408,7 @@ hr {
 }
 
 .filter-group-checkbox input[type="checkbox"] {
+    /* Style the elements matched by .filter-group-checkbox input[type="checkbox"]. */
     width: 18px;
     height: 18px;
     cursor: pointer;
@@ -1251,6 +1417,7 @@ hr {
 
 /* Host Section Card */
 .host-section {
+    /* Style the elements matched by .host-section. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1260,12 +1427,14 @@ hr {
 }
 
 .host-header {
+    /* Style the elements matched by .host-header. */
     border-bottom: 1px solid var(--border);
     padding-bottom: 14px;
     margin-bottom: 16px;
 }
 
 .host-header h4 {
+    /* Style the elements matched by .host-header h4. */
     margin: 0;
     display: flex;
     align-items: center;
@@ -1274,6 +1443,7 @@ hr {
 }
 
 .no-ports-msg {
+    /* Style the elements matched by .no-ports-msg. */
     margin: 0;
     color: var(--text-muted);
     font-style: italic;
@@ -1281,10 +1451,12 @@ hr {
 
 /* Tabs Styling */
 .tabs-container {
+    /* Style the elements matched by .tabs-container. */
     margin-top: 24px;
 }
 
 .tabs-header {
+    /* Style the elements matched by .tabs-header. */
     display: flex;
     gap: 8px;
     border-bottom: 2px solid var(--border);
@@ -1292,6 +1464,7 @@ hr {
 }
 
 .tab-btn {
+    /* Style the elements matched by .tab-btn. */
     background: transparent;
     color: var(--text-muted);
     border: none;
@@ -1306,32 +1479,40 @@ hr {
 }
 
 .tab-btn:hover {
+    /* Style the elements matched by .tab-btn:hover. */
     color: var(--olive);
     background: rgba(110, 125, 88, 0.06);
 }
 
 .tab-btn.active {
+    /* Style the elements matched by .tab-btn.active. */
     color: var(--forest);
     border-bottom-color: var(--olive);
     background: transparent;
 }
 
 .tab-pane {
+    /* Style the elements matched by .tab-pane. */
     display: none;
     animation: fadeIn 0.25s ease-in-out;
 }
 
 .tab-pane.active {
+    /* Style the elements matched by .tab-pane.active. */
     display: block;
 }
 
 @keyframes fadeIn {
+    /* Define the fadeIn animation sequence. */
     from { opacity: 0; transform: translateY(4px); }
+        /* Style the elements matched by from. */
     to { opacity: 1; transform: translateY(0); }
+        /* Style the elements matched by to. */
 }
 
 /* Map Controls */
 .map-controls {
+    /* Style the elements matched by .map-controls. */
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1347,6 +1528,7 @@ hr {
 }
 
 .map-controls label {
+    /* Style the elements matched by .map-controls label. */
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -1355,6 +1537,7 @@ hr {
 }
 
 .map-controls input[type="checkbox"] {
+    /* Style the elements matched by .map-controls input[type="checkbox"]. */
     width: 16px;
     height: 16px;
     margin: 0;
@@ -1363,11 +1546,13 @@ hr {
 
 /* Topology Wrapper */
 .topology-wrapper {
+    /* Style the elements matched by .topology-wrapper. */
     position: relative;
     width: 100%;
 }
 
 .node-details-panel {
+    /* Style the elements matched by .node-details-panel. */
     position: absolute;
     top: 20px;
     right: 20px;
@@ -1385,6 +1570,7 @@ hr {
 }
 
 .node-details-title {
+    /* Style the elements matched by .node-details-title. */
     margin: 0 0 12px 0;
     font-size: 16px;
     color: var(--forest);
@@ -1394,6 +1580,7 @@ hr {
 }
 
 .node-details-item {
+    /* Style the elements matched by .node-details-item. */
     margin-bottom: 10px;
     font-size: 13px;
     line-height: 1.5;
@@ -1401,12 +1588,14 @@ hr {
 }
 
 .node-details-item strong {
+    /* Style the elements matched by .node-details-item strong. */
     color: var(--forest);
     display: inline-block;
     width: 80px;
 }
 
 .node-details-close {
+    /* Style the elements matched by .node-details-close. */
     position: absolute;
     top: 15px;
     right: 15px;
@@ -1420,10 +1609,12 @@ hr {
 }
 
 .node-details-close:hover {
+    /* Style the elements matched by .node-details-close:hover. */
     color: var(--error-text);
 }
 
 .node-details-empty {
+    /* Style the elements matched by .node-details-empty. */
     font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
@@ -1433,12 +1624,14 @@ hr {
 
 /* Fullscreen Map container */
 .map-fullscreen-container {
+    /* Style the elements matched by .map-fullscreen-container. */
     width: 100%;
     display: flex;
     flex-direction: column;
 }
 
 .map-fullscreen-container.fullscreen {
+    /* Style the elements matched by .map-fullscreen-container.fullscreen. */
     position: fixed;
     top: 0;
     left: 0;
@@ -1454,15 +1647,18 @@ hr {
 }
 
 .map-fullscreen-container.fullscreen .topology-wrapper {
+    /* Style the elements matched by .map-fullscreen-container.fullscreen .topology-wrapper. */
     flex: 1;
     height: calc(100% - 60px);
 }
 
 .map-fullscreen-container.fullscreen #topology-map {
+    /* Style the elements matched by .map-fullscreen-container.fullscreen #topology-map. */
     height: 100% !important;
 }
 
 .map-fullscreen-container.fullscreen .node-details-panel {
+    /* Style the elements matched by .map-fullscreen-container.fullscreen .node-details-panel. */
     top: 20px;
     right: 20px;
     max-height: calc(100% - 40px);
@@ -1470,6 +1666,7 @@ hr {
 
 /* Dashboard Styling */
 .dashboard-container {
+    /* Style the elements matched by .dashboard-container. */
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -1477,12 +1674,14 @@ hr {
 }
 
 .dashboard-summary {
+    /* Style the elements matched by .dashboard-summary. */
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
 }
 
 .stat-card {
+    /* Style the elements matched by .stat-card. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1495,11 +1694,13 @@ hr {
 }
 
 .stat-card:hover {
+    /* Style the elements matched by .stat-card:hover. */
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(58, 63, 47, 0.08);
 }
 
 .stat-card-title {
+    /* Style the elements matched by .stat-card-title. */
     font-size: 12px;
     font-weight: 800;
     text-transform: uppercase;
@@ -1508,6 +1709,7 @@ hr {
 }
 
 .stat-card-value {
+    /* Style the elements matched by .stat-card-value. */
     font-size: 28px;
     font-weight: 800;
     color: var(--forest);
@@ -1515,24 +1717,29 @@ hr {
 }
 
 .stat-card-subtitle {
+    /* Style the elements matched by .stat-card-subtitle. */
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
 }
 
 .chart-grid {
+    /* Style the elements matched by .chart-grid. */
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 20px;
 }
 
 @media (max-width: 992px) {
+    /* Apply the nested rules when (max-width: 992px) matches. */
     .chart-grid {
+        /* Style the elements matched by .chart-grid. */
         grid-template-columns: 1fr;
     }
 }
 
 .chart-card {
+    /* Style the elements matched by .chart-card. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1544,6 +1751,7 @@ hr {
 }
 
 .chart-card-title {
+    /* Style the elements matched by .chart-card-title. */
     margin: 0;
     font-size: 15px;
     font-weight: 800;
@@ -1553,6 +1761,7 @@ hr {
 }
 
 .chart-wrapper {
+    /* Style the elements matched by .chart-wrapper. */
     position: relative;
     width: 100%;
     height: 300px;
@@ -1560,6 +1769,7 @@ hr {
 
 /* Scan Comparison Styles */
 .compare-header-row {
+    /* Style the elements matched by .compare-header-row. */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1567,6 +1777,7 @@ hr {
 }
 
 .alert-box {
+    /* Style the elements matched by .alert-box. */
     padding: 14px 18px;
     border-radius: var(--radius-md);
     margin-bottom: 24px;
@@ -1575,18 +1786,21 @@ hr {
 }
 
 .warning-alert {
+    /* Style the elements matched by .warning-alert. */
     background: var(--warning-bg);
     border: 1px solid rgba(116, 90, 29, 0.15);
     color: var(--warning-text);
 }
 
 .error-alert {
+    /* Style the elements matched by .error-alert. */
     background: var(--error-bg);
     border: 1px solid rgba(122, 46, 30, 0.15);
     color: var(--error-text);
 }
 
 .compare-overview {
+    /* Style the elements matched by .compare-overview. */
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -1595,16 +1809,20 @@ hr {
 }
 
 @media (max-width: 768px) {
+    /* Apply the nested rules when (max-width: 768px) matches. */
     .compare-overview {
+        /* Style the elements matched by .compare-overview. */
         grid-template-columns: 1fr;
         gap: 12px;
     }
     .compare-vs {
+        /* Style the elements matched by .compare-vs. */
         margin: 6px auto;
     }
 }
 
 .compare-scan-card {
+    /* Style the elements matched by .compare-scan-card. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1614,14 +1832,17 @@ hr {
 }
 
 .scan-card-a {
+    /* Style the elements matched by .scan-card-a. */
     border-left: 5px solid var(--text-muted);
 }
 
 .scan-card-b {
+    /* Style the elements matched by .scan-card-b. */
     border-left: 5px solid var(--olive);
 }
 
 .compare-vs {
+    /* Style the elements matched by .compare-vs. */
     font-size: 18px;
     font-weight: 800;
     color: var(--text-muted);
@@ -1635,22 +1856,27 @@ hr {
 }
 
 .text-success {
+    /* Style the elements matched by .text-success. */
     color: var(--success-text) !important;
 }
 
 .text-error {
+    /* Style the elements matched by .text-error. */
     color: var(--error-text) !important;
 }
 
 .text-warning {
+    /* Style the elements matched by .text-warning. */
     color: var(--warning-text) !important;
 }
 
 .text-muted {
+    /* Style the elements matched by .text-muted. */
     color: var(--text-muted) !important;
 }
 
 .section-title {
+    /* Style the elements matched by .section-title. */
     font-size: 20px;
     font-weight: 800;
     margin-top: 36px;
@@ -1658,19 +1884,23 @@ hr {
 }
 
 .port-row-added td {
+    /* Style the elements matched by .port-row-added td. */
     background: rgba(47, 93, 50, 0.04) !important;
 }
 
 .port-row-removed td {
+    /* Style the elements matched by .port-row-removed td. */
     background: rgba(122, 46, 30, 0.03) !important;
     opacity: 0.75;
 }
 
 .port-row-changed td {
+    /* Style the elements matched by .port-row-changed td. */
     background: rgba(239, 227, 188, 0.08) !important;
 }
 
 .unchanged-hosts-details summary {
+    /* Style the elements matched by .unchanged-hosts-details summary. */
     font-weight: 700;
     color: var(--text-muted);
     cursor: pointer;
@@ -1684,37 +1914,45 @@ hr {
 }
 
 .unchanged-hosts-details summary:hover {
+    /* Style the elements matched by .unchanged-hosts-details summary:hover. */
     background: rgba(58, 63, 47, 0.08);
 }
 
 .diff-added-card {
+    /* Style the elements matched by .diff-added-card. */
     border-left: 5px solid var(--success-text) !important;
 }
 
 .diff-removed-card {
+    /* Style the elements matched by .diff-removed-card. */
     border-left: 5px solid var(--error-text) !important;
     opacity: 0.85;
 }
 
 .diff-modified-card {
+    /* Style the elements matched by .diff-modified-card. */
     border-left: 5px solid var(--warning-text) !important;
 }
 
 .text-line-through {
+    /* Style the elements matched by .text-line-through. */
     text-decoration: line-through;
 }
 
 .text-opacity-60 {
+    /* Style the elements matched by .text-opacity-60. */
     opacity: 0.6;
 }
 
 .version-details-text {
+    /* Style the elements matched by .version-details-text. */
     font-size: 13px;
     line-height: 1.4;
 }
 
 /* Slider Switch Container */
 .theme-switch-wrapper {
+    /* Style the elements matched by .theme-switch-wrapper. */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1722,6 +1960,7 @@ hr {
 }
 
 .theme-switch-container {
+    /* Style the elements matched by .theme-switch-container. */
     position: relative;
     display: inline-block;
     width: 48px;
@@ -1732,12 +1971,14 @@ hr {
 }
 
 .theme-switch-container input {
+    /* Style the elements matched by .theme-switch-container input. */
     opacity: 0;
     width: 0;
     height: 0;
 }
 
 .theme-slider {
+    /* Style the elements matched by .theme-slider. */
     position: absolute;
     cursor: pointer;
     top: 0;
@@ -1753,6 +1994,7 @@ hr {
 }
 
 .theme-knob {
+    /* Style the elements matched by .theme-knob. */
     position: absolute;
     height: 18px;
     width: 18px;
@@ -1772,11 +2014,13 @@ hr {
 }
 
 .theme-switch-container input:checked + .theme-slider {
+    /* Style the elements matched by .theme-switch-container input:checked + .theme-slider. */
     background-color: var(--olive);
     border-color: var(--border);
 }
 
 .theme-switch-container input:checked + .theme-slider .theme-knob {
+    /* Style the elements matched by .theme-switch-container input:checked + .theme-slider .theme-knob. */
     transform: translateX(24px);
     background-color: #1C1F16;
     color: #F5F1E8;
@@ -1797,179 +2041,216 @@ hr {
 [data-theme="dark"] .node-details-title,
 [data-theme="dark"] .node-details-item strong,
 [data-theme="dark"] .chart-card-title {
+    /* Style the elements matched by [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h5, [data-theme="da.... */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] .stat-card-value,
 [data-theme="dark"] .dashboard-card-value,
 [data-theme="dark"] .quick-action-item {
+    /* Style the elements matched by [data-theme="dark"] .stat-card-value, [data-theme="dark"] .dashboard-card-value, [data-.... */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] .quick-action-item:hover {
+    /* Style the elements matched by [data-theme="dark"] .quick-action-item:hover. */
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .onboarding-step a.button {
+    /* Style the elements matched by [data-theme="dark"] .onboarding-step a.button. */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] .onboarding-step a.button:hover {
+    /* Style the elements matched by [data-theme="dark"] .onboarding-step a.button:hover. */
     color: var(--forest) !important;
     background: var(--sage) !important;
 }
 
 [data-theme="dark"] .tab-btn:hover {
+    /* Style the elements matched by [data-theme="dark"] .tab-btn:hover. */
     color: var(--sage) !important;
     background: rgba(183, 196, 154, 0.08) !important;
 }
 
 [data-theme="dark"] h4 {
+    /* Style the elements matched by [data-theme="dark"] h4. */
     color: var(--sage) !important;
 }
 
 [data-theme="dark"] a:not(.button):not(.btn-danger):not(.btn-warning):not(.btn-secondary):not(.cve-btn):not(.tab-btn):not(.nav-link):not(.logout-btn) {
+    /* Style the elements matched by [data-theme="dark"] a:not(.button):not(.btn-danger):not(.btn-warning):not(.btn-secondar.... */
     color: var(--sage) !important;
 }
 
 [data-theme="dark"] a:not(.nav-link):hover {
+    /* Style the elements matched by [data-theme="dark"] a:not(.nav-link):hover. */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] .brand-text span {
+    /* Style the elements matched by [data-theme="dark"] .brand-text span. */
     color: rgba(255, 253, 248, 0.7);
 }
 
 [data-theme="dark"] input,
 [data-theme="dark"] select,
 [data-theme="dark"] textarea {
+    /* Style the elements matched by [data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea. */
     background: #141710 !important;
     border-color: rgba(255, 253, 248, 0.15) !important;
     color: var(--text) !important;
 }
 
 [data-theme="dark"] tr:hover td {
+    /* Style the elements matched by [data-theme="dark"] tr:hover td. */
     background: rgba(255, 253, 248, 0.03) !important;
 }
 
 [data-theme="dark"] .cve-badge.sev-critical {
+    /* Style the elements matched by [data-theme="dark"] .cve-badge.sev-critical. */
     background-color: #5a1816;
     color: #ffd2d0;
 }
 
 [data-theme="dark"] .cve-badge.sev-high {
+    /* Style the elements matched by [data-theme="dark"] .cve-badge.sev-high. */
     background-color: #5e3012;
     color: #ffe3d0;
 }
 
 [data-theme="dark"] .cve-badge.sev-medium {
+    /* Style the elements matched by [data-theme="dark"] .cve-badge.sev-medium. */
     background-color: #554415;
     color: #fff2d0;
 }
 
 [data-theme="dark"] .cve-badge.sev-low {
+    /* Style the elements matched by [data-theme="dark"] .cve-badge.sev-low. */
     background-color: #2e3b1c;
     color: #e2ffd0;
 }
 
 [data-theme="dark"] .stat-card {
+    /* Style the elements matched by [data-theme="dark"] .stat-card. */
     background-color: var(--surface-soft);
     border-color: var(--border);
 }
 
 [data-theme="dark"] .node-details-panel {
+    /* Style the elements matched by [data-theme="dark"] .node-details-panel. */
     background: rgba(36, 41, 29, 0.96) !important;
 }
 
 /* Button Variants */
 .btn-danger {
+    /* Style the elements matched by .btn-danger. */
     background: var(--error-bg) !important;
     color: var(--error-text) !important;
 }
 .btn-danger:hover {
+    /* Style the elements matched by .btn-danger:hover. */
     background: var(--error-text) !important;
     color: var(--surface) !important;
 }
 
 .btn-warning {
+    /* Style the elements matched by .btn-warning. */
     background: var(--warning-bg) !important;
     color: var(--warning-text) !important;
 }
 .btn-warning:hover {
+    /* Style the elements matched by .btn-warning:hover. */
     background: var(--warning-text) !important;
     color: var(--surface) !important;
 }
 
 .btn-secondary {
+    /* Style the elements matched by .btn-secondary. */
     background: var(--surface-soft) !important;
     color: var(--forest) !important;
     border: 1px solid var(--border) !important;
 }
 .btn-secondary:hover {
+    /* Style the elements matched by .btn-secondary:hover. */
     background: var(--sage) !important;
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .btn-secondary {
+    /* Style the elements matched by [data-theme="dark"] .btn-secondary. */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] ::placeholder {
+    /* Style the elements matched by [data-theme="dark"] ::placeholder. */
     color: rgba(255, 253, 248, 0.4) !important;
 }
 
 /* Dark Mode Navigation & Button Overrides */
 [data-theme="dark"] .top-nav a:hover,
 [data-theme="dark"] .top-nav a.active {
+    /* Style the elements matched by [data-theme="dark"] .top-nav a:hover, [data-theme="dark"] .top-nav a.active. */
     color: var(--forest) !important;
     background: var(--sage) !important;
 }
 
 [data-theme="dark"] .btn-secondary:hover {
+    /* Style the elements matched by [data-theme="dark"] .btn-secondary:hover. */
     background: var(--sage) !important;
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .button:hover,
 [data-theme="dark"] .page-actions a:hover {
+    /* Style the elements matched by [data-theme="dark"] .button:hover, [data-theme="dark"] .page-actions a:hover. */
     color: white !important;
 }
 
 [data-theme="dark"] .btn-danger:hover {
+    /* Style the elements matched by [data-theme="dark"] .btn-danger:hover. */
     background: var(--error-text) !important;
     color: #FFFDF8 !important;
 }
 
 [data-theme="dark"] .btn-warning:hover {
+    /* Style the elements matched by [data-theme="dark"] .btn-warning:hover. */
     background: var(--warning-text) !important;
     color: #1C1F16 !important;
 }
 
 [data-theme="dark"] .cve-btn:hover {
+    /* Style the elements matched by [data-theme="dark"] .cve-btn:hover. */
     background: var(--sand) !important;
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .user-dropdown a {
+    /* Style the elements matched by [data-theme="dark"] .user-dropdown a. */
     color: var(--text) !important;
 }
 
 [data-theme="dark"] .user-dropdown a:hover {
+    /* Style the elements matched by [data-theme="dark"] .user-dropdown a:hover. */
     color: var(--text) !important;
     background: var(--surface-soft) !important;
 }
 
 [data-theme="dark"] .user-dropdown a.logout-btn {
+    /* Style the elements matched by [data-theme="dark"] .user-dropdown a.logout-btn. */
     color: #ff6b6b !important;
 }
 
 [data-theme="dark"] .user-dropdown a.logout-btn:hover {
+    /* Style the elements matched by [data-theme="dark"] .user-dropdown a.logout-btn:hover. */
     background: rgba(255, 107, 107, 0.15) !important;
     color: #ff8787 !important;
 }
 
 /* Lucide Icons Integration */
 .lucide {
+    /* Style the elements matched by .lucide. */
     width: 18px;
     height: 18px;
     vertical-align: middle;
@@ -1978,24 +2259,28 @@ hr {
 }
 
 .icon-inline {
+    /* Style the elements matched by .icon-inline. */
     margin-right: 8px;
     position: relative;
     top: -1.5px;
 }
 
 .badge .lucide {
+    /* Style the elements matched by .badge .lucide. */
     width: 13px;
     height: 13px;
     margin-right: 4px;
 }
 
 .tab-btn .lucide {
+    /* Style the elements matched by .tab-btn .lucide. */
     margin-right: 6px;
     position: relative;
     top: -1px;
 }
 
 .button .lucide {
+    /* Style the elements matched by .button .lucide. */
     margin-right: 6px;
     position: relative;
     top: -1px;
@@ -2004,27 +2289,32 @@ hr {
 /* Explicit sidebar overrides to override any general link overrides in dark mode */
 [data-theme="dark"] .sidebar-link,
 [data-theme="dark"] .sidebar-link span {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link, [data-theme="dark"] .sidebar-link span. */
     color: rgba(255, 253, 248, 0.75) !important;
 }
 
 [data-theme="dark"] .sidebar-link:hover,
 [data-theme="dark"] .sidebar-link:hover span {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link:hover, [data-theme="dark"] .sidebar-link:hover span. */
     color: #FFFDF8 !important;
     background: rgba(255, 253, 248, 0.06) !important;
 }
 
 [data-theme="dark"] .sidebar-link:hover {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link:hover. */
     background: rgba(255, 253, 248, 0.06) !important;
 }
 
 [data-theme="dark"] .sidebar-link.active,
 [data-theme="dark"] .sidebar-link.active span {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link.active, [data-theme="dark"] .sidebar-link.active span. */
     background: var(--sage) !important;
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .sidebar-link.active:hover,
 [data-theme="dark"] .sidebar-link.active:hover span {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link.active:hover, [data-theme="dark"] .sidebar-link.activ.... */
     background: var(--sage) !important;
     color: var(--forest) !important;
     transform: none;
@@ -2032,20 +2322,24 @@ hr {
 
 [data-theme="dark"] .sidebar-link.active .sidebar-icon,
 [data-theme="dark"] .sidebar-link.active:hover .sidebar-icon {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-link.active .sidebar-icon, [data-theme="dark"] .sidebar-li.... */
     color: var(--forest) !important;
 }
 
 [data-theme="dark"] .sidebar-group-header {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-group-header. */
     color: rgba(255, 253, 248, 0.75) !important;
 }
 
 [data-theme="dark"] .sidebar-group-header:hover {
+    /* Style the elements matched by [data-theme="dark"] .sidebar-group-header:hover. */
     color: #FFFDF8 !important;
     background: rgba(255, 253, 248, 0.08) !important;
 }
 
 /* Sortable Table Headers */
 th.sortable-header {
+    /* Style the elements matched by th.sortable-header. */
     cursor: pointer;
     user-select: none;
     position: relative;
@@ -2054,10 +2348,12 @@ th.sortable-header {
 }
 
 th.sortable-header:hover {
+    /* Style the elements matched by th.sortable-header:hover. */
     background-color: rgba(183, 196, 154, 0.35) !important;
 }
 
 .sort-indicator {
+    /* Style the elements matched by .sort-indicator. */
     position: absolute;
     right: 8px;
     top: 50%;
@@ -2070,20 +2366,24 @@ th.sortable-header:hover {
 }
 
 th.sortable-header:hover .sort-indicator {
+    /* Style the elements matched by th.sortable-header:hover .sort-indicator. */
     opacity: 0.85;
 }
 
 th.sort-active .sort-indicator {
+    /* Style the elements matched by th.sort-active .sort-indicator. */
     opacity: 1;
     color: var(--olive);
 }
 
 [data-theme="dark"] th.sort-active .sort-indicator {
+    /* Style the elements matched by [data-theme="dark"] th.sort-active .sort-indicator. */
     color: var(--sage);
 }
 
 /* Dashboard Layout and Dashboard Cards */
 .dashboard-header {
+    /* Style the elements matched by .dashboard-header. */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2093,6 +2393,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-date {
+    /* Style the elements matched by .dashboard-date. */
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -2106,6 +2407,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-banner {
+    /* Style the elements matched by .onboarding-banner. */
     background: linear-gradient(135deg, rgba(183, 196, 154, 0.25), rgba(220, 209, 184, 0.2));
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -2118,6 +2420,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-icon-wrap {
+    /* Style the elements matched by .onboarding-icon-wrap. */
     background: var(--sage);
     color: var(--forest);
     padding: 16px;
@@ -2129,10 +2432,12 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-content {
+    /* Style the elements matched by .onboarding-content. */
     flex: 1;
 }
 
 .onboarding-content h3 {
+    /* Style the elements matched by .onboarding-content h3. */
     margin: 0 0 10px 0;
     font-size: 20px;
     font-weight: 800;
@@ -2140,6 +2445,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-content p {
+    /* Style the elements matched by .onboarding-content p. */
     margin: 0 0 18px 0;
     font-size: 14px;
     color: var(--text-muted);
@@ -2147,6 +2453,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-steps {
+    /* Style the elements matched by .onboarding-steps. */
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
@@ -2154,6 +2461,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-step {
+    /* Style the elements matched by .onboarding-step. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -2164,6 +2472,7 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-step h4 {
+    /* Style the elements matched by .onboarding-step h4. */
     margin: 0;
     font-size: 14px;
     font-weight: 800;
@@ -2174,12 +2483,14 @@ th.sort-active .sort-indicator {
 }
 
 .onboarding-step p {
+    /* Style the elements matched by .onboarding-step p. */
     margin: 0;
     font-size: 12px;
     color: var(--text-muted);
 }
 
 .dashboard-grid {
+    /* Style the elements matched by .dashboard-grid. */
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 20px;
@@ -2187,6 +2498,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card {
+    /* Style the elements matched by .dashboard-card. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -2201,11 +2513,13 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card:hover {
+    /* Style the elements matched by .dashboard-card:hover. */
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(58, 63, 47, 0.08);
 }
 
 .dashboard-card-header {
+    /* Style the elements matched by .dashboard-card-header. */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2213,6 +2527,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card-title {
+    /* Style the elements matched by .dashboard-card-title. */
     font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
@@ -2220,6 +2535,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card-icon {
+    /* Style the elements matched by .dashboard-card-icon. */
     width: 32px;
     height: 32px;
     border-radius: 8px;
@@ -2231,6 +2547,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card-value {
+    /* Style the elements matched by .dashboard-card-value. */
     font-size: 32px;
     font-weight: 800;
     color: var(--forest);
@@ -2239,12 +2556,14 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-card-footer {
+    /* Style the elements matched by .dashboard-card-footer. */
     font-size: 12px;
     color: var(--text-muted);
     margin-top: 4px;
 }
 
 .dashboard-row {
+    /* Style the elements matched by .dashboard-row. */
     display: grid;
     grid-template-columns: 2fr 1fr;
     gap: 24px;
@@ -2252,10 +2571,12 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-row-full {
+    /* Style the elements matched by .dashboard-row-full. */
     grid-template-columns: 1fr;
 }
 
 .dashboard-section {
+    /* Style the elements matched by .dashboard-section. */
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -2264,6 +2585,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-section-header {
+    /* Style the elements matched by .dashboard-section-header. */
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2273,6 +2595,7 @@ th.sort-active .sort-indicator {
 }
 
 .dashboard-section-header h3 {
+    /* Style the elements matched by .dashboard-section-header h3. */
     margin: 0;
     font-size: 16px;
     font-weight: 800;
@@ -2283,12 +2606,14 @@ th.sort-active .sort-indicator {
 }
 
 .quick-actions-list {
+    /* Style the elements matched by .quick-actions-list. */
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
 .quick-action-item {
+    /* Style the elements matched by .quick-action-item. */
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2304,42 +2629,52 @@ th.sort-active .sort-indicator {
 }
 
 .quick-action-item:hover {
+    /* Style the elements matched by .quick-action-item:hover. */
     background: var(--sage);
     color: var(--forest);
     transform: translateX(3px);
 }
 
 .quick-action-icon {
+    /* Style the elements matched by .quick-action-icon. */
     width: 20px;
     height: 20px;
     color: var(--olive);
 }
 
 @media (max-width: 1024px) {
+    /* Apply the nested rules when (max-width: 1024px) matches. */
     .dashboard-row {
+        /* Style the elements matched by .dashboard-row. */
         grid-template-columns: 1fr;
     }
 }
 
 .asset-ip {
+    /* Style the elements matched by .asset-ip. */
     color: var(--olive);
 }
 
 [data-theme="dark"] .asset-ip {
+    /* Style the elements matched by [data-theme="dark"] .asset-ip. */
     color: var(--sage) !important;
 }
 
 /* Theme-aware logo display */
 .logo-dark-theme {
+    /* Style the elements matched by .logo-dark-theme. */
     display: none !important;
 }
 .logo-light-theme {
+    /* Style the elements matched by .logo-light-theme. */
     display: inline-block !important;
 }
 [data-theme="dark"] .logo-dark-theme {
+    /* Style the elements matched by [data-theme="dark"] .logo-dark-theme. */
     display: inline-block !important;
 }
 [data-theme="dark"] .logo-light-theme {
+    /* Style the elements matched by [data-theme="dark"] .logo-light-theme. */
     display: none !important;
 }
 

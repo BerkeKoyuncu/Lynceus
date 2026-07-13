@@ -26,9 +26,11 @@ login_manager.login_view = "auth.login"
 csrf = CSRFProtect()
 migrate = Migrate()
 
+# Run this block with structured exception handling.
 try:
     from zoneinfo import ZoneInfo
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
+# Handle an exception raised by the preceding protected block.
 except Exception:
     APP_TIMEZONE = timezone(timedelta(hours=3), "TRT")
 
@@ -38,45 +40,62 @@ HONEYPOT_PATHS = [
     "/admin/config.php", "/setup.php", "/xmlrpc.php"
 ]
 
+# Handle the format local datetime operation.
 def format_local_datetime(value):
+    # Handle the branch where not value evaluates to true.
     if not value:
         return ""
+    # Handle the branch where value.tzinfo is None evaluates to true.
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(APP_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
 
+# Determine whether in freeze window.
 def is_in_freeze_window(start_str, end_str):
+    # Run this block with structured exception handling.
     try:
         start_time = datetime.strptime(start_str.strip(), "%H:%M").time()
         end_time = datetime.strptime(end_str.strip(), "%H:%M").time()
         now_local = datetime.now(APP_TIMEZONE).time()
+        # Handle the branch where start_time <= end_time evaluates to true.
         if start_time <= end_time:
             return start_time <= now_local <= end_time
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             return now_local >= start_time or now_local <= end_time
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return False
 
+# Determine whether scan frozen.
 def is_scan_frozen():
+    # Run this block with structured exception handling.
     try:
         admin_user = User.query.filter_by(is_admin=True).first()
+        # Handle the branch where not admin_user evaluates to true.
         if not admin_user:
             return False
         admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first()
+        # Handle the branch where not admin_setting or not admin_setting.scan_freeze_active evaluates to true.
         if not admin_setting or not admin_setting.scan_freeze_active:
             return False
         return is_in_freeze_window(admin_setting.scan_freeze_start, admin_setting.scan_freeze_end)
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return False
 
+# Retrieve client ip.
 def get_client_ip():
+    # Handle the branch where current_app.config.get('TRUST_PROXY') evaluates to true.
     if current_app.config.get("TRUST_PROXY"):
         x_forwarded_for = request.headers.get('X-Forwarded-For')
+        # Handle the branch where x_forwarded_for evaluates to true.
         if x_forwarded_for:
             return x_forwarded_for.split(',')[0].strip()
     return request.remote_addr
 
 
+# Validate scheduler config.
 def _validate_scheduler_config(app):
     minimums = {
         "MAX_CONCURRENT_SCANS": 1,
@@ -87,13 +106,17 @@ def _validate_scheduler_config(app):
         "SCHEDULER_PROGRESS_INTERVAL_SECONDS": 1,
         "MAX_SCAN_RUNTIME_SECONDS": 60,
     }
+    # Iterate over minimums.items() and bind each item to (name, minimum).
     for name, minimum in minimums.items():
+        # Run this block with structured exception handling.
         try:
             value = int(app.config[name])
+        # Handle an exception raised by the preceding protected block.
         except (TypeError, ValueError) as error:
             raise RuntimeError(f"{name} must be an integer.") from error
         app.config[name] = max(minimum, value)
 
+    # Handle the branch where app.config['SCHEDULER_HEARTBEAT_SECONDS'] * 3 > app.config['SCHEDULER_LEASE_SECONDS'] evaluates to true.
     if (
         app.config["SCHEDULER_HEARTBEAT_SECONDS"] * 3
         > app.config["SCHEDULER_LEASE_SECONDS"]
@@ -102,6 +125,7 @@ def _validate_scheduler_config(app):
             "SCHEDULER_LEASE_SECONDS must be at least three times "
             "SCHEDULER_HEARTBEAT_SECONDS."
         )
+    # Handle the branch where app.config['SCHEDULER_PROGRESS_TIMEOUT_SECONDS'] < app.config['SCHEDULER_LEASE_SECONDS'] evaluates to true.
     if app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] < app.config["SCHEDULER_LEASE_SECONDS"]:
         raise RuntimeError(
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be at least "
@@ -110,23 +134,27 @@ def _validate_scheduler_config(app):
     minimum_progress_timeout = (
         NMAP_SUBPROCESS_TIMEOUT_SECONDS + app.config["SCHEDULER_LEASE_SECONDS"]
     )
+    # Handle the branch where app.config['SCHEDULER_PROGRESS_TIMEOUT_SECONDS'] < minimum_progress_timeout evaluates to true.
     if app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"] < minimum_progress_timeout:
         raise RuntimeError(
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS must be at least the Nmap "
             "subprocess timeout plus SCHEDULER_LEASE_SECONDS "
             f"({minimum_progress_timeout} seconds)."
         )
+    # Handle the branch where app.config['SCHEDULER_PROGRESS_INTERVAL_SECONDS'] >= app.config['SCHEDULER_PROGRESS_TIMEOUT_SECONDS'] evaluates to true.
     if app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"] >= app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"]:
         raise RuntimeError(
             "SCHEDULER_PROGRESS_INTERVAL_SECONDS must be less than "
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS."
         )
+    # Handle the branch where app.config['MAX_SCAN_RUNTIME_SECONDS'] < app.config['SCHEDULER_PROGRESS_TIMEOUT_SECONDS'] evaluates to true.
     if app.config["MAX_SCAN_RUNTIME_SECONDS"] < app.config["SCHEDULER_PROGRESS_TIMEOUT_SECONDS"]:
         raise RuntimeError(
             "MAX_SCAN_RUNTIME_SECONDS must be at least "
             "SCHEDULER_PROGRESS_TIMEOUT_SECONDS."
         )
 
+# Create app.
 def create_app(config=None):
     data_dir = ensure_runtime_directories()
     app = Flask(
@@ -159,12 +187,16 @@ def create_app(config=None):
         "MAX_SCAN_RUNTIME_SECONDS", "3600"
     )
 
+    # Handle the branch where config evaluates to true.
     if config:
         app.config.update(config)
+    # Run this block with structured exception handling.
     try:
         app.config["APP_PORT"] = int(app.config["APP_PORT"])
+    # Handle an exception raised by the preceding protected block.
     except (TypeError, ValueError) as error:
         raise RuntimeError("APP_PORT must be an integer between 1 and 65535.") from error
+    # Handle the branch where not 1 <= app.config['APP_PORT'] <= 65535 evaluates to true.
     if not 1 <= app.config["APP_PORT"] <= 65535:
         raise RuntimeError("APP_PORT must be an integer between 1 and 65535.")
     _validate_scheduler_config(app)
@@ -192,28 +224,36 @@ def create_app(config=None):
     app.register_blueprint(rules_bp)
     app.register_blueprint(topology_bp)
 
+    # Load user.
     @login_manager.user_loader
     def load_user(user_id):
         return db.session.get(User, int(user_id))
 
+    # Handle the override url for operation.
     @app.context_processor
     def override_url_for():
         from flask import url_for as flask_url_for
         
+        # Group the state and behavior for RequestProxy.
         class RequestProxy:
+            # Handle the init operation.
             def __init__(self, original_request):
                 self._req = original_request
 
+            # Handle the endpoint operation.
             @property
             def endpoint(self):
                 ep = self._req.endpoint
+                # Handle the branch where ep and '.' in ep evaluates to true.
                 if ep and "." in ep:
                     return ep.split(".", 1)[1]
                 return ep
 
+            # Handle the getattr operation.
             def __getattr__(self, name):
                 return getattr(self._req, name)
 
+        # Handle the custom url for operation.
         def custom_url_for(endpoint, **values):
             # Map legacy names to blueprint names
             legacy_mapping = {
@@ -268,6 +308,7 @@ def create_app(config=None):
                 "admin_delete_asset": "admin.admin_delete_asset",
                 "admin_bulk_delete_assets": "admin.admin_bulk_delete_assets",
             }
+            # Handle the branch where endpoint in legacy_mapping evaluates to true.
             if endpoint in legacy_mapping:
                 endpoint = legacy_mapping[endpoint]
             return flask_url_for(endpoint, **values)
@@ -276,6 +317,7 @@ def create_app(config=None):
     # Decoystop and blocker
     @app.before_request
     def check_honeypot_and_blocking():
+        # Handle the branch where request.path.startswith('/static/') or request.path == '/favicon.ico' or request.path == '/health' evaluates to true.
         if (
             request.path.startswith('/static/')
             or request.path == '/favicon.ico'
@@ -285,7 +327,9 @@ def create_app(config=None):
 
         client_ip = get_client_ip()
         is_blocked = HoneypotBlockedIP.query.filter_by(ip_address=client_ip).first()
+        # Handle the branch where is_blocked evaluates to true.
         if is_blocked:
+            # Handle the branch where request.endpoint not in ['auth.logout', 'scan.result', 'static', 'honeypot_blocked'] evaluates to true.
             if request.endpoint not in ['auth.logout', 'scan.result', 'static', 'honeypot_blocked']:
                 # Custom blocked view function
                 return redirect(url_for('honeypot_blocked'))
@@ -293,11 +337,14 @@ def create_app(config=None):
 
         request_path = request.path.lower().rstrip('/')
         is_honeypot_hit = False
+        # Iterate over HONEYPOT_PATHS and bind each item to path.
         for path in HONEYPOT_PATHS:
+            # Handle the branch where request_path == path or request_path.startswith(path + '/') evaluates to true.
             if request_path == path or request_path.startswith(path + '/'):
                 is_honeypot_hit = True
                 break
                 
+        # Handle the branch where is_honeypot_hit evaluates to true.
         if is_honeypot_hit:
             admin_user = User.query.filter_by(is_admin=True).first()
             active = True
@@ -305,13 +352,16 @@ def create_app(config=None):
             email_alert = True
             smtp_setting = None
             
+            # Handle the branch where admin_user evaluates to true.
             if admin_user:
                 smtp_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first()
+                # Handle the branch where smtp_setting evaluates to true.
                 if smtp_setting:
                     active = smtp_setting.honeypot_active
                     auto_block = smtp_setting.honeypot_auto_block
                     email_alert = smtp_setting.honeypot_email_alert
                     
+            # Handle the branch where not active evaluates to true.
             if not active:
                 return
                 
@@ -326,8 +376,10 @@ def create_app(config=None):
             )
             db.session.add(new_log)
             
+            # Handle the branch where auto_block and client_ip not in ['127.0.0.1', '::1', 'localhost'] evaluates to true.
             if auto_block and client_ip not in ['127.0.0.1', '::1', 'localhost']:
                 existing_block = HoneypotBlockedIP.query.filter_by(ip_address=client_ip).first()
+                # Handle the branch where not existing_block evaluates to true.
                 if not existing_block:
                     new_block = HoneypotBlockedIP(
                         ip_address=client_ip,
@@ -337,6 +389,7 @@ def create_app(config=None):
                     
             db.session.commit()
             
+            # Handle the branch where email_alert and smtp_setting and smtp_setting.smtp_server and smtp_setting.smtp_sender and smtp_setting.ale... evaluates to true.
             if email_alert and smtp_setting and smtp_setting.smtp_server and smtp_setting.smtp_sender and smtp_setting.alert_recipient:
                 subject = f"[SECURITY ALERT] Honeypot Intrusion Detected: {client_ip}"
                 local_time_str = format_local_datetime(datetime.now(timezone.utc).replace(tzinfo=None))
@@ -374,14 +427,17 @@ def create_app(config=None):
                 
             return render_template("decoy_wp.html"), 404
 
+    # Handle the honeypot blocked operation.
     @app.route("/honeypot/blocked")
     def honeypot_blocked():
         client_ip = get_client_ip()
         block = HoneypotBlockedIP.query.filter_by(ip_address=client_ip).first()
+        # Handle the branch where not block evaluates to true.
         if not block:
             return redirect(url_for("auth.index"))
         return render_template("blocked.html", ip_address=client_ip, block=block)
 
+    # Handle the health operation.
     @app.route("/health")
     def health():
         return {"status": "ok"}
@@ -392,13 +448,18 @@ def create_app(config=None):
         click.echo("Tables are managed by Alembic. Run 'flask db upgrade' to apply all migrations.")
         click.echo("Then run 'flask create-admin' to create the first admin account.")
 
+    # Handle the print cli qr operation.
     def print_cli_qr(prov_uri):
         import sys
+        # Handle the branch where sys.platform == 'win32' and hasattr(sys.stdout, 'reconfigure') evaluates to true.
         if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+            # Run this block with structured exception handling.
             try:
                 sys.stdout.reconfigure(encoding="utf-8")
+            # Handle an exception raised by the preceding protected block.
             except Exception:
                 pass
+        # Run this block with structured exception handling.
         try:
             import qrcode
             qr = qrcode.QRCode()
@@ -406,22 +467,30 @@ def create_app(config=None):
             click.echo("\nScan the QR code below with your Authenticator App:")
             qr.print_ascii(out=sys.stdout)
             click.echo("")
+        # Handle an exception raised by the preceding protected block.
         except Exception as e:
             click.echo(f"Could not render terminal QR code: {str(e)}")
 
+    # Determine whether windows administrator.
     def is_windows_administrator():
+        # Handle the branch where os.name != 'nt' evaluates to true.
         if os.name != "nt":
             return False
+        # Run this block with structured exception handling.
         try:
             import ctypes
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        # Handle an exception raised by the preceding protected block.
         except Exception:
             return False
 
+    # Handle the authorise admin recovery operation.
     def authorise_admin_recovery(admin, windows_admin_recovery):
         from werkzeug.security import check_password_hash
 
+        # Handle the branch where windows_admin_recovery evaluates to true.
         if windows_admin_recovery:
+            # Handle the branch where not is_windows_administrator() evaluates to true.
             if not is_windows_administrator():
                 raise click.ClickException(
                     "Windows Administrator privileges are required for local recovery."
@@ -429,11 +498,13 @@ def create_app(config=None):
             return
 
         attempts = 3
+        # Repeat this block while attempts > 0 remains true.
         while attempts > 0:
             current_pass_or_key = click.prompt(
                 "Enter current Admin password OR the App SECRET_KEY to authorise reset",
                 hide_input=True,
             ).strip()
+            # Handle the branch where check_password_hash(admin.password_hash, current_pass_or_key) or current_pass_or_key == current_app.config.... evaluates to true.
             if (
                 check_password_hash(admin.password_hash, current_pass_or_key)
                 or current_pass_or_key == current_app.config.get("SECRET_KEY")
@@ -446,6 +517,7 @@ def create_app(config=None):
             )
         raise click.ClickException("Too many failed attempts. Reset aborted.")
 
+    # Create admin.
     @app.cli.command("create-admin")
     def create_admin():
         """
@@ -458,26 +530,32 @@ def create_app(config=None):
 
         existing_admin = User.query.filter_by(is_admin=True).first()
 
+        # Handle the branch where existing_admin evaluates to true.
         if existing_admin:
             click.echo(f"An admin user already exists: {existing_admin.email}")
+            # Handle the branch where not click.confirm('Do you want to reset their password and 2FA OTP secret?') evaluates to true.
             if not click.confirm("Do you want to reset their password and 2FA OTP secret?"):
                 return
             
             auth_success = False
             attempts = 3
+            # Repeat this block while attempts > 0 remains true.
             while attempts > 0:
                 current_pass_or_key = click.prompt(
                     "Enter current Admin password OR the App SECRET_KEY to authorise reset",
                     hide_input=True
                 ).strip()
                 
+                # Handle the branch where check_password_hash(existing_admin.password_hash, current_pass_or_key) or current_pass_or_key == current_ap... evaluates to true.
                 if check_password_hash(existing_admin.password_hash, current_pass_or_key) or current_pass_or_key == current_app.config.get("SECRET_KEY"):
                     auth_success = True
                     break
+                # Handle the fallback branch when the preceding condition does not match.
                 else:
                     attempts -= 1
                     click.echo(f"Authorisation failed. Incorrect password or secret key. {attempts} attempts remaining.")
             
+            # Handle the branch where not auth_success evaluates to true.
             if not auth_success:
                 click.echo("Too many failed attempts. Aborting reset.")
                 return
@@ -516,12 +594,14 @@ def create_app(config=None):
 
         otp_secret = pyotp.random_base32()
 
+        # Handle the branch where existing_user evaluates to true.
         if existing_user:
             existing_user.is_admin = True
             existing_user.password_hash = generate_password_hash(password)
             existing_user.otp_secret = otp_secret
             db.session.commit()
             click.echo(f"Existing user {email} has been promoted to admin.")
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             admin_user = User(
                 email=email,
@@ -543,16 +623,19 @@ def create_app(config=None):
         click.echo("Please add this secret key or scan the URI in your Authenticator app (e.g. Google Authenticator).")
         click.echo("==================================================")
 
+    # Handle the cleanup scans command operation.
     @app.cli.command("cleanup-scans")
     def cleanup_scans_command():
         cleanup_stale_scans()
         click.echo("Stale scans cleaned up successfully.")
 
+    # Handle the seed demo data command operation.
     @app.cli.command("seed-demo-data")
     def seed_demo_data_command():
         seed_mock_security_data()
         click.echo("Demo security data seeded successfully.")
 
+    # Handle the reset admin password operation.
     @app.cli.command("reset-admin-password")
     @click.option(
         "--windows-admin-recovery",
@@ -564,6 +647,7 @@ def create_app(config=None):
         from werkzeug.security import generate_password_hash
 
         admin = User.query.filter_by(is_admin=True).first()
+        # Handle the branch where admin is None evaluates to true.
         if admin is None:
             raise click.ClickException("No administrator account exists. Run create-admin first.")
         authorise_admin_recovery(admin, windows_admin_recovery)
@@ -572,12 +656,14 @@ def create_app(config=None):
             hide_input=True,
             confirmation_prompt=True,
         )
+        # Handle the branch where not password evaluates to true.
         if not password:
             raise click.ClickException("Password cannot be empty.")
         admin.password_hash = generate_password_hash(password)
         db.session.commit()
         click.echo(f"Administrator password reset successfully for {admin.email}.")
 
+    # Handle the reset admin 2fa operation.
     @app.cli.command("reset-admin-2fa")
     @click.option(
         "--windows-admin-recovery",
@@ -587,6 +673,7 @@ def create_app(config=None):
     def reset_admin_2fa(windows_admin_recovery):
         """Clear only admin 2FA so a new authenticator is enrolled at next login."""
         admin = User.query.filter_by(is_admin=True).first()
+        # Handle the branch where admin is None evaluates to true.
         if admin is None:
             raise click.ClickException("No administrator account exists. Run create-admin first.")
         authorise_admin_recovery(admin, windows_admin_recovery)
@@ -618,6 +705,7 @@ def create_app(config=None):
         and app.debug
         and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     )
+    # Handle the branch where app.config.get('START_SCHEDULER', True) and (not app.config.get('TESTING', False)) and (not is_management_c... evaluates to true.
     if (
         app.config.get("START_SCHEDULER", True)
         and not app.config.get("TESTING", False)
@@ -625,6 +713,7 @@ def create_app(config=None):
         and not flask_run
     ):
         start_scheduler(app)
+    # Handle the branch where not app.config.get('TESTING', False) and (not is_management_cli) and (not is_reloader_parent) evaluates to true.
     if (
         not app.config.get("TESTING", False)
         and not is_management_cli
@@ -632,20 +721,28 @@ def create_app(config=None):
     ):
         start_scan_dispatcher(app)
 
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
+        # Handle the branch where not is_management_cli evaluates to true.
         if not is_management_cli:
+            # Handle the branch where app.config.get('SEED_DEMO_DATA') evaluates to true.
             if app.config.get("SEED_DEMO_DATA"):
+                # Run this block with structured exception handling.
                 try:
                     seed_mock_security_data()
+                # Handle an exception raised by the preceding protected block.
                 except Exception:
                     pass
+            # Run this block with structured exception handling.
             try:
                 cleanup_stale_scans()
+            # Handle an exception raised by the preceding protected block.
             except Exception:
                 pass
 
     return app
 
+# Handle the next schedule run operation.
 def _next_schedule_run(now, frequency):
     intervals = {
         "hourly": timedelta(hours=1),
@@ -656,12 +753,14 @@ def _next_schedule_run(now, frequency):
     return now + intervals.get(frequency, timedelta(days=1))
 
 
+# Handle the claim scheduled scan operation.
 def _claim_scheduled_scan(schedule, now):
     """Atomically claim one occurrence and persist a recoverable queued job."""
     schedule_user = User.query.filter(
         User.id == schedule.user_id,
         User.is_deleting.is_(False),
     ).first()
+    # Handle the branch where schedule_user is None evaluates to true.
     if schedule_user is None:
         db.session.rollback()
         return None
@@ -678,6 +777,7 @@ def _claim_scheduled_scan(schedule, now):
         },
         synchronize_session=False,
     )
+    # Handle the branch where claimed != 1 evaluates to true.
     if claimed != 1:
         db.session.rollback()
         return None
@@ -710,6 +810,7 @@ def _claim_scheduled_scan(schedule, now):
     return scan.id
 
 
+# Handle the fail scheduler job operation.
 def _fail_scheduler_job(job, message):
     job.status = "failed"
     job.scheduler_dispatch_state = "failed"
@@ -721,6 +822,7 @@ def _fail_scheduler_job(job, message):
     })
 
 
+# Handle the mark scheduler termination failed operation.
 def _mark_scheduler_termination_failed(job, message):
     """Keep an unconfirmed execution active in concurrency accounting."""
     job.status = "termination_failed"
@@ -733,6 +835,7 @@ def _mark_scheduler_termination_failed(job, message):
     })
 
 
+# Handle the all registered processes stopped operation.
 def _all_registered_processes_stopped(stop_result):
     return bool(
         stop_result is True
@@ -743,6 +846,7 @@ def _all_registered_processes_stopped(stop_result):
     )
 
 
+# Handle the recover expired scan jobs operation.
 def _recover_expired_scan_jobs(
     now,
     lease_seconds,
@@ -772,6 +876,7 @@ def _recover_expired_scan_jobs(
         ScanResult.scheduler_started_at.isnot(None),
         ScanResult.scheduler_started_at <= runtime_before,
     ).all()
+    # Iterate over hard_runtime_jobs and bind each item to job.
     for job in hard_runtime_jobs:
         changed = True
         is_local_owner = (
@@ -779,12 +884,14 @@ def _recover_expired_scan_jobs(
             and job.scheduler_process_id == os.getpid()
         )
         stopped = False
+        # Handle the branch where is_local_owner evaluates to true.
         if is_local_owner:
             from scanner import stop_scan_process
             stopped = _all_registered_processes_stopped(
                 stop_scan_process(job.id, job.scheduler_claim_token)
             )
 
+        # Handle the branch where is_local_owner and (not stopped) evaluates to true.
         if is_local_owner and not stopped:
             message = (
                 "Scan exceeded MAX_SCAN_RUNTIME_SECONDS, but the local Nmap "
@@ -793,6 +900,7 @@ def _recover_expired_scan_jobs(
             current_app.logger.critical(
                 "Hard runtime termination failed for scan %s", job.id
             )
+        # Handle the branch where not is_local_owner evaluates to true.
         elif not is_local_owner:
             message = (
                 "Scan exceeded MAX_SCAN_RUNTIME_SECONDS, but its worker process "
@@ -801,11 +909,14 @@ def _recover_expired_scan_jobs(
             current_app.logger.critical(
                 "Hard runtime scan %s belongs to another worker process", job.id
             )
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             message = "Scan exceeded MAX_SCAN_RUNTIME_SECONDS and was not retried."
+        # Handle the branch where stopped evaluates to true.
         if stopped:
             _fail_scheduler_job(job, message)
             job.scheduler_execution_phase = "failed"
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             _mark_scheduler_termination_failed(job, message)
 
@@ -821,6 +932,7 @@ def _recover_expired_scan_jobs(
             ScanResult.scheduler_started_at > runtime_before,
         ),
     ).all()
+    # Iterate over stalled_jobs and bind each item to job.
     for job in stalled_jobs:
         changed = True
         is_local_owner = (
@@ -828,23 +940,27 @@ def _recover_expired_scan_jobs(
             and job.scheduler_process_id == os.getpid()
         )
         stopped = False
+        # Handle the branch where is_local_owner evaluates to true.
         if is_local_owner:
             from scanner import stop_scan_process
             stopped = _all_registered_processes_stopped(
                 stop_scan_process(job.id, job.scheduler_claim_token)
             )
 
+        # Handle the branch where not stopped evaluates to true.
         if not stopped:
             _mark_scheduler_termination_failed(
                 job,
                 "Expired scan could not be safely stopped by its owning local "
                 "worker, so it was not retried.",
             )
+        # Handle the branch where job.scheduler_attempt_count >= job.scheduler_max_attempts evaluates to true.
         elif job.scheduler_attempt_count >= job.scheduler_max_attempts:
             _fail_scheduler_job(
                 job,
                 "Scan exceeded its maximum recovery attempts.",
             )
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             job.status = "pending"
             job.scheduler_dispatch_state = "queued"
@@ -863,15 +979,18 @@ def _recover_expired_scan_jobs(
         eligible,
         ScanResult.scheduler_attempt_count >= ScanResult.scheduler_max_attempts,
     ).all()
+    # Iterate over exhausted and bind each item to job.
     for job in exhausted:
         changed = True
         _fail_scheduler_job(job, "Scan exceeded its maximum dispatch attempts.")
     return eligible, retry_before, changed
 
 
+# Handle the recover scan jobs with lock operation.
 def _recover_scan_jobs_with_lock(app, now, commit=False):
     """Run scheduler recovery while holding the global dispatch lock."""
     dispatch_lock = db.session.get(ScanDispatchLock, 1)
+    # Handle the branch where dispatch_lock is None evaluates to true.
     if dispatch_lock is None:
         raise RuntimeError(
             "scan_dispatch_lock row 1 is missing; run the database migrations "
@@ -887,11 +1006,13 @@ def _recover_scan_jobs_with_lock(app, now, commit=False):
         app.config["MAX_SCAN_RUNTIME_SECONDS"],
         app.config["SCAN_WORKER_ID"],
     )
+    # Handle the branch where commit evaluates to true.
     if commit:
         db.session.commit()
     return result
 
 
+# Handle the dispatch pending scheduled scans operation.
 def _dispatch_pending_scheduled_scans(app, now=None):
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     eligible, retry_before, _ = _recover_scan_jobs_with_lock(app, now)
@@ -908,6 +1029,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
         ScanResult.scheduler_claimed_at > retry_before,
     ).count()
     capacity = app.config["MAX_CONCURRENT_SCANS"] - running_count - live_claims
+    # Handle the branch where capacity <= 0 evaluates to true.
     if capacity <= 0:
         db.session.commit()
         return []
@@ -923,6 +1045,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
     ).limit(capacity).all()
 
     dispatched = []
+    # Iterate over candidates and bind each item to candidate.
     for candidate in candidates:
         claim_token = str(uuid.uuid4())
         claimed = ScanResult.query.filter(
@@ -945,6 +1068,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
             },
             synchronize_session=False,
         )
+        # Handle the branch where claimed != 1 evaluates to true.
         if claimed != 1:
             continue
         audit_credentials = bool(candidate.audit_credentials)
@@ -953,6 +1077,7 @@ def _dispatch_pending_scheduled_scans(app, now=None):
 
     db.session.commit()
     dispatched_ids = []
+    # Iterate over dispatched and bind each item to (scan_id, audit_credentials, claim_token).
     for scan_id, audit_credentials, claim_token in dispatched:
         threading.Thread(
             target=execute_scan,
@@ -963,14 +1088,21 @@ def _dispatch_pending_scheduled_scans(app, now=None):
     return dispatched_ids
 
 
+# Handle the start scheduler operation.
 def start_scheduler(app):
+    # Run scheduler loop.
     def run_scheduler_loop():
         time.sleep(5)
+        # Repeat this block while True remains true.
         while True:
+            # Run this block with structured exception handling.
             try:
+                # Manage app.app_context() within this scoped block.
                 with app.app_context():
+                    # Handle the branch where is_scan_frozen() evaluates to true.
                     if is_scan_frozen():
                         pass
+                    # Handle the fallback branch when the preceding condition does not match.
                     else:
                         now = datetime.now(timezone.utc).replace(tzinfo=None)
                         due_schedules = ScanSchedule.query.filter(
@@ -978,8 +1110,10 @@ def start_scheduler(app):
                             ScanSchedule.next_run <= now
                         ).all()
                         
+                        # Iterate over due_schedules and bind each item to schedule.
                         for schedule in due_schedules:
                             _claim_scheduled_scan(schedule, now)
+            # Handle an exception raised by the preceding protected block.
             except Exception as e:
                 import sys
                 print(f"[Scheduler Error]: {str(e)}", file=sys.stderr)
@@ -988,13 +1122,19 @@ def start_scheduler(app):
     threading.Thread(target=run_scheduler_loop, daemon=True).start()
 
 
+# Handle the start scan dispatcher operation.
 def start_scan_dispatcher(app):
+    # Run dispatcher loop.
     def run_dispatcher_loop():
         time.sleep(1)
+        # Repeat this block while True remains true.
         while True:
+            # Run this block with structured exception handling.
             try:
+                # Manage app.app_context() within this scoped block.
                 with app.app_context():
                     _dispatch_pending_scheduled_scans(app)
+            # Handle an exception raised by the preceding protected block.
             except Exception as error:
                 import sys
                 print(f"[Dispatcher Error]: {error}", file=sys.stderr)
@@ -1002,19 +1142,23 @@ def start_scan_dispatcher(app):
 
     threading.Thread(target=run_dispatcher_loop, daemon=True).start()
 
+# Handle the seed mock security data operation.
 def seed_mock_security_data():
+    # Run this block with structured exception handling.
     try:
         from datetime import datetime, timedelta
         from models import Asset, SecurityFinding, SecurityAnomaly
         
         # 1. Update some assets' properties to make the UI look rich
         asset_70 = Asset.query.filter_by(ip_address="10.3.1.70").first()
+        # Handle the branch where asset_70 evaluates to true.
         if asset_70:
             asset_70.name = "Win2008-DC"
             asset_70.operating_system = "Windows Server 2008 R2"
             asset_70.criticality = "High"
             
         asset_22 = Asset.query.filter_by(ip_address="10.3.1.22").first()
+        # Handle the branch where asset_22 evaluates to true.
         if asset_22:
             asset_22.name = "Linux-SSH-Gateway"
             asset_22.operating_system = "Ubuntu Linux 16.04"
@@ -1022,12 +1166,14 @@ def seed_mock_security_data():
             asset_22.is_trusted = False
             
         asset_23 = Asset.query.filter_by(ip_address="10.3.1.23").first()
+        # Handle the branch where asset_23 evaluates to true.
         if asset_23:
             asset_23.name = "Unknown-Device"
             asset_23.criticality = "Low"
             asset_23.is_trusted = False
             
         asset_10 = Asset.query.filter_by(ip_address="10.3.1.10").first()
+        # Handle the branch where asset_10 evaluates to true.
         if asset_10:
             asset_10.name = "Web-Server-Internal"
             asset_10.operating_system = "CentOS Linux 7"
@@ -1087,6 +1233,7 @@ def seed_mock_security_data():
                     due_date=datetime.now() + timedelta(days=3)
                 )
             ]
+            # Iterate over findings and bind each item to f.
             for f in findings:
                 db.session.add(f)
             db.session.commit()
@@ -1103,11 +1250,13 @@ def seed_mock_security_data():
             )
             db.session.add(anomaly)
             db.session.commit()
+    # Handle an exception raised by the preceding protected block.
     except Exception as e:
         print(f"Error seeding mock security data: {str(e)}")
 
 
 
+# Handle the cleanup stale scans operation.
 def cleanup_stale_scans():
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     stale_threshold = now - timedelta(minutes=30)
@@ -1120,8 +1269,10 @@ def cleanup_stale_scans():
         ScanResult.scheduler_dispatch_state.is_(None),
         ScanResult.created_at < stale_threshold,
     ).all()
+    # Iterate over stale_scans and bind each item to scan.
     for scan in stale_scans:
         scan.status = "failed"
+        # Handle the branch where scan.scheduler_dispatch_state is not None evaluates to true.
         if scan.scheduler_dispatch_state is not None:
             scan.scheduler_dispatch_state = "failed"
         result_payload = {
@@ -1130,9 +1281,11 @@ def cleanup_stale_scans():
             "hosts": []
         }
         scan.result_data = json.dumps(result_payload, indent=4)
+    # Handle the branch where stale_scans or recovered_jobs evaluates to true.
     if stale_scans or recovered_jobs:
         db.session.commit()
 
+# Handle the branch where __name__ == '__main__' evaluates to true.
 if __name__ == "__main__":
     import os
     app = create_app()

@@ -15,7 +15,9 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.add_column(sa.Column("schedule_id", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("scheduled_for", sa.DateTime(), nullable=True))
@@ -41,7 +43,9 @@ def upgrade():
         )
 
 
+# Handle the downgrade operation.
 def downgrade():
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.drop_index("ix_scan_result_scheduler_dispatch_state")
         batch_op.drop_constraint(

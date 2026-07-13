@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <div class="auth-panel">
@@ -25,9 +26,12 @@
             </button>
         </div>
 
+        {# Create a scoped template context for messages = get_flashed_messages(with_categories=true). #}
         {% with messages = get_flashed_messages(with_categories=true) %}
+        {# Render this branch when messages evaluates to true. #}
         {% if messages %}
         <div class="auth-flash-wrapper">
+            {# Render one iteration for each item in category, message in messages. #}
             {% for category, message in messages %}
             <div class="flash-message {{ category }}">
                 {{ message }}
@@ -47,16 +51,20 @@
 </div>
 
 <script>
+    // Define the togglePassword client-side operation.
     function togglePassword(inputId, button) {
         const input = document.getElementById(inputId);
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (input.type === "password") {
             input.type = "text";
             button.innerHTML = '<i data-lucide="eye-off"></i>';
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             input.type = "password";
             button.innerHTML = '<i data-lucide="eye"></i>';
         }
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
         }

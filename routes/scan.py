@@ -12,9 +12,11 @@ from scanner import calculate_network, validate_scan_target
 
 scan_bp = Blueprint("scan", __name__)
 
+# Run this block with structured exception handling.
 try:
     from zoneinfo import ZoneInfo
     APP_TIMEZONE = ZoneInfo("Europe/Istanbul")
+# Handle an exception raised by the preceding protected block.
 except Exception:
     APP_TIMEZONE = timezone(timedelta(hours=3), "TRT")
 
@@ -31,54 +33,72 @@ SCAN_TYPE_NAMES = {
     "detailed": "Detailed Scan (Legacy)"
 }
 
+# Handle the format local datetime operation.
 def format_local_datetime(value):
+    # Handle the branch where not value evaluates to true.
     if not value:
         return ""
+    # Handle the branch where value.tzinfo is None evaluates to true.
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     local_value = value.astimezone(APP_TIMEZONE)
     return local_value.strftime("%Y-%m-%d %H:%M:%S")
 
+# Handle the localtime filter operation.
 @scan_bp.app_template_filter("localtime")
 def localtime_filter(value):
     return format_local_datetime(value)
 
+# Handle the scan name filter operation.
 @scan_bp.app_template_filter("scan_name")
 def scan_name_filter(value):
     return SCAN_TYPE_NAMES.get(value, value.capitalize() if value else "")
 
+# Handle the user can view scan operation.
 def user_can_view_scan(scan_result):
     return scan_result.user_id == current_user.id or current_user.is_admin
 
+# Determine whether in freeze window.
 def is_in_freeze_window(start_str, end_str):
+    # Run this block with structured exception handling.
     try:
         start_time = datetime.strptime(start_str.strip(), "%H:%M").time()
         end_time = datetime.strptime(end_str.strip(), "%H:%M").time()
         now_local = datetime.now(APP_TIMEZONE).time()
+        # Handle the branch where start_time <= end_time evaluates to true.
         if start_time <= end_time:
             return start_time <= now_local <= end_time
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             return now_local >= start_time or now_local <= end_time
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return False
 
+# Determine whether scan frozen.
 def is_scan_frozen():
+    # Run this block with structured exception handling.
     try:
         admin_user = User.query.filter_by(is_admin=True).first()
+        # Handle the branch where not admin_user evaluates to true.
         if not admin_user:
             return False
         admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first()
+        # Handle the branch where not admin_setting or not admin_setting.scan_freeze_active evaluates to true.
         if not admin_setting or not admin_setting.scan_freeze_active:
             return False
         return is_in_freeze_window(admin_setting.scan_freeze_start, admin_setting.scan_freeze_end)
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return False
 
 
+# Handle the user available for new scan operation.
 def _user_available_for_new_scan(user_id):
     user = User.query.filter(User.id == user_id).first()
     return user if user is not None and not user.is_deleting else None
 
+# Validate scan request.
 def validate_scan_request(
     ip_address,
     subnet_mask,
@@ -95,96 +115,136 @@ def validate_scan_request(
         "fast", "service_version", "ping_sweep",
         "syn", "connect", "udp", "aggressive", "vuln"
     ]
+    # Handle the branch where not scan_type or scan_type not in valid_scan_types evaluates to true.
     if not scan_type or scan_type not in valid_scan_types:
         return {"success": False, "error": "Invalid scan type selected."}
 
+    # Handle the branch where frequency is not None evaluates to true.
     if frequency is not None:
         valid_frequencies = ["hourly", "daily", "weekly", "monthly"]
+        # Handle the branch where frequency not in valid_frequencies evaluates to true.
         if frequency not in valid_frequencies:
             return {"success": False, "error": "Invalid schedule frequency."}
 
+    # Handle the branch where timing_template not in ['0', '1', '2', '3', '4', '5'] evaluates to true.
     if timing_template not in ["0", "1", "2", "3", "4", "5"]:
         return {"success": False, "error": "Timing template must be between 0 and 5."}
 
+    # Handle the branch where ports evaluates to true.
     if ports:
+        # Handle the branch where not re.match('^[0-9,-]+$', ports) evaluates to true.
         if not re.match(r"^[0-9,-]+$", ports):
             return {"success": False, "error": "Invalid ports format. Use numbers, commas, and hyphens (e.g., 22,80,443 or 1-1000)."}
         
         port_list = []
+        # Iterate over ports.split(',') and bind each item to part.
         for part in ports.split(","):
+            # Handle the branch where '-' in part evaluates to true.
             if "-" in part:
                 subparts = part.split("-")
+                # Handle the branch where len(subparts) != 2 evaluates to true.
                 if len(subparts) != 2:
                     return {"success": False, "error": "Invalid port range format."}
+                # Run this block with structured exception handling.
                 try:
                     start_port = int(subparts[0])
                     end_port = int(subparts[1])
+                    # Handle the branch where start_port > end_port evaluates to true.
                     if start_port > end_port:
                         return {"success": False, "error": f"Invalid port range: {start_port}-{end_port}."}
                     port_list.extend(range(start_port, end_port + 1))
+                # Handle an exception raised by the preceding protected block.
                 except ValueError:
                     return {"success": False, "error": "Port numbers must be integers."}
+            # Handle the fallback branch when the preceding condition does not match.
             else:
+                # Run this block with structured exception handling.
                 try:
                     port_list.append(int(part))
+                # Handle an exception raised by the preceding protected block.
                 except ValueError:
                     return {"success": False, "error": "Port numbers must be integers."}
+        # Iterate over port_list and bind each item to p.
         for p in port_list:
+            # Handle the branch where p < 1 or p > 65535 evaluates to true.
             if p < 1 or p > 65535:
                 return {"success": False, "error": f"Port {p} out of range. Ports must be between 1 and 65535."}
 
+    # Handle the branch where credential_ids evaluates to true.
     if credential_ids:
+        # Handle the branch where isinstance(credential_ids, str) evaluates to true.
         if isinstance(credential_ids, str):
             cred_id_list = [c.strip() for c in credential_ids.split(",") if c.strip()]
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             cred_id_list = [str(c).strip() for c in credential_ids if str(c).strip()]
         
+        # Handle the branch where cred_id_list evaluates to true.
         if cred_id_list:
+            # Run this block with structured exception handling.
             try:
                 int_cred_ids = [int(cid) for cid in cred_id_list]
                 user_creds = ScanCredential.query.filter(ScanCredential.id.in_(int_cred_ids)).all()
+                # Handle the branch where len(user_creds) != len(int_cred_ids) or any((c.user_id != user_id for c in user_creds)) evaluates to true.
                 if len(user_creds) != len(int_cred_ids) or any(c.user_id != user_id for c in user_creds):
                     return {"success": False, "error": "One or more selected credentials are invalid or do not belong to you."}
+            # Handle an exception raised by the preceding protected block.
             except ValueError:
                 return {"success": False, "error": "Invalid credential IDs format."}
 
     network_info = calculate_network(ip_address, subnet_mask if subnet_mask else None)
+    # Handle the branch where not network_info['success'] evaluates to true.
     if not network_info["success"]:
         return {"success": False, "error": f"Invalid scan target: {network_info['error']}"}
 
     target_validation = validate_scan_target(network_info, scan_type)
+    # Handle the branch where not target_validation['success'] evaluates to true.
     if not target_validation["success"]:
         return {"success": False, "error": target_validation["error"]}
 
+    # Handle the branch where exclude_targets evaluates to true.
     if exclude_targets:
         import ipaddress
+        # Run this block with structured exception handling.
         try:
             scan_net = ipaddress.ip_network(network_info["cidr"], strict=False)
             targets = [t.strip() for t in re.split(r'[,\s]+', exclude_targets) if t.strip()]
+            # Iterate over targets and bind each item to target.
             for target in targets:
+                # Run this block with structured exception handling.
                 try:
+                    # Handle the branch where '/' in target evaluates to true.
                     if "/" in target:
                         target_net = ipaddress.ip_network(target, strict=False)
+                        # Handle the branch where not scan_net.supernet_of(target_net) evaluates to true.
                         if not scan_net.supernet_of(target_net):
                             return {"success": False, "error": f"Exclusion target subnet {target} is outside of the scan target range {network_info['cidr']}."}
+                    # Handle the fallback branch when the preceding condition does not match.
                     else:
                         target_ip = ipaddress.ip_address(target)
+                        # Handle the branch where target_ip not in scan_net evaluates to true.
                         if target_ip not in scan_net:
                             return {"success": False, "error": f"Exclusion target IP {target} is outside of the scan target range {network_info['cidr']}."}
+                # Handle an exception raised by the preceding protected block.
                 except ValueError:
                     return {"success": False, "error": f"Invalid exclusion target format: {target}"}
+        # Handle an exception raised by the preceding protected block.
         except ValueError:
             return {"success": False, "error": "Invalid scan target CIDR."}
 
     return {"success": True, "network_info": network_info}
 
+# Handle the scan operation.
 @scan_bp.route("/scan", methods=["GET", "POST"])
 @login_required
 def scan():
+    # Handle the branch where request.method == 'POST' evaluates to true.
     if request.method == "POST":
+        # Handle the branch where _user_available_for_new_scan(current_user.id) is None evaluates to true.
         if _user_available_for_new_scan(current_user.id) is None:
             flash("This account is being deleted and cannot start new scans.", "error")
             return redirect(url_for("scan.scan"))
+        # Handle the branch where is_scan_frozen() evaluates to true.
         if is_scan_frozen():
             flash("Scan blocked due to Scan Blackout Window", "error")
             return redirect(url_for("scan.scan"))
@@ -198,6 +258,7 @@ def scan():
         selected_creds = request.form.getlist("credential_ids")
         audit_credentials = request.form.get("audit_credentials") == "y"
 
+        # Handle the branch where not ip_address or not scan_type evaluates to true.
         if not ip_address or not scan_type:
             flash("Please fill in all required scan fields.", "error")
             return redirect(url_for("scan.scan"))
@@ -212,6 +273,7 @@ def scan():
             user_id=current_user.id,
             exclude_targets=exclude_targets
         )
+        # Handle the branch where not validation['success'] evaluates to true.
         if not validation["success"]:
             flash(validation["error"], "error")
             return redirect(url_for("scan.scan"))
@@ -248,9 +310,11 @@ def scan():
     is_frozen = False
     freeze_start = "09:00"
     freeze_end = "17:00"
+    # Handle the branch where admin_setting evaluates to true.
     if admin_setting:
         freeze_start = admin_setting.scan_freeze_start
         freeze_end = admin_setting.scan_freeze_end
+        # Handle the branch where admin_setting.scan_freeze_active evaluates to true.
         if admin_setting.scan_freeze_active:
             is_frozen = is_in_freeze_window(freeze_start, freeze_end)
 
@@ -264,14 +328,17 @@ def scan():
         user_credentials=user_credentials
     )
 
+# Handle the stop scan operation.
 @scan_bp.route("/scan/<int:scan_id>/stop", methods=["POST"])
 @login_required
 def stop_scan(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to stop this scan.", "error")
         return redirect(url_for("scan.scan"))
 
+    # Handle the branch where scan_result.status == 'pending' evaluates to true.
     if scan_result.status == "pending":
         cancelled = ScanResult.query.filter(
             ScanResult.id == scan_id,
@@ -285,12 +352,14 @@ def stop_scan(scan_id):
             synchronize_session=False,
         )
         db.session.commit()
+        # Handle the branch where cancelled == 1 evaluates to true.
         if cancelled == 1:
             flash("Scan execution cancelled.", "success")
             return redirect(url_for("scan.result", scan_id=scan_id))
         db.session.expire_all()
         scan_result = db.session.get(ScanResult, scan_id)
 
+    # Handle the branch where scan_result and scan_result.status in ['running', 'termination_failed'] evaluates to true.
     if scan_result and scan_result.status in ["running", "termination_failed"]:
         from scanner import stop_scan_process
 
@@ -326,6 +395,7 @@ def stop_scan(scan_id):
         token_condition = (
             ScanResult.scheduler_claim_token == expected_token
             if expected_token is not None
+            # Handle the fallback branch when the preceding condition does not match.
             else ScanResult.scheduler_claim_token.is_(None)
         )
         new_values = (
@@ -335,6 +405,7 @@ def stop_scan(scan_id):
                 ScanResult.scheduler_execution_phase: "cancellation_requested",
             }
             if cancellation_secured
+            # Handle the fallback branch when the preceding condition does not match.
             else {
                 ScanResult.status: "termination_failed",
                 ScanResult.scheduler_dispatch_state: "orphaned",
@@ -347,46 +418,56 @@ def stop_scan(scan_id):
             token_condition,
         ).update(new_values, synchronize_session=False)
         db.session.commit()
+        # Handle the branch where updated != 1 evaluates to true.
         if updated != 1:
             flash("Scan state changed before cancellation; terminal state was preserved.", "warning")
+        # Handle the branch where cancellation_secured evaluates to true.
         elif cancellation_secured:
             flash(
                 "Scan cancellation requested; capacity will be released when "
                 "the owning worker exits.",
                 "success",
             )
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             flash(
                 "The scan process could not be confirmed terminated and still "
                 "consumes concurrency capacity.",
                 "error",
             )
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         flash("Scan is not in a cancellable state.", "warning")
 
     return redirect(url_for("scan.result", scan_id=scan_result.id))
 
+# Handle the repeat scan operation.
 @scan_bp.route("/scan/<int:scan_id>/repeat", methods=["POST"])
 @login_required
 def repeat_scan(scan_id):
+    # Handle the branch where _user_available_for_new_scan(current_user.id) is None evaluates to true.
     if _user_available_for_new_scan(current_user.id) is None:
         flash("This account is being deleted and cannot start new scans.", "error")
         return redirect(url_for("scan.scan"))
+    # Handle the branch where is_scan_frozen() evaluates to true.
     if is_scan_frozen():
         flash("Scan blocked due to Scan Blackout Window", "error")
         return redirect(url_for("scan.scan"))
         
     old_scan = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(old_scan) evaluates to true.
     if not user_can_view_scan(old_scan):
         flash("You are not authorised to repeat this scan.", "error")
         return redirect(url_for("scan.scan"))
         
     network_info = calculate_network(old_scan.input_ip, old_scan.subnet_mask if old_scan.subnet_mask != "N/A" else None)
+    # Handle the branch where not network_info['success'] evaluates to true.
     if not network_info["success"]:
         flash(f"Invalid scan target: {network_info['error']}", "error")
         return redirect(url_for("scan.scan"))
         
     target_validation = validate_scan_target(network_info, old_scan.scan_type)
+    # Handle the branch where not target_validation['success'] evaluates to true.
     if not target_validation["success"]:
         flash(target_validation["error"], "error")
         return redirect(url_for("scan.scan"))
@@ -416,6 +497,7 @@ def repeat_scan(scan_id):
     flash("Repeated scan queued.", "success")
     return redirect(url_for("scan.result", scan_id=scan_result.id))
 
+# Handle the history operation.
 @scan_bp.route("/history")
 @login_required
 def history():
@@ -441,18 +523,23 @@ def history():
         has_active_scans=has_active_scans
     )
 
+# Handle the result operation.
 @scan_bp.route("/result/<int:scan_id>")
 @login_required
 def result(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to view this scan result.", "error")
         return redirect(url_for("scan.scan"))
 
     parsed_result = None
+    # Handle the branch where scan_result.result_data evaluates to true.
     if scan_result.result_data:
+        # Run this block with structured exception handling.
         try:
             parsed_result = json.loads(scan_result.result_data)
+        # Handle an exception raised by the preceding protected block.
         except json.JSONDecodeError:
             parsed_result = {
                 "command": "Legacy text output",
@@ -466,18 +553,23 @@ def result(scan_id):
         parsed_result=parsed_result
     )
 
+# Handle the result report operation.
 @scan_bp.route("/result/<int:scan_id>/report")
 @login_required
 def result_report(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to view this report.", "error")
         return redirect(url_for("scan.scan"))
 
     parsed_result = None
+    # Handle the branch where scan_result.result_data evaluates to true.
     if scan_result.result_data:
+        # Run this block with structured exception handling.
         try:
             parsed_result = json.loads(scan_result.result_data)
+        # Handle an exception raised by the preceding protected block.
         except json.JSONDecodeError:
             parsed_result = {
                 "command": "Legacy text output",
@@ -491,20 +583,25 @@ def result_report(scan_id):
         parsed_result=parsed_result
     )
 
+# Handle the export result csv operation.
 @scan_bp.route("/result/<int:scan_id>/export/csv")
 @login_required
 def export_result_csv(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan.scan"))
 
+    # Handle the branch where not scan_result.result_data evaluates to true.
     if not scan_result.result_data:
         flash("No result data available for export.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
 
+    # Run this block with structured exception handling.
     try:
         parsed_result = json.loads(scan_result.result_data)
+    # Handle an exception raised by the preceding protected block.
     except json.JSONDecodeError:
         flash("This scan result is not available in structured format.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
@@ -518,10 +615,14 @@ def export_result_csv(scan_id):
     ])
 
     hosts = parsed_result.get("hosts", [])
+    # Handle the branch where hosts evaluates to true.
     if hosts:
+        # Iterate over hosts and bind each item to host.
         for host in hosts:
             ports = host.get("ports", [])
+            # Handle the branch where ports evaluates to true.
             if ports:
+                # Iterate over ports and bind each item to port.
                 for port in ports:
                     writer.writerow([
                         scan_result.id, format_local_datetime(scan_result.created_at),
@@ -532,6 +633,7 @@ def export_result_csv(scan_id):
                         port.get("port", ""), port.get("protocol", ""), port.get("state", ""),
                         port.get("service", ""), port.get("version", "")
                     ])
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 writer.writerow([
                     scan_result.id, format_local_datetime(scan_result.created_at),
@@ -548,20 +650,25 @@ def export_result_csv(scan_id):
         headers={"Content-disposition": f"attachment; filename=lynceus_scan_{scan_result.id}.csv"}
     )
 
+# Handle the export result json operation.
 @scan_bp.route("/result/<int:scan_id>/export/json")
 @login_required
 def export_result_json(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan.scan"))
 
+    # Handle the branch where not scan_result.result_data evaluates to true.
     if not scan_result.result_data:
         flash("No result data available for export.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
 
+    # Run this block with structured exception handling.
     try:
         parsed_result = json.loads(scan_result.result_data)
+    # Handle an exception raised by the preceding protected block.
     except json.JSONDecodeError:
         flash("This scan result is not available in structured format.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
@@ -584,20 +691,25 @@ def export_result_json(scan_id):
         headers={"Content-disposition": f"attachment; filename=lynceus_scan_{scan_result.id}.json"}
     )
 
+# Handle the export result txt operation.
 @scan_bp.route("/result/<int:scan_id>/export/txt")
 @login_required
 def export_result_txt(scan_id):
     scan_result = ScanResult.query.get_or_404(scan_id)
+    # Handle the branch where not user_can_view_scan(scan_result) evaluates to true.
     if not user_can_view_scan(scan_result):
         flash("You are not authorised to export this scan result.", "error")
         return redirect(url_for("scan.scan"))
 
+    # Handle the branch where not scan_result.result_data evaluates to true.
     if not scan_result.result_data:
         flash("No result data available for export.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
 
+    # Run this block with structured exception handling.
     try:
         parsed_result = json.loads(scan_result.result_data)
+    # Handle an exception raised by the preceding protected block.
     except json.JSONDecodeError:
         flash("This scan result is not available in structured format.", "error")
         return redirect(url_for("scan.result", scan_id=scan_result.id))
@@ -616,18 +728,24 @@ def export_result_txt(scan_id):
     lines.append("=========================================\n")
 
     hosts = parsed_result.get("hosts", [])
+    # Handle the branch where hosts evaluates to true.
     if hosts:
+        # Iterate over hosts and bind each item to host.
         for host in hosts:
             lines.append(f"Host: {host.get('address', '')} ({host.get('hostname', 'Unknown hostname')})")
             lines.append(f"Host Status: {host.get('status', '')}")
+            # Handle the branch where host.get('mac_address') evaluates to true.
             if host.get("mac_address"):
                 lines.append(f"MAC Address: {host.get('mac_address')} ({host.get('mac_vendor', 'Unknown vendor')})")
             
             ports = host.get("ports", [])
+            # Handle the branch where ports evaluates to true.
             if ports:
                 lines.append("Open Ports:")
+                # Iterate over ports and bind each item to port.
                 for port in ports:
                     lines.append(f"  - {port.get('port')}/{port.get('protocol')} [{port.get('state')}] -> {port.get('service')} {port.get('version') or ''}")
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 lines.append("No open ports discovered.")
             lines.append("-----------------------------------------")
@@ -638,15 +756,18 @@ def export_result_txt(scan_id):
         headers={"Content-disposition": f"attachment; filename=lynceus_scan_{scan_result.id}.txt"}
     )
 
+# Handle the schedules operation.
 @scan_bp.route("/schedules")
 @login_required
 def schedules():
     schedule_list = ScanSchedule.query.filter_by(user_id=current_user.id).order_by(ScanSchedule.created_at.desc()).all()
     return render_template("schedules.html", schedules=schedule_list)
 
+# Handle the new schedule operation.
 @scan_bp.route("/schedules/new", methods=["GET", "POST"])
 @login_required
 def new_schedule():
+    # Handle the branch where request.method == 'POST' evaluates to true.
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         ip_address = request.form.get("ip_address", "").strip()
@@ -659,6 +780,7 @@ def new_schedule():
         selected_creds = request.form.getlist("credential_ids")
         audit_credentials = request.form.get("audit_credentials") == "y"
 
+        # Handle the branch where not name or not ip_address or (not scan_type) or (not frequency) evaluates to true.
         if not name or not ip_address or not scan_type or not frequency:
             flash("Please fill in all required scheduling fields.", "error")
             return redirect(url_for("scan.new_schedule"))
@@ -674,6 +796,7 @@ def new_schedule():
             exclude_targets=exclude_targets,
             frequency=frequency
         )
+        # Handle the branch where not validation['success'] evaluates to true.
         if not validation["success"]:
             flash(validation["error"], "error")
             return redirect(url_for("scan.new_schedule"))
@@ -684,12 +807,16 @@ def new_schedule():
         # Database times MUST be UTC
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         next_run = now
+        # Handle the branch where frequency == 'hourly' evaluates to true.
         if frequency == "hourly":
             next_run = now + timedelta(hours=1)
+        # Handle the branch where frequency == 'daily' evaluates to true.
         elif frequency == "daily":
             next_run = now + timedelta(days=1)
+        # Handle the branch where frequency == 'weekly' evaluates to true.
         elif frequency == "weekly":
             next_run = now + timedelta(weeks=1)
+        # Handle the branch where frequency == 'monthly' evaluates to true.
         elif frequency == "monthly":
             next_run = now + timedelta(days=30)
 
@@ -717,10 +844,12 @@ def new_schedule():
     user_credentials = ScanCredential.query.filter_by(user_id=current_user.id).order_by(ScanCredential.name).all()
     return render_template("schedule_form.html", schedule=None, user_credentials=user_credentials)
 
+# Handle the edit schedule operation.
 @scan_bp.route("/schedules/<int:schedule_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_schedule(schedule_id):
     sched = ScanSchedule.query.filter_by(id=schedule_id, user_id=current_user.id).first_or_404()
+    # Handle the branch where request.method == 'POST' evaluates to true.
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         ip_address = request.form.get("ip_address", "").strip()
@@ -733,6 +862,7 @@ def edit_schedule(schedule_id):
         selected_creds = request.form.getlist("credential_ids")
         audit_credentials = request.form.get("audit_credentials") == "y"
 
+        # Handle the branch where not name or not ip_address or (not scan_type) or (not frequency) evaluates to true.
         if not name or not ip_address or not scan_type or not frequency:
             flash("Please fill in all required scheduling fields.", "error")
             return redirect(url_for("scan.edit_schedule", schedule_id=sched.id))
@@ -748,6 +878,7 @@ def edit_schedule(schedule_id):
             exclude_targets=exclude_targets,
             frequency=frequency
         )
+        # Handle the branch where not validation['success'] evaluates to true.
         if not validation["success"]:
             flash(validation["error"], "error")
             return redirect(url_for("scan.edit_schedule", schedule_id=sched.id))
@@ -757,12 +888,16 @@ def edit_schedule(schedule_id):
         # Recalculate next run if frequency has changed
         if sched.frequency != frequency:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
+            # Handle the branch where frequency == 'hourly' evaluates to true.
             if frequency == "hourly":
                 sched.next_run = now + timedelta(hours=1)
+            # Handle the branch where frequency == 'daily' evaluates to true.
             elif frequency == "daily":
                 sched.next_run = now + timedelta(days=1)
+            # Handle the branch where frequency == 'weekly' evaluates to true.
             elif frequency == "weekly":
                 sched.next_run = now + timedelta(weeks=1)
+            # Handle the branch where frequency == 'monthly' evaluates to true.
             elif frequency == "monthly":
                 sched.next_run = now + timedelta(days=30)
 
@@ -785,6 +920,7 @@ def edit_schedule(schedule_id):
     user_credentials = ScanCredential.query.filter_by(user_id=current_user.id).order_by(ScanCredential.name).all()
     return render_template("schedule_form.html", schedule=sched, user_credentials=user_credentials)
 
+# Handle the toggle schedule operation.
 @scan_bp.route("/schedules/<int:schedule_id>/toggle", methods=["POST"])
 @login_required
 def toggle_schedule(schedule_id):
@@ -795,6 +931,7 @@ def toggle_schedule(schedule_id):
     flash(f"Schedule '{sched.name}' has been {status_str}.", "success")
     return redirect(url_for("scan.schedules"))
 
+# Delete schedule.
 @scan_bp.route("/schedules/<int:schedule_id>/delete", methods=["POST"])
 @login_required
 def delete_schedule(schedule_id):
@@ -804,14 +941,17 @@ def delete_schedule(schedule_id):
     flash("Schedule deleted successfully.", "success")
     return redirect(url_for("scan.schedules"))
 
+# Handle the bulk delete schedules operation.
 @scan_bp.route("/schedules/bulk-delete", methods=["POST"])
 @login_required
 def bulk_delete_schedules():
     schedule_ids = request.form.getlist("schedule_ids")
+    # Handle the branch where not schedule_ids evaluates to true.
     if not schedule_ids:
         flash("No scan schedules selected for deletion.", "warning")
         return redirect(url_for("scan.schedules"))
 
+    # Run this block with structured exception handling.
     try:
         int_ids = [int(sid) for sid in schedule_ids]
         deleted_count = ScanSchedule.query.filter(
@@ -820,27 +960,32 @@ def bulk_delete_schedules():
         ).delete(synchronize_session=False)
         db.session.commit()
         flash(f"Successfully deleted {deleted_count} scan schedules.", "success")
+    # Handle an exception raised by the preceding protected block.
     except Exception as e:
         db.session.rollback()
         flash(f"Error during bulk deletion: {str(e)}", "error")
 
     return redirect(url_for("scan.schedules"))
 
+# Handle the compare scans operation.
 @scan_bp.route("/scans/compare")
 @login_required
 def compare_scans():
     scan_a_id = request.args.get("scan_a")
     scan_b_id = request.args.get("scan_b")
+    # Handle the branch where not scan_a_id or not scan_b_id evaluates to true.
     if not scan_a_id or not scan_b_id:
         flash("Please select two scans to compare.", "warning")
         return redirect(url_for("scan.history"))
 
     scan_a = ScanResult.query.get_or_404(scan_a_id)
     scan_b = ScanResult.query.get_or_404(scan_b_id)
+    # Handle the branch where not user_can_view_scan(scan_a) or not user_can_view_scan(scan_b) evaluates to true.
     if not user_can_view_scan(scan_a) or not user_can_view_scan(scan_b):
         flash("You are not authorized to view these scans.", "error")
         return redirect(url_for("scan.history"))
 
+    # Handle the branch where scan_a.status != 'completed' or scan_b.status != 'completed' evaluates to true.
     if scan_a.status != "completed" or scan_b.status != "completed":
         flash("Both scans must be completed to compare.", "error")
         return redirect(url_for("scan.history"))
@@ -854,9 +999,12 @@ def compare_scans():
     removed_hosts = []
     modified_hosts = []
 
+    # Iterate over hosts_b.items() and bind each item to (ip, host).
     for ip, host in hosts_b.items():
+        # Handle the branch where ip not in hosts_a evaluates to true.
         if ip not in hosts_a:
             added_hosts.append(host)
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             ports_a = {int(p["port"]): p for p in hosts_a[ip].get("ports", [])}
             ports_b = {int(p["port"]): p for p in host.get("ports", [])}
@@ -865,12 +1013,16 @@ def compare_scans():
             removed_ports = [p for port_num, p in ports_a.items() if port_num not in ports_b]
             
             changed_services = []
+            # Iterate over ports_b.items() and bind each item to (port_num, port_b).
             for port_num, port_b in ports_b.items():
+                # Handle the branch where port_num in ports_a evaluates to true.
                 if port_num in ports_a:
                     port_a = ports_a[port_num]
+                    # Handle the branch where port_a.get('service') != port_b.get('service') or port_a.get('version') != port_b.get('version') evaluates to true.
                     if port_a.get("service") != port_b.get("service") or port_a.get("version") != port_b.get("version"):
                         changed_services.append({"port": port_num, "old": port_a, "new": port_b})
             
+            # Handle the branch where added_ports or removed_ports or changed_services evaluates to true.
             if added_ports or removed_ports or changed_services:
                 modified_hosts.append({
                     "address": ip,
@@ -880,7 +1032,9 @@ def compare_scans():
                     "changed_services": changed_services
                 })
 
+    # Iterate over hosts_a.items() and bind each item to (ip, host).
     for ip, host in hosts_a.items():
+        # Handle the branch where ip not in hosts_b evaluates to true.
         if ip not in hosts_b:
             removed_hosts.append(host)
 

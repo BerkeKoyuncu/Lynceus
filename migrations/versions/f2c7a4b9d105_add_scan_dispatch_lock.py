@@ -15,6 +15,7 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
     op.create_table(
         "scan_dispatch_lock",
@@ -25,5 +26,6 @@ def upgrade():
     op.execute("INSERT INTO scan_dispatch_lock (id) VALUES (1)")
 
 
+# Handle the downgrade operation.
 def downgrade():
     op.drop_table("scan_dispatch_lock")

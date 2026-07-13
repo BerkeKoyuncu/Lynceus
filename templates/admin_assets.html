@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
@@ -7,6 +8,7 @@
         <h2>Asset Inventory (Total: {{ assets|length }})</h2>
         <p>Manage and track critical network assets, assign ownership, and audit device details.</p>
     </div>
+    {# Render this branch when current_user.is_admin evaluates to true. #}
     {% if current_user.is_admin %}
     <div style="display: flex; gap: 10px; align-items: center;">
         <button type="submit" form="bulk-delete-form" id="bulk-delete-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected assets?')">
@@ -76,11 +78,13 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 {% endif %}
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 25px; box-shadow: var(--shadow);">
+    {# Render this branch when assets evaluates to true. #}
     {% if assets %}
     <div style="overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse;">
             <thead>
                 <tr>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <th style="width: 40px; text-align: center; vertical-align: middle;"><input type="checkbox" id="select-all-assets" aria-label="Select all assets"></th>
                     {% endif %}
@@ -94,19 +98,23 @@
                     <th>Owner & Location</th>
                     <th>Last Seen</th>
                     <th>Trust Status</th>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <th style="text-align: center;">Actions</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in asset in assets. #}
                 {% for asset in assets %}
                 <tr>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" form="bulk-delete-form" aria-label="Select asset"></td>
                     {% endif %}
                     <td>
                         <strong style="font-size: 15px;">{{ asset.name or 'Unnamed Asset' }}</strong>
+                        {# Render this branch when asset.serial_number evaluates to true. #}
                         {% if asset.serial_number %}
                             <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
                                 <span style="font-weight: 600;">S/N:</span> {{ asset.serial_number }}
@@ -115,6 +123,7 @@
                     </td>
                     <td>
                         <strong class="asset-ip">{{ asset.ip_address }}</strong>
+                        {# Render this branch when asset.mac_address evaluates to true. #}
                         {% if asset.mac_address %}
                             <div style="font-size: 12px; color: var(--text-muted); font-family: SFMono-Regular, monospace; margin-top: 2px;">
                                 {{ asset.mac_address }}
@@ -126,26 +135,37 @@
                     </td>
                     <td>
                         <span style="font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                            {# Render this branch when asset.device_type == 'Server' evaluates to true. #}
                             {% if asset.device_type == 'Server' %}
                                 <i data-lucide="database" style="width: 14px; height: 14px;"></i> Server
+                            {# Render this branch when asset.device_type == 'Workstation' evaluates to true. #}
                             {% elif asset.device_type == 'Workstation' %}
                                 <i data-lucide="monitor" style="width: 14px; height: 14px;"></i> Workstation
+                            {# Render this branch when asset.device_type == 'Router' or asset.device_type == 'Switch' evaluates to true. #}
                             {% elif asset.device_type == 'Router' or asset.device_type == 'Switch' %}
                                 <i data-lucide="network" style="width: 14px; height: 14px;"></i> {{ asset.device_type }}
+                            {# Render this branch when asset.device_type == 'Firewall' evaluates to true. #}
                             {% elif asset.device_type == 'Firewall' %}
                                 <i data-lucide="shield" style="width: 14px; height: 14px;"></i> Firewall
+                            {# Render this branch when asset.device_type == 'Printer' evaluates to true. #}
                             {% elif asset.device_type == 'Printer' %}
                                 <i data-lucide="printer" style="width: 14px; height: 14px;"></i> Printer
+                            {# Render this branch when asset.device_type == 'IP Phone' evaluates to true. #}
                             {% elif asset.device_type == 'IP Phone' %}
                                 <i data-lucide="phone" style="width: 14px; height: 14px;"></i> IP Phone
+                            {# Render this branch when asset.device_type == 'IP Camera' evaluates to true. #}
                             {% elif asset.device_type == 'IP Camera' %}
                                 <i data-lucide="video" style="width: 14px; height: 14px;"></i> IP Camera
+                            {# Render this branch when asset.device_type == 'Virtual Machine' evaluates to true. #}
                             {% elif asset.device_type == 'Virtual Machine' %}
                                 <i data-lucide="box" style="width: 14px; height: 14px;"></i> Virtual Machine
+                            {# Render this branch when asset.device_type == 'IoT' evaluates to true. #}
                             {% elif asset.device_type == 'IoT' %}
                                 <i data-lucide="cpu" style="width: 14px; height: 14px;"></i> IoT
+                            {# Render this branch when asset.device_type == 'Mobile' evaluates to true. #}
                             {% elif asset.device_type == 'Mobile' %}
                                 <i data-lucide="tablet" style="width: 14px; height: 14px;"></i> Mobile
+                            {# Render the fallback branch when earlier conditions do not match. #}
                             {% else %}
                                 <i data-lucide="help-circle" style="width: 14px; height: 14px;"></i> {{ asset.device_type or 'Unknown' }}
                             {% endif %}
@@ -153,12 +173,16 @@
                     </td>
                     <td style="font-size: 13px; color: var(--text);">{{ asset.operating_system or '-' }}</td>
                     <td>
+                        {# Render this branch when asset.criticality == 'Critical' evaluates to true. #}
                         {% if asset.criticality == 'Critical' %}
                             <span class="badge error-badge" style="background: #5c0d02; color: #fde8e8;">Critical</span>
+                        {# Render this branch when asset.criticality == 'High' evaluates to true. #}
                         {% elif asset.criticality == 'High' %}
                             <span class="badge error-badge">High</span>
+                        {# Render this branch when asset.criticality == 'Medium' evaluates to true. #}
                         {% elif asset.criticality == 'Medium' %}
                             <span class="badge running-badge">Medium</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             <span class="badge success-badge">Low</span>
                         {% endif %}
@@ -168,6 +192,7 @@
                     </td>
                     <td>
                         <div style="font-size: 13px; font-weight: 600;">{{ asset.owner or '-' }}</div>
+                        {# Render this branch when asset.location evaluates to true. #}
                         {% if asset.location %}
                             <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
                                 <i data-lucide="map-pin" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle; margin-right: 2px;"></i> {{ asset.location }}
@@ -176,12 +201,15 @@
                     </td>
                     <td style="font-size: 13px;">{{ asset.last_seen|localtime }}</td>
                     <td>
+                        {# Render this branch when asset.is_trusted evaluates to true. #}
                         {% if asset.is_trusted %}
                             <span class="badge success-badge">Trusted</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             <span class="badge error-badge">Untrusted</span>
                         {% endif %}
                     </td>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <td style="text-align: center; vertical-align: middle;">
                         <div style="display: flex; justify-content: center; gap: 8px; align-items: center;">
@@ -208,6 +236,7 @@
             </tbody>
         </table>
     </div>
+    {# Render the fallback branch when earlier conditions do not match. #}
     {% else %}
         <div style="text-align: center; padding: 40px 20px;">
             <i data-lucide="database-backup" style="width: 48px; height: 48px; color: var(--text-muted); margin-bottom: 15px;"></i>
@@ -217,13 +246,16 @@
 </div>
 
 <script>
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", () => {
         const selectAllCheckbox = document.getElementById("select-all-assets");
         const assetCheckboxes = document.querySelectorAll(".asset-checkbox");
         const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
 
+        // Define the updateBulkDeleteButton client-side operation.
         function updateBulkDeleteButton() {
             const checkedCount = document.querySelectorAll(".asset-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkDeleteBtn.style.display = "inline-flex";
                 bulkDeleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
@@ -231,13 +263,17 @@
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllCheckbox) {
+            // Handle the registered browser event when it is emitted.
             selectAllCheckbox.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 assetCheckboxes.forEach(cb => {
                     cb.checked = selectAllCheckbox.checked;
                 });
@@ -245,10 +281,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         assetCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllCheckbox.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(assetCheckboxes).every(c => c.checked);
                     selectAllCheckbox.checked = allChecked;

@@ -7,11 +7,14 @@ from services.rule_service import calculate_network_risk_score
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
+# Handle the format local datetime operation.
 def format_local_datetime(dt):
+    # Handle the branch where not dt evaluates to true.
     if not dt:
         return ""
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
+# Handle the dashboard operation.
 @dashboard_bp.route("/dashboard")
 @login_required
 def dashboard():
@@ -60,6 +63,7 @@ def dashboard():
     
     # 4. Fetch admin stats (if admin)
     admin_stats = {}
+    # Handle the branch where current_user.is_admin evaluates to true.
     if current_user.is_admin:
         admin_stats["active_anomalies"] = SecurityAnomaly.query.filter_by(is_resolved=False).count()
         admin_stats["untrusted_devices"] = Asset.query.filter_by(is_trusted=False).count()
@@ -83,27 +87,36 @@ def dashboard():
     anomaly_ips = {a.ip_address: a for a in unresolved_anomalies if a.ip_address}
     anomaly_macs = {a.mac_address.lower(): a for a in unresolved_anomalies if a.mac_address}
 
+    # Iterate over assets and bind each item to asset.
     for asset in assets:
         asset_score = 0
         crit = (asset.criticality or "Medium").lower()
+        # Handle the branch where crit == 'critical' evaluates to true.
         if crit == "critical":
             asset_score += 40
+        # Handle the branch where crit == 'high' evaluates to true.
         elif crit == "high":
             asset_score += 30
+        # Handle the branch where crit == 'low' evaluates to true.
         elif crit == "low":
             asset_score += 10
+        # Handle the fallback branch when the preceding condition does not match.
         else:  # Medium
             asset_score += 20
             
+        # Handle the branch where not asset.is_trusted evaluates to true.
         if not asset.is_trusted:
             asset_score += 15
             
         has_anomaly = False
+        # Handle the branch where asset.ip_address in anomaly_ips evaluates to true.
         if asset.ip_address in anomaly_ips:
             has_anomaly = True
+        # Handle the branch where asset.mac_address and asset.mac_address.lower() in anomaly_macs evaluates to true.
         if asset.mac_address and asset.mac_address.lower() in anomaly_macs:
             has_anomaly = True
             
+        # Handle the branch where has_anomaly evaluates to true.
         if has_anomaly:
             asset_score += 20
             
@@ -113,14 +126,17 @@ def dashboard():
             
         asset_score = min(asset_score, 100)
         
+        # Handle the branch where asset_score >= 70 evaluates to true.
         if asset_score >= 70:
             asset_level = "Critical" if crit == "critical" else "High"
             asset_color = "var(--error-text)"
             asset_bg = "var(--error-bg)"
+        # Handle the branch where asset_score >= 35 evaluates to true.
         elif asset_score >= 35:
             asset_level = "Medium"
             asset_color = "var(--warning-text)"
             asset_bg = "var(--warning-bg)"
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             asset_level = "Low"
             asset_color = "var(--success-text)"

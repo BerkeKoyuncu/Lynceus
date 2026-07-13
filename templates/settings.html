@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
+{# Render this branch when tab == 'honeypot' evaluates to true. #}
 {% if tab == 'honeypot' %}
     <h2>Honeypot Settings</h2>
     <p>
@@ -20,6 +22,7 @@
                         id="honeypot_active" 
                         name="honeypot_active" 
                         value="y" 
+                        {# Render this branch when not setting or setting.honeypot_active evaluates to true. #}
                         {% if not setting or setting.honeypot_active %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -34,6 +37,7 @@
                         id="honeypot_auto_block" 
                         name="honeypot_auto_block" 
                         value="y" 
+                        {# Render this branch when not setting or setting.honeypot_auto_block evaluates to true. #}
                         {% if not setting or setting.honeypot_auto_block %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -48,6 +52,7 @@
                         id="honeypot_email_alert" 
                         name="honeypot_email_alert" 
                         value="y" 
+                        {# Render this branch when not setting or setting.honeypot_email_alert evaluates to true. #}
                         {% if not setting or setting.honeypot_email_alert %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -60,6 +65,7 @@
             </form>
         </div>
     </div>
+{# Render this branch when tab == 'freeze' evaluates to true. #}
 {% elif tab == 'freeze' %}
     <h2>Scan Blackout (Freeze) Window</h2>
     <p>
@@ -78,6 +84,7 @@
                         id="scan_freeze_active" 
                         name="scan_freeze_active" 
                         value="y" 
+                        {# Render this branch when setting and setting.scan_freeze_active evaluates to true. #}
                         {% if setting and setting.scan_freeze_active %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -127,6 +134,7 @@
             </form>
         </div>
     </div>
+{# Render this branch when tab == 'exclusions' evaluates to true. #}
 {% elif tab == 'exclusions' %}
     <h2>Global Scan Exclusions</h2>
     <p>
@@ -145,6 +153,7 @@
                         id="scan_exclusions_active" 
                         name="scan_exclusions_active" 
                         value="y" 
+                        {# Render this branch when not setting or setting.scan_exclusions_active evaluates to true. #}
                         {% if not setting or setting.scan_exclusions_active %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -180,6 +189,7 @@
             </form>
         </div>
     </div>
+{# Render this branch when tab == 'credentials' evaluates to true. #}
 {% elif tab == 'credentials' %}
     <h2>Scan Credentials</h2>
     <p>
@@ -190,6 +200,7 @@
         <!-- Left: List of Credentials -->
         <div class="settings-form-wrapper" style="width: 100%;">
             <h3>Saved Credentials</h3>
+            {# Render this branch when credentials evaluates to true. #}
             {% if credentials %}
                 <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
                     <thead>
@@ -202,20 +213,26 @@
                         </tr>
                     </thead>
                     <tbody>
+                        {# Render one iteration for each item in cred in credentials. #}
                         {% for cred in credentials %}
                             <tr style="border-bottom: 1px solid var(--border);">
                                 <td style="padding: 12px 10px; font-weight: 500; color: var(--text);">{{ cred.name }}</td>
                                 <td style="padding: 12px 10px; color: var(--text-muted);">{{ cred.username if cred.username else 'N/A' }}</td>
                                 <td style="padding: 12px 10px; color: var(--text-muted); font-family: monospace;">••••••••</td>
                                 <td style="padding: 12px 10px;">
+                                    {# Render this branch when cred.protocol == 'any' evaluates to true. #}
                                     {% if cred.protocol == 'any' %}
                                         <span class="badge" style="background: rgba(100, 110, 120, 0.15); color: var(--text);">Any</span>
+                                    {# Render this branch when cred.protocol == 'ftp' evaluates to true. #}
                                     {% elif cred.protocol == 'ftp' %}
                                         <span class="badge success-badge">FTP</span>
+                                    {# Render this branch when cred.protocol == 'redis' evaluates to true. #}
                                     {% elif cred.protocol == 'redis' %}
                                         <span class="badge running-badge">Redis</span>
+                                    {# Render this branch when cred.protocol == 'http_basic' evaluates to true. #}
                                     {% elif cred.protocol == 'http_basic' %}
                                         <span class="badge pending-badge">HTTP Basic</span>
+                                    {# Render the fallback branch when earlier conditions do not match. #}
                                     {% else %}
                                         {{ cred.protocol }}
                                     {% endif %}
@@ -232,6 +249,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
                 <div style="background: rgba(74, 93, 78, 0.05); border: 1px dashed var(--border); border-radius: 8px; padding: 25px; text-align: center; margin-top: 15px; color: var(--text-muted);">
                     <i data-lucide="key-round" style="width: 32px; height: 32px; margin-bottom: 10px; opacity: 0.6;"></i>
@@ -293,6 +311,7 @@
             </form>
         </div>
     </div>
+{# Render the fallback branch when earlier conditions do not match. #}
 {% else %}
     <h2>System & Email Settings</h2>
     <p>
@@ -368,6 +387,7 @@
                         id="alert_on_new_ports_only" 
                         name="alert_on_new_ports_only" 
                         value="y" 
+                        {# Render this branch when not setting or setting.alert_on_new_ports_only evaluates to true. #}
                         {% if not setting or setting.alert_on_new_ports_only %}checked{% endif %}
                         style="width: auto; margin: 0; transform: scale(1.1); cursor: pointer;"
                     >
@@ -380,6 +400,7 @@
             </form>
         </div>
 
+        {# Render this branch when setting and setting.smtp_server and setting.smtp_sender and setting.alert_recipient evaluates to true. #}
         {% if setting and setting.smtp_server and setting.smtp_sender and setting.alert_recipient %}
             <div id="connection-diagnostics-sidebar" class="settings-sidebar" style="margin-top: 35px; border-top: 1px solid var(--border); padding-top: 25px; width: 100%;">
                 <h3>Connection Diagnostics</h3>

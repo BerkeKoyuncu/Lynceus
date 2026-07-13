@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from models import db, Asset, AssetObservation, SecurityAnomaly
 
 
+# Handle the anomaly exists operation.
 def _anomaly_exists(anomaly_type, ip_address, mac_address, hours=24):
     """
     Returns True if an unresolved anomaly of the same type, IP, and MAC
@@ -17,16 +18,20 @@ def _anomaly_exists(anomaly_type, ip_address, mac_address, hours=24):
         SecurityAnomaly.created_at >= since
     ).first() is not None
 
+# Retrieve ports hash.
 def get_ports_hash(ports_list):
     """
     Computes a stable hash from a list of ports including port number, protocol, and state.
     """
+    # Handle the branch where not ports_list evaluates to true.
     if not ports_list:
         return "empty"
     # Extract endpoint details, sort them, and compute SHA-256
     port_ids = []
+    # Iterate over ports_list and bind each item to p.
     for p in ports_list:
         p_num = p.get("port")
+        # Handle the branch where p_num evaluates to true.
         if p_num:
             proto = (p.get("protocol") or "tcp").lower()
             state = (p.get("state") or "open").lower()
@@ -34,6 +39,7 @@ def get_ports_hash(ports_list):
     sorted_ports = ",".join(sorted(port_ids))
     return hashlib.sha256(sorted_ports.encode()).hexdigest()
 
+# Handle the record observation operation.
 def record_observation(asset_id, scan_id, ip_address, mac_address, hostname, vendor, operating_system, open_ports):
     """
     Saves a single asset observation snapshot.
@@ -54,6 +60,7 @@ def record_observation(asset_id, scan_id, ip_address, mac_address, hostname, ven
     db.session.commit()
     return observation
 
+# Handle the evaluate host anomalies operation.
 def evaluate_host_anomalies(host, scan_id):
     """
     Evaluates potential security anomalies for a scanned host based on historical observations.
@@ -66,16 +73,21 @@ def evaluate_host_anomalies(host, scan_id):
     
     # Check if a new rogue device was identified in Pass 1 (fallback for direct/test calls)
     is_new_rogue = host.get("is_new_rogue")
+    # Handle the branch where is_new_rogue is None evaluates to true.
     if is_new_rogue is None:
         asset_check = None
+        # Handle the branch where mac evaluates to true.
         if mac:
             asset_check = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
+        # Handle the branch where not asset_check evaluates to true.
         if not asset_check:
             asset_check = Asset.query.filter_by(ip_address=ip).first()
         is_new_rogue = (asset_check is None)
 
+    # Handle the branch where is_new_rogue evaluates to true.
     if is_new_rogue:
         desc = f"New unknown device detected on the network: IP {ip}, MAC {mac or 'N/A'} ({vendor or 'Unknown'})."
+        # Handle the branch where not _anomaly_exists('rogue_device', ip, mac) evaluates to true.
         if not _anomaly_exists("rogue_device", ip, mac):
             anomaly = SecurityAnomaly(
                 anomaly_type="rogue_device",
@@ -100,17 +112,22 @@ def evaluate_host_anomalies(host, scan_id):
     # If no snapshot, look up from DB as fallback (for standalone tests)
     if expected_ip is None and expected_mac is None and asset_id is None:
         asset_check = None
+        # Handle the branch where mac evaluates to true.
         if mac:
             asset_check = Asset.query.filter(Asset.mac_address.ilike(mac)).first()
+        # Handle the branch where not asset_check evaluates to true.
         if not asset_check:
             asset_check = Asset.query.filter_by(ip_address=ip).first()
+        # Handle the branch where asset_check evaluates to true.
         if asset_check:
             expected_ip = asset_check.ip_address
             expected_mac = asset_check.mac_address
             asset_id = asset_check.id
             ip_assignment_type = asset_check.ip_assignment_type
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             return None
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         # Get ip_assignment_type from the asset in DB
         asset_db = db.session.get(Asset, asset_id)
@@ -147,20 +164,25 @@ def evaluate_host_anomalies(host, scan_id):
         confidence = "High"
         reason = "Potential MAC Spoofing!"
         
+        # Handle the branch where old_mac_active_elsewhere evaluates to true.
         if old_mac_active_elsewhere:
             confidence = "High"
             reason = "Active conflict: Expected MAC is active on another IP, while this IP was claimed by a new MAC."
+        # Handle the branch where unique_macs_on_ip > 3 evaluates to true.
         elif unique_macs_on_ip > 3:
             confidence = "Low"
             reason = "Frequent MAC variations on this IP (likely MAC randomization or dynamic environment)."
+        # Handle the branch where past_matching_observations > 0 evaluates to true.
         elif past_matching_observations > 0:
             confidence = "Low"
             reason = "Known historical IP-MAC mapping detected."
+        # Handle the branch where ip_assignment_type == 'DHCP' evaluates to true.
         elif ip_assignment_type == "DHCP":
             confidence = "Medium"
             reason = "DHCP lease changed to a new MAC; old client inactive."
 
         desc = f"IP address {ip} has changed its MAC address from {expected_mac} to {mac}. {reason}"
+        # Handle the branch where not _anomaly_exists('mac_spoofing', ip, mac) evaluates to true.
         if not _anomaly_exists("mac_spoofing", ip, mac):
             anomaly = SecurityAnomaly(
                 anomaly_type="mac_spoofing",
@@ -188,17 +210,21 @@ def evaluate_host_anomalies(host, scan_id):
         confidence = "Medium"
         reason = "IP address changed."
         
+        # Handle the branch where ip_assignment_type == 'Static' evaluates to true.
         if ip_assignment_type == "Static":
             confidence = "High"
             reason = "Static IP device migrated to a new IP."
+        # Handle the branch where conflicting_asset evaluates to true.
         elif conflicting_asset:
             confidence = "High"
             reason = "MAC address claimed an IP address active on another device."
+        # Handle the branch where ip_assignment_type == 'DHCP' evaluates to true.
         elif ip_assignment_type == "DHCP":
             confidence = "Low"
             reason = "Standard DHCP lease renewal / migration."
 
         desc = f"MAC address {mac} ({vendor or 'Unknown'}) changed its IP address from {old_ip} to {ip}. {reason}"
+        # Handle the branch where not _anomaly_exists('ip_hijack', ip, mac) evaluates to true.
         if not _anomaly_exists("ip_hijack", ip, mac):
             anomaly = SecurityAnomaly(
                 anomaly_type="ip_hijack",

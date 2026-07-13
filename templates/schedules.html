@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
@@ -15,6 +16,7 @@
     </div>
 </div>
 
+{# Render this branch when schedules evaluates to true. #}
 {% if schedules %}
 
 <form id="bulk-delete-schedules-form" method="POST" action="{{ url_for('bulk_delete_schedules') }}" style="display: none;">
@@ -33,6 +35,7 @@
         <th>Action</th>
     </tr>
 
+    {# Render one iteration for each item in schedule in schedules. #}
     {% for schedule in schedules %}
     <tr>
         <td style="text-align: center; width: 40px; vertical-align: middle;">
@@ -44,8 +47,10 @@
         <td>{{ schedule.ports|replace(',', ', ') if schedule.ports else "Default" }}</td>
         <td><span style="text-transform: capitalize;">{{ schedule.frequency }}</span></td>
         <td>
+            {# Render this branch when schedule.is_active evaluates to true. #}
             {% if schedule.is_active %}
                 <span class="badge success-badge">Active</span>
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
                 <span class="badge pending-badge">Paused</span>
             {% endif %}
@@ -57,6 +62,7 @@
                 <form action="{{ url_for('toggle_schedule', schedule_id=schedule.id) }}" method="POST" style="display:inline; margin:0;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="cve-btn" style="margin: 0 !important; padding: 4px 8px; font-size: 11px;">
+                        {# Render this branch when schedule.is_active evaluates to true. #}
                         {% if schedule.is_active %}Pause{% else %}Resume{% endif %}
                     </button>
                 </form>
@@ -72,32 +78,41 @@
     {% endfor %}
 </table>
 
+{# Render the fallback branch when earlier conditions do not match. #}
 {% else %}
 
 <p>No active scan schedules found. You can set up scans to run on a recurring schedule.</p>
 
 {% endif %}
 <script>
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", () => {
         const selectAllCheckbox = document.getElementById("select-all-schedules");
         const scheduleCheckboxes = document.querySelectorAll(".schedule-checkbox");
         const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
 
+        // Define the updateBulkDeleteButton client-side operation.
         function updateBulkDeleteButton() {
             const checkedCount = document.querySelectorAll(".schedule-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkDeleteBtn.style.display = "inline-flex";
                 bulkDeleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllCheckbox) {
+            // Handle the registered browser event when it is emitted.
             selectAllCheckbox.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 scheduleCheckboxes.forEach(cb => {
                     cb.checked = selectAllCheckbox.checked;
                 });
@@ -105,10 +120,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         scheduleCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllCheckbox.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(scheduleCheckboxes).every(c => c.checked);
                     selectAllCheckbox.checked = allChecked;

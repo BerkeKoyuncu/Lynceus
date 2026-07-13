@@ -11,6 +11,7 @@ from app import create_app
 from services.runtime_paths import ensure_runtime_directories
 
 
+# Handle the configure file logging operation.
 def _configure_file_logging(data_dir):
     log_path = data_dir / "logs" / "server.log"
     logging.basicConfig(
@@ -22,6 +23,7 @@ def _configure_file_logging(data_dir):
     return log_path
 
 
+# Run server.
 def run_server():
     from waitress import serve
 
@@ -37,17 +39,23 @@ def run_server():
         encoding="utf-8",
     )
     logging.getLogger(__name__).info("Lynceus server starting on %s:%s", host, port)
+    # Run this block with structured exception handling.
     try:
         serve(app, host=host, port=port, threads=8)
+    # Run cleanup that must occur after the protected block.
     finally:
+        # Run this block with structured exception handling.
         try:
             state = json.loads(pid_file.read_text(encoding="utf-8"))
+            # Handle the branch where state.get('pid') == os.getpid() evaluates to true.
             if state.get("pid") == os.getpid():
                 pid_file.unlink(missing_ok=True)
+        # Handle an exception raised by the preceding protected block.
         except (OSError, ValueError, TypeError):
             pass
 
 
+# Run cli.
 def run_cli(args, *, standalone_mode=True):
     cli = FlaskGroup(create_app=create_app)
     return cli.main(
@@ -57,30 +65,40 @@ def run_cli(args, *, standalone_mode=True):
     )
 
 
+# Run initial admin setup.
 def run_initial_admin_setup():
     exit_code = 0
+    # Run this block with structured exception handling.
     try:
         run_cli(["create-admin"], standalone_mode=False)
+    # Handle an exception raised by the preceding protected block.
     except Exception as error:
         exit_code = 1
         print(f"\nAdmin setup failed: {error}")
+    # Run cleanup that must occur after the protected block.
     finally:
+        # Run this block with structured exception handling.
         try:
             input("\nPress Enter to close the admin setup window...")
+        # Handle an exception raised by the preceding protected block.
         except EOFError:
             pass
     return exit_code
 
 
+# Handle the main operation.
 def main():
     args = sys.argv[1:]
+    # Handle the branch where args and args[0].lower() == 'server' evaluates to true.
     if args and args[0].lower() == "server":
         run_server()
         return
+    # Handle the branch where args and args[0].lower() == 'setup-admin' evaluates to true.
     if args and args[0].lower() == "setup-admin":
         raise SystemExit(run_initial_admin_setup())
     run_cli(args)
 
 
+# Handle the branch where __name__ == '__main__' evaluates to true.
 if __name__ == "__main__":
     main()

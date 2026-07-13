@@ -15,7 +15,9 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
+    # Manage op.batch_alter_table('user') within this scoped block.
     with op.batch_alter_table("user") as batch_op:
         batch_op.add_column(
             sa.Column(
@@ -53,6 +55,7 @@ def upgrade():
     )
 
 
+# Handle the downgrade operation.
 def downgrade():
     op.drop_index(
         "ix_scan_resolution_audit_admin_user_id",
@@ -63,5 +66,6 @@ def downgrade():
         table_name="scan_resolution_audit",
     )
     op.drop_table("scan_resolution_audit")
+    # Manage op.batch_alter_table('user') within this scoped block.
     with op.batch_alter_table("user") as batch_op:
         batch_op.drop_column("is_deleting")

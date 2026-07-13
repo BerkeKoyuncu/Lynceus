@@ -6,7 +6,9 @@ from services.rule_service import (
     seed_default_rules,
 )
 
+# Verify that seed default rules behaves as expected.
 def test_seed_default_rules(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         # Get test admin
         admin = User.query.filter_by(is_admin=True).first()
@@ -19,7 +21,9 @@ def test_seed_default_rules(app):
         telnet_rule = SecurityRule.query.filter_by(user_id=admin.id, name="Disable Telnet Service").first()
         assert telnet_rule is not None
 
+# Verify that evaluate rules for host behaves as expected.
 def test_evaluate_rules_for_host(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         admin = User.query.filter_by(is_admin=True).first()
         seed_default_rules(admin.id)
@@ -54,7 +58,9 @@ def test_evaluate_rules_for_host(app):
         assert "telnet" in finding.service
 
 
+# Verify that redis rule finding is preserved when audit is skipped behaves as expected.
 def test_redis_rule_finding_is_preserved_when_audit_is_skipped(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         admin = User.query.filter_by(is_admin=True).first()
         seed_default_rules(admin.id)

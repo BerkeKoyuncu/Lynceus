@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
+{# Render this branch when has_active_scans evaluates to true. #}
 {% if has_active_scans %}
     <meta http-equiv="refresh" content="3">
 {% endif %}
 
+{# Render this branch when tab == 'users' evaluates to true. #}
 {% if tab == 'users' %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
         <div>
@@ -20,6 +23,7 @@
     </div>
     
     <div class="admin-container" style="margin-top: 25px;">
+        {# Render this branch when users evaluates to true. #}
         {% if users %}
         <form id="bulk-delete-users-form" method="POST" action="{{ url_for('admin_bulk_delete_users') }}" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
@@ -34,9 +38,11 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in user in users. #}
                 {% for user in users %}
                 <tr>
                     <td style="text-align: center; width: 40px; vertical-align: middle;">
+                        {# Render this branch when user.id != current_user.id evaluates to true. #}
                         {% if user.id != current_user.id %}
                             <input type="checkbox" class="user-checkbox" name="user_ids" value="{{ user.id }}" form="bulk-delete-users-form" aria-label="Select user">
                         {% endif %}
@@ -44,22 +50,27 @@
                     <td>{{ user.created_at|localtime }}</td>
                     <td><strong>{{ user.email }}</strong></td>
                     <td>
+                        {# Render this branch when user.is_admin evaluates to true. #}
                         {% if user.is_admin %}
                             <span class="badge success-badge" style="background: var(--warning-bg); color: var(--warning-text);">Administrator</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             <span class="badge pending-badge">Standard User</span>
                         {% endif %}
                     </td>
                     <td style="text-align: right; vertical-align: middle;">
                         <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
+                            {# Render this branch when user.id != current_user.id evaluates to true. #}
                             {% if user.id != current_user.id %}
                                 <form method="POST" action="{{ url_for('admin_toggle_user_role', user_id=user.id) }}" style="margin: 0; display: inline-block;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="button btn-warning" style="margin: 0 !important; padding: 6px 12px; font-size: 13px; width: 140px; min-width: 140px; text-align: center; justify-content: center;">
+                                        {# Render this branch when user.is_admin evaluates to true. #}
                                         {% if user.is_admin %}Demote{% else %}Promote to Admin{% endif %}
                                     </button>
                                 </form>
                                 
+                                {# Render this branch when user.is_admin evaluates to true. #}
                                 {% if user.is_admin %}
                                  <form method="POST" action="{{ url_for('admin_reset_user_2fa', user_id=user.id) }}" onsubmit="return confirm('Are you sure you want to reset 2FA for this administrator? They will be forced to scan a new QR code on their next login.')" style="margin: 0; display: inline-block;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -71,6 +82,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                      <button type="submit" class="button btn-danger" style="margin: 0 !important; padding: 6px 12px; font-size: 13px; width: 140px; min-width: 140px; text-align: center; justify-content: center;">Delete User</button>
                                  </form>
+                            {# Render the fallback branch when earlier conditions do not match. #}
                             {% else %}
                                 <span style="font-size: 12px; color: var(--text-muted); font-style: italic; padding: 6px;">Current Account</span>
                             {% endif %}
@@ -80,11 +92,13 @@
                 {% endfor %}
             </tbody>
         </table>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <p style="margin-top: 20px;">No user accounts found.</p>
         {% endif %}
     </div>
 
+{# Render this branch when tab == 'honeypot' evaluates to true. #}
 {% elif tab == 'honeypot' %}
     <h2>Honeypot Activity Logs</h2>
     <p>Audit intrusions on honeypot decoy paths and manage blocked client IP addresses.</p>
@@ -108,6 +122,7 @@
             <h3 style="margin: 0;"><i data-lucide="ban" class="icon-inline"></i> Blocked IP Addresses (Total: {{ blocked_ips|length }})</h3>
             <button type="submit" form="bulk-unblock-ips-form" id="bulk-unblock-ips-btn" class="button" style="display: none; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white; border: 0;" onclick="return confirm('Are you sure you want to unblock the selected IPs?')">Unblock Selected</button>
         </div>
+        {# Render this branch when blocked_ips evaluates to true. #}
         {% if blocked_ips %}
         <form id="bulk-unblock-ips-form" method="POST" action="{{ url_for('admin_bulk_unblock_ips') }}" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
@@ -122,6 +137,7 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in block in blocked_ips. #}
                 {% for block in blocked_ips %}
                 <tr>
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="blocked-ip-checkbox" name="block_ids" value="{{ block.id }}" form="bulk-unblock-ips-form" aria-label="Select IP"></td>
@@ -138,6 +154,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No IPs are currently blocked by the honeypot.</p>
         {% endif %}
@@ -147,6 +164,7 @@
             <h3 style="margin: 0;"><i data-lucide="file-text" class="icon-inline"></i> Honeypot Intrusion Logs (Total: {{ honeypot_logs|length }})</h3>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <button type="submit" form="bulk-delete-logs-form" id="bulk-delete-logs-btn" class="button btn-danger" style="display: none; padding: 5px 12px; font-size: 12.5px;" onclick="return confirm('Are you sure you want to delete the selected intrusion logs?')">Delete Selected Logs</button>
+                {# Render this branch when honeypot_logs evaluates to true. #}
                 {% if honeypot_logs %}
                 <form method="POST" action="{{ url_for('admin_clear_honeypot_logs') }}" onsubmit="return confirm('Are you sure you want to clear all honeypot logs?')" style="margin: 0;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -156,6 +174,7 @@
             </div>
         </div>
         
+        {# Render this branch when honeypot_logs evaluates to true. #}
         {% if honeypot_logs %}
         <form id="bulk-delete-logs-form" method="POST" action="{{ url_for('admin_bulk_delete_logs') }}" style="max-width: none; width: 100%;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -170,6 +189,7 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in log in honeypot_logs. #}
                 {% for log in honeypot_logs %}
                 <tr>
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="log-checkbox" name="log_ids" value="{{ log.id }}" aria-label="Select log"></td>
@@ -178,6 +198,7 @@
                     <td><code style="color: var(--danger); font-size: 12.5px;">{{ log.path }}</code></td>
                     <td>
                         <div style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 5px;">{{ log.user_agent }}</div>
+                        {# Render this branch when log.headers evaluates to true. #}
                         {% if log.headers %}
                         <details style="margin-top: 5px;">
                             <summary style="cursor: pointer; color: var(--olive); font-size: 11px; font-weight: bold; outline: none; user-select: none;">Show Request Headers</summary>
@@ -190,11 +211,13 @@
             </tbody>
         </table>
         </form>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No honeypot logs found.</p>
         {% endif %}
     </div>
 
+{# Render this branch when tab == 'anomalies' evaluates to true. #}
 {% elif tab == 'anomalies' %}
     <h2>Security Anomalies</h2>
     <p>Analyse and track rogue devices, lease hijacks, or MAC spoofing alerts.</p>
@@ -207,6 +230,7 @@
                 <button type="submit" form="bulk-anomalies-form" formaction="{{ url_for('admin_bulk_delete_anomalies') }}" id="bulk-delete-anomalies-btn" class="button btn-danger" style="display: none; padding: 5px 12px; font-size: 12.5px;" onclick="return confirm('Are you sure you want to delete the selected anomalies?')">Delete Selected</button>
             </div>
         </div>
+        {# Render this branch when security_anomalies evaluates to true. #}
         {% if security_anomalies %}
         <form id="bulk-anomalies-form" method="POST" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
@@ -224,6 +248,7 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in anomaly in security_anomalies. #}
                 {% for anomaly in security_anomalies %}
                 <tr>
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="anomaly-checkbox" name="anomaly_ids" value="{{ anomaly.id }}" form="bulk-anomalies-form" aria-label="Select anomaly"></td>
@@ -231,18 +256,23 @@
                     <td><strong>{{ anomaly.ip_address }}</strong></td>
                     <td>{{ anomaly.mac_address or 'N/A' }}</td>
                     <td>
+                        {# Render this branch when anomaly.anomaly_type == 'mac_spoofing' evaluates to true. #}
                         {% if anomaly.anomaly_type == 'mac_spoofing' %}
                             <span class="badge error-badge">MAC Spoofing</span>
+                        {# Render this branch when anomaly.anomaly_type == 'ip_hijack' evaluates to true. #}
                         {% elif anomaly.anomaly_type == 'ip_hijack' %}
                             <span class="badge running-badge">IP Hijack</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             <span class="badge pending-badge">Rogue Device</span>
                         {% endif %}
                     </td>
                     <td>{{ anomaly.description }}</td>
                     <td>
+                        {# Render this branch when anomaly.is_resolved evaluates to true. #}
                         {% if anomaly.is_resolved %}
                             <span class="badge success-badge">Resolved</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             <span class="badge error-badge">Unresolved</span>
                         {% endif %}
@@ -252,6 +282,7 @@
                             <form method="POST" action="{{ url_for('admin_resolve_anomaly', anomaly_id=anomaly.id) }}" style="margin: 0; display: inline-block;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="button" style="margin: 0 !important; padding: 5px 12px; font-size: 12.5px; background: var(--olive); color: white;">
+                                    {# Render this branch when anomaly.is_resolved evaluates to true. #}
                                     {% if anomaly.is_resolved %}Unresolve{% else %}Resolve{% endif %}
                                 </button>
                             </form>
@@ -265,11 +296,13 @@
                 {% endfor %}
             </tbody>
         </table>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <p style="color: var(--text-muted); font-style: italic; margin-top: 10px;">No security anomalies detected on the network.</p>
         {% endif %}
     </div>
 
+{# Render the fallback branch when earlier conditions do not match. #}
 {% else %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
         <div>
@@ -284,6 +317,7 @@
     </div>
 
     <div class="admin-container" style="margin-top: 25px;">
+        {# Render this branch when scan_results evaluates to true. #}
         {% if scan_results %}
         <form id="bulk-scans-form" method="POST" action="{{ url_for('admin_bulk_delete_scans') }}" style="display: none;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
@@ -301,6 +335,7 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in scan in scan_results. #}
                 {% for scan in scan_results %}
                 <tr>
                     <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="scan-checkbox" name="scan_ids" value="{{ scan.id }}" form="bulk-scans-form" aria-label="Select scan" {% if scan.status in ["pending", "running", "cancellation_requested", "termination_failed"] %}disabled title="Stop or resolve this scan before deletion"{% endif %}></td>
@@ -310,20 +345,28 @@
                     <td>{{ scan.network_cidr }}</td>
                     <td>{{ scan.scan_type|scan_name }}</td>
                     <td>
+                        {# Render this branch when scan.status == "completed" evaluates to true. #}
                         {% if scan.status == "completed" %}
                             <span class="badge success-badge">Completed</span>
+                        {# Render this branch when scan.status == "running" evaluates to true. #}
                         {% elif scan.status == "running" %}
                             <span class="badge running-badge">Running</span>
+                        {# Render this branch when scan.status == "termination_failed" evaluates to true. #}
                         {% elif scan.status == "termination_failed" %}
                             <span class="badge error-badge">Termination Failed</span>
+                        {# Render this branch when scan.status == "cancellation_requested" evaluates to true. #}
                         {% elif scan.status == "cancellation_requested" %}
                             <span class="badge pending-badge">Cancellation Requested</span>
+                        {# Render this branch when scan.status == "pending" evaluates to true. #}
                         {% elif scan.status == "pending" %}
                             <span class="badge pending-badge">Pending</span>
+                        {# Render this branch when scan.status == "failed" evaluates to true. #}
                         {% elif scan.status == "failed" %}
                             <span class="badge error-badge">Failed</span>
+                        {# Render this branch when scan.status == "cancelled" evaluates to true. #}
                         {% elif scan.status == "cancelled" %}
                             <span class="badge error-badge" style="background: #4b5563; color: #f3f4f6;">Cancelled</span>
+                        {# Render the fallback branch when earlier conditions do not match. #}
                         {% else %}
                             {{ scan.status }}
                         {% endif %}
@@ -334,6 +377,7 @@
                         
                         <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center;">
                             <a href="{{ url_for('result', scan_id=scan.id) }}" class="button" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">View</a>
+                            {# Render this branch when scan.status in ["termination_failed", "cancellation_requested"] evaluates to true. #}
                             {% if scan.status in ["termination_failed", "cancellation_requested"] %}
                             <form method="POST" action="{{ url_for('admin.admin_resolve_orphan_scan', scan_id=scan.id) }}" style="margin: 0;" onsubmit="return confirm('Confirm that the owning worker/process is no longer running before releasing capacity.');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -341,6 +385,7 @@
                                 <button type="submit" class="button" style="padding: 6px 12px; font-size: 13px;">Resolve Orphan</button>
                             </form>
                             {% endif %}
+                            {# Render this branch when scan.status not in ["pending", "running", "cancellation_requested", "termination_failed"] evaluates to true. #}
                             {% if scan.status not in ["pending", "running", "cancellation_requested", "termination_failed"] %}
                             <button type="submit" form="delete-scan-form-{{ scan.id }}" class="button btn-danger" style="padding: 6px 12px; font-size: 13px; width: 80px; min-width: 80px; text-align: center; justify-content: center;">Delete</button>
                             {% endif %}
@@ -350,6 +395,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
             <p style="margin-top: 20px;">No scan results found.</p>
         {% endif %}
@@ -357,28 +403,37 @@
 {% endif %}
 
 <script>
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", () => {
         // 1. Users Tab Bulk Selection
         const selectAllUsers = document.getElementById("select-all-users");
         const userCheckboxes = document.querySelectorAll(".user-checkbox");
         const bulkDeleteUsersBtn = document.getElementById("bulk-delete-users-btn");
 
+        // Define the updateUsersBtn client-side operation.
         function updateUsersBtn() {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!bulkDeleteUsersBtn) return;
             const checkedCount = document.querySelectorAll(".user-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkDeleteUsersBtn.style.display = "inline-flex";
                 bulkDeleteUsersBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteUsersBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllUsers) {
+            // Handle the registered browser event when it is emitted.
             selectAllUsers.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 userCheckboxes.forEach(cb => {
                     cb.checked = selectAllUsers.checked;
                 });
@@ -386,10 +441,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         userCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllUsers.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(userCheckboxes).every(c => c.checked);
                     selectAllUsers.checked = allChecked;
@@ -403,19 +462,26 @@
         const blockedIpCheckboxes = document.querySelectorAll(".blocked-ip-checkbox");
         const bulkUnblockIpsBtn = document.getElementById("bulk-unblock-ips-btn");
 
+        // Define the updateBlockedIpsBtn client-side operation.
         function updateBlockedIpsBtn() {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!bulkUnblockIpsBtn) return;
             const checkedCount = document.querySelectorAll(".blocked-ip-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkUnblockIpsBtn.style.display = "inline-block";
                 bulkUnblockIpsBtn.innerText = `Unblock Selected (${checkedCount})`;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkUnblockIpsBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllBlockedIps) {
+            // Handle the registered browser event when it is emitted.
             selectAllBlockedIps.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 blockedIpCheckboxes.forEach(cb => {
                     cb.checked = selectAllBlockedIps.checked;
                 });
@@ -423,10 +489,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         blockedIpCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllBlockedIps.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(blockedIpCheckboxes).every(c => c.checked);
                     selectAllBlockedIps.checked = allChecked;
@@ -440,19 +510,26 @@
         const logCheckboxes = document.querySelectorAll(".log-checkbox");
         const bulkDeleteLogsBtn = document.getElementById("bulk-delete-logs-btn");
 
+        // Define the updateLogsBtn client-side operation.
         function updateLogsBtn() {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!bulkDeleteLogsBtn) return;
             const checkedCount = document.querySelectorAll(".log-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkDeleteLogsBtn.style.display = "inline-block";
                 bulkDeleteLogsBtn.innerText = `Delete Selected Logs (${checkedCount})`;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteLogsBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllLogs) {
+            // Handle the registered browser event when it is emitted.
             selectAllLogs.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 logCheckboxes.forEach(cb => {
                     cb.checked = selectAllLogs.checked;
                 });
@@ -460,10 +537,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         logCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllLogs.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(logCheckboxes).every(c => c.checked);
                     selectAllLogs.checked = allChecked;
@@ -478,25 +559,35 @@
         const bulkResolveAnomaliesBtn = document.getElementById("bulk-resolve-anomalies-btn");
         const bulkDeleteAnomaliesBtn = document.getElementById("bulk-delete-anomalies-btn");
 
+        // Define the updateAnomaliesBtn client-side operation.
         function updateAnomaliesBtn() {
             const checkedCount = document.querySelectorAll(".anomaly-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (bulkResolveAnomaliesBtn) {
                     bulkResolveAnomaliesBtn.style.display = "inline-block";
                     bulkResolveAnomaliesBtn.innerText = `Resolve Selected (${checkedCount})`;
                 }
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (bulkDeleteAnomaliesBtn) {
                     bulkDeleteAnomaliesBtn.style.display = "inline-block";
                     bulkDeleteAnomaliesBtn.innerText = `Delete Selected (${checkedCount})`;
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (bulkResolveAnomaliesBtn) bulkResolveAnomaliesBtn.style.display = "none";
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (bulkDeleteAnomaliesBtn) bulkDeleteAnomaliesBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllAnomalies) {
+            // Handle the registered browser event when it is emitted.
             selectAllAnomalies.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 anomalyCheckboxes.forEach(cb => {
                     cb.checked = selectAllAnomalies.checked;
                 });
@@ -504,10 +595,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         anomalyCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllAnomalies.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(anomalyCheckboxes).every(c => c.checked);
                     selectAllAnomalies.checked = allChecked;
@@ -521,22 +616,30 @@
         const scanCheckboxes = document.querySelectorAll(".scan-checkbox");
         const bulkDeleteScansBtn = document.getElementById("bulk-delete-scans-btn");
 
+        // Define the updateScansBtn client-side operation.
         function updateScansBtn() {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!bulkDeleteScansBtn) return;
             const checkedCount = document.querySelectorAll(".scan-checkbox:checked").length;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkedCount > 0) {
                 bulkDeleteScansBtn.style.display = "inline-flex";
                 bulkDeleteScansBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
                 }
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteScansBtn.style.display = "none";
             }
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (selectAllScans) {
+            // Handle the registered browser event when it is emitted.
             selectAllScans.addEventListener("change", () => {
+                // Process one client-side item during each collection iteration.
                 scanCheckboxes.forEach(cb => {
                     cb.checked = selectAllScans.checked;
                 });
@@ -544,10 +647,14 @@
             });
         }
 
+        // Process one client-side item during each collection iteration.
         scanCheckboxes.forEach(cb => {
+            // Handle the registered browser event when it is emitted.
             cb.addEventListener("change", () => {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!cb.checked) {
                     selectAllScans.checked = false;
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     const allChecked = Array.from(scanCheckboxes).every(c => c.checked);
                     selectAllScans.checked = allChecked;

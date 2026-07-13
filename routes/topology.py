@@ -6,11 +6,13 @@ from services.topology_service import get_network_topology
 
 topology_bp = Blueprint("topology", __name__)
 
+# Handle the view topology operation.
 @topology_bp.route("/topology")
 @login_required
 def view_topology():
     return render_template("topology.html")
 
+# Retrieve topology data.
 @topology_bp.route("/api/topology")
 @login_required
 def get_topology_data():

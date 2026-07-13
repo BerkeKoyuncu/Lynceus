@@ -247,12 +247,19 @@
         <div class="meta-item">
             <strong>Scan Speed/Timing:</strong>
             T{{ scan_result.timing_template if scan_result.timing_template else '4' }}
+            {# Prepare the template value used by timing_val = scan_result.timing_template if scan_result.timing_template else '4'. #}
             {% set timing_val = scan_result.timing_template if scan_result.timing_template else '4' %}
+            {# Render this branch when timing_val == '0' evaluates to true. #}
             {% if timing_val == '0' %}(Paranoid)
+            {# Render this branch when timing_val == '1' evaluates to true. #}
             {% elif timing_val == '1' %}(Sneaky)
+            {# Render this branch when timing_val == '2' evaluates to true. #}
             {% elif timing_val == '2' %}(Polite)
+            {# Render this branch when timing_val == '3' evaluates to true. #}
             {% elif timing_val == '3' %}(Normal)
+            {# Render this branch when timing_val == '4' evaluates to true. #}
             {% elif timing_val == '4' %}(Aggressive)
+            {# Render this branch when timing_val == '5' evaluates to true. #}
             {% elif timing_val == '5' %}(Insane)
             {% endif %}
         </div>
@@ -266,10 +273,15 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">
+                {# Prepare the template value used by ns = namespace(up_count=0). #}
                 {% set ns = namespace(up_count=0) %}
+                {# Render this branch when parsed_result and parsed_result.hosts evaluates to true. #}
                 {% if parsed_result and parsed_result.hosts %}
+                {# Render one iteration for each item in h in parsed_result.hosts. #}
                 {% for h in parsed_result.hosts %}
+                {# Render this branch when h.status == 'up' evaluates to true. #}
                 {% if h.status == 'up' %}
+                {# Prepare the template value used by ns.up_count = ns.up_count + 1. #}
                 {% set ns.up_count = ns.up_count + 1 %}
                 {% endif %}
                 {% endfor %}
@@ -280,9 +292,13 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">
+                {# Prepare the template value used by ns = namespace(port_count=0). #}
                 {% set ns = namespace(port_count=0) %}
+                {# Render this branch when parsed_result and parsed_result.hosts evaluates to true. #}
                 {% if parsed_result and parsed_result.hosts %}
+                {# Render one iteration for each item in h in parsed_result.hosts. #}
                 {% for h in parsed_result.hosts %}
+                {# Prepare the template value used by ns.port_count = ns.port_count + (h.ports|length if h.ports else 0). #}
                 {% set ns.port_count = ns.port_count + (h.ports|length if h.ports else 0) %}
                 {% endfor %}
                 {% endif %}
@@ -292,12 +308,19 @@
         </div>
         <div class="stat-card">
             <div class="stat-value">
+                {# Prepare the template value used by ns = namespace(ver_count=0). #}
                 {% set ns = namespace(ver_count=0) %}
+                {# Render this branch when parsed_result and parsed_result.hosts evaluates to true. #}
                 {% if parsed_result and parsed_result.hosts %}
+                {# Render one iteration for each item in h in parsed_result.hosts. #}
                 {% for h in parsed_result.hosts %}
+                {# Render this branch when h.ports evaluates to true. #}
                 {% if h.ports %}
+                {# Render one iteration for each item in p in h.ports. #}
                 {% for p in h.ports %}
+                {# Render this branch when p.version evaluates to true. #}
                 {% if p.version %}
+                {# Prepare the template value used by ns.ver_count = ns.ver_count + 1. #}
                 {% set ns.ver_count = ns.ver_count + 1 %}
                 {% endif %}
                 {% endfor %}
@@ -310,15 +333,21 @@
         </div>
     </div>
 
+    {# Prepare the template value used by ns_anom = namespace(anom_count=0). #}
     {% set ns_anom = namespace(anom_count=0) %}
+    {# Render this branch when parsed_result and parsed_result.hosts evaluates to true. #}
     {% if parsed_result and parsed_result.hosts %}
+    {# Render one iteration for each item in h in parsed_result.hosts. #}
     {% for h in parsed_result.hosts %}
+    {# Render this branch when h.mac_anomaly evaluates to true. #}
     {% if h.mac_anomaly %}
+    {# Prepare the template value used by ns_anom.anom_count = ns_anom.anom_count + 1. #}
     {% set ns_anom.anom_count = ns_anom.anom_count + 1 %}
     {% endif %}
     {% endfor %}
     {% endif %}
 
+    {# Render this branch when ns_anom.anom_count > 0 evaluates to true. #}
     {% if ns_anom.anom_count > 0 %}
     <div
         style="background-color: #E9C9BE; border-left: 5px solid #7A2E1E; padding: 15px; margin-bottom: 30px; border-radius: 6px; color: #7A2E1E; display: flex; gap: 10px; align-items: flex-start;">
@@ -335,7 +364,9 @@
 
     <h2>Audit Details</h2>
 
+    {# Render this branch when parsed_result and parsed_result.hosts evaluates to true. #}
     {% if parsed_result and parsed_result.hosts %}
+    {# Render one iteration for each item in host in parsed_result.hosts. #}
     {% for host in parsed_result.hosts %}
     <div class="host-section">
         <div class="host-header"
@@ -347,9 +378,11 @@
                     {{ host.status.upper() }}
                 </span>
             </div>
+            {# Render this branch when host.mac_address evaluates to true. #}
             {% if host.mac_address %}
             <div style="font-size: 12px; font-weight: normal; color: #6D715F;">
                 <strong>MAC:</strong> {{ host.mac_address }}
+                {# Render this branch when host.mac_vendor evaluates to true. #}
                 {% if host.mac_vendor %}
                 <span>({{ host.mac_vendor }})</span>
                 {% endif %}
@@ -357,13 +390,17 @@
             {% endif %}
         </div>
 
+        {# Render this branch when host.mac_anomaly evaluates to true. #}
         {% if host.mac_anomaly %}
         <div
             style="background-color: #E9C9BE; color: #7A2E1E; border: 1px solid rgba(122, 46, 30, 0.2); border-radius: 6px; padding: 12px; margin-top: 10px; margin-bottom: 15px; font-size: 13px; font-weight: bold; page-break-inside: avoid; display: flex; align-items: center; gap: 8px;">
+            {# Render this branch when host.mac_anomaly.type == 'mac_spoofing' evaluates to true. #}
             {% if host.mac_anomaly.type == 'mac_spoofing' %}
             <i data-lucide="alert-triangle"></i> MAC Spoofing Alert:
+            {# Render this branch when host.mac_anomaly.type == 'ip_hijack' evaluates to true. #}
             {% elif host.mac_anomaly.type == 'ip_hijack' %}
             <i data-lucide="alert-circle"></i> IP Hijack Warning:
+            {# Render the fallback branch when earlier conditions do not match. #}
             {% else %}
             <i data-lucide="shield-alert"></i> Rogue Device Alert:
             {% endif %}
@@ -371,6 +408,7 @@
         </div>
         {% endif %}
 
+        {# Render this branch when host.ports evaluates to true. #}
         {% if host.ports %}
         <table>
             <thead>
@@ -383,6 +421,7 @@
                 </tr>
             </thead>
             <tbody>
+                {# Render one iteration for each item in port in host.ports. #}
                 {% for port in host.ports %}
                 <tr>
                     <td><strong>{{ port.port }}</strong></td>
@@ -390,6 +429,7 @@
                     <td>{{ port.state|upper }}</td>
                     <td>
                         {{ port.service }}
+                        {# Render this branch when port.credential_audit and port.credential_audit.status == 'vulnerable' evaluates to true. #}
                         {% if port.credential_audit and port.credential_audit.status == 'vulnerable' %}
                         <div style="margin-top: 4px;">
                             <span class="badge badge-danger">
@@ -403,11 +443,13 @@
                 {% endfor %}
             </tbody>
         </table>
+        {# Render the fallback branch when earlier conditions do not match. #}
         {% else %}
         <p style="margin: 0; color: #6D715F;">No open ports discovered on this host.</p>
         {% endif %}
     </div>
     {% endfor %}
+    {# Render the fallback branch when earlier conditions do not match. #}
     {% else %}
     <p>No hosts active or discovered during scan.</p>
     {% endif %}
@@ -429,9 +471,11 @@
     <script>
         // Auto trigger print dialogue on page load
         window.addEventListener('load', () => {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (typeof lucide !== 'undefined') {
                 lucide.createIcons();
             }
+            // Run the callback for the associated client-side operation.
             setTimeout(() => {
                 window.print();
             }, 500);

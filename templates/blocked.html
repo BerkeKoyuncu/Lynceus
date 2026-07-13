@@ -169,6 +169,7 @@
                 <span class="details-label">Status:</span>
                 <span class="badge">Auto Blocked</span>
             </div>
+            {# Render this branch when block and block.reason evaluates to true. #}
             {% if block and block.reason %}
             <div class="details-row">
                 <span class="details-label">Reason:</span>

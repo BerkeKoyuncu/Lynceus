@@ -15,7 +15,9 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.alter_column(
             "status",
@@ -24,6 +26,7 @@ def upgrade():
             existing_nullable=True,
         )
 
+    # Manage op.batch_alter_table('scan_resolution_audit') within this scoped block.
     with op.batch_alter_table("scan_resolution_audit") as batch_op:
         batch_op.alter_column(
             "previous_status",
@@ -33,7 +36,9 @@ def upgrade():
         )
 
 
+# Handle the downgrade operation.
 def downgrade():
+    # Manage op.batch_alter_table('scan_resolution_audit') within this scoped block.
     with op.batch_alter_table("scan_resolution_audit") as batch_op:
         batch_op.alter_column(
             "previous_status",
@@ -42,6 +47,7 @@ def downgrade():
             existing_nullable=False,
         )
 
+    # Manage op.batch_alter_table('scan_result') within this scoped block.
     with op.batch_alter_table("scan_result") as batch_op:
         batch_op.alter_column(
             "status",

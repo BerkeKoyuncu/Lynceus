@@ -5,58 +5,79 @@ import socket
 from models import Asset, SecurityAnomaly
 from services.device_classifier import classify_device_type
 
+# Handle the detect default gateway operation.
 def detect_default_gateway():
     """
     Tries to detect the default gateway IP address of the host machine.
     """
+    # Run this block with structured exception handling.
     try:
+        # Handle the branch where os.name == 'nt' evaluates to true.
         if os.name == 'nt':
             out = subprocess.check_output(["route", "print"], text=True, errors="ignore")
+            # Iterate over out.splitlines() and bind each item to line.
             for line in out.splitlines():
                 line = line.strip()
+                # Handle the branch where line.startswith('0.0.0.0') evaluates to true.
                 if line.startswith("0.0.0.0"):
                     parts = line.split()
+                    # Handle the branch where len(parts) >= 5 evaluates to true.
                     if len(parts) >= 5:
                         # Destination Netmask Gateway Interface Metric
                         return parts[2]
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             out = subprocess.check_output(["ip", "route"], text=True, errors="ignore")
+            # Iterate over out.splitlines() and bind each item to line.
             for line in out.splitlines():
+                # Handle the branch where line.startswith('default via') evaluates to true.
                 if line.startswith("default via"):
                     return line.split()[2]
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         pass
     
     return None
 
+# Retrieve system arp table.
 def get_system_arp_table():
     """
     Parses the system ARP table to find IP-MAC mappings.
     """
     arp_entries = []
+    # Run this block with structured exception handling.
     try:
+        # Handle the branch where os.name == 'nt' evaluates to true.
         if os.name == 'nt':
             out = subprocess.check_output(["arp", "-a"], text=True, errors="ignore")
+            # Iterate over out.splitlines() and bind each item to line.
             for line in out.splitlines():
                 line = line.strip()
+                # Handle the branch where not line or line.startswith('Interface:') or line.startswith('Internet Address') evaluates to true.
                 if not line or line.startswith("Interface:") or line.startswith("Internet Address"):
                     continue
                 parts = line.split()
+                # Handle the branch where len(parts) >= 3 evaluates to true.
                 if len(parts) >= 3:
                     ip = parts[0]
                     mac = parts[1].replace('-', ':').lower()
                     type_str = parts[2]
                     arp_entries.append({"ip": ip, "mac": mac, "type": type_str})
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             out = subprocess.check_output(["arp", "-n"], text=True, errors="ignore")
+            # Iterate over out.splitlines()[1:] and bind each item to line.
             for line in out.splitlines()[1:]:
                 parts = line.split()
+                # Handle the branch where len(parts) >= 3 evaluates to true.
                 if len(parts) >= 3:
                     arp_entries.append({"ip": parts[0], "mac": parts[2].lower(), "type": "dynamic"})
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         pass
     return arp_entries
 
+# Handle the classify device operation.
 def classify_device(ip, mac, hostname, vendor, open_ports, is_gateway=False):
     return classify_device_type(
         hostname,
@@ -65,6 +86,7 @@ def classify_device(ip, mac, hostname, vendor, open_ports, is_gateway=False):
         is_gateway=is_gateway,
     )
 
+# Retrieve network topology.
 def get_network_topology(assets, scan_results=None):
     """
     Builds nodes and edges for network topology visualization.
@@ -81,9 +103,11 @@ def get_network_topology(assets, scan_results=None):
 
     # Group assets by subnet
     def get_subnet_prefix(ip_str):
+        # Handle the branch where not ip_str evaluates to true.
         if not ip_str:
             return "Unknown Subnet"
         match = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$", ip_str.strip())
+        # Handle the branch where match evaluates to true.
         if match:
             return f"{match.group(1)}.0/24"
         return "Unknown Subnet"
@@ -101,9 +125,11 @@ def get_network_topology(assets, scan_results=None):
     gateway_id = (
         f"host_{gateway_ip}"
         if gateway_asset is not None
+        # Handle the fallback branch when the preceding condition does not match.
         else (f"gateway_{gateway_ip}" if gateway_ip else "gateway_core")
     )
 
+    # Handle the branch where gateway_asset is not None evaluates to true.
     if gateway_asset is not None:
         gateway_has_anomaly = (
             gateway_asset.ip_address in anomaly_ips
@@ -112,12 +138,15 @@ def get_network_topology(assets, scan_results=None):
                 and gateway_asset.mac_address.lower() in anomaly_macs
             )
         )
+        # Handle the branch where gateway_has_anomaly evaluates to true.
         if gateway_has_anomaly:
             gateway_color = {"background": "#e53e3e", "border": "#9b2c2c"}
             gateway_title = "Default Gateway / Active Anomalies"
+        # Handle the branch where not gateway_asset.is_trusted evaluates to true.
         elif not gateway_asset.is_trusted:
             gateway_color = {"background": "#dd6b20", "border": "#9c4221"}
             gateway_title = "Default Gateway / Untrusted Device"
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             gateway_color = {"background": "#2d3748", "border": "#1a202c"}
             gateway_title = "Default Gateway / Inventory Asset"
@@ -125,6 +154,7 @@ def get_network_topology(assets, scan_results=None):
         last_seen = (
             gateway_asset.last_seen.strftime("%Y-%m-%d %H:%M:%S")
             if gateway_asset.last_seen
+            # Handle the fallback branch when the preceding condition does not match.
             else "Never"
         )
         nodes.append({
@@ -149,6 +179,7 @@ def get_network_topology(assets, scan_results=None):
             },
             "level": 0,
         })
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         gateway_label = f"Gateway\n({gateway_ip})" if gateway_ip else "Lynceus Gateway"
         nodes.append({
@@ -168,15 +199,19 @@ def get_network_topology(assets, scan_results=None):
 
     # Group assets by subnet
     subnets = {}
+    # Iterate over assets and bind each item to asset.
     for asset in assets:
         ip = asset.ip_address.strip()
         subnet = get_subnet_prefix(ip)
+        # Handle the branch where subnet not in subnets evaluates to true.
         if subnet not in subnets:
             subnets[subnet] = []
         subnets[subnet].append(asset)
 
+    # Iterate over subnets.items() and bind each item to (subnet, subnet_assets).
     for subnet, subnet_assets in subnets.items():
         subnet_node_id = f"subnet_{subnet}"
+        # Handle the branch where subnet_node_id not in seen_nodes evaluates to true.
         if subnet_node_id not in seen_nodes:
             nodes.append({
                 "id": subnet_node_id,
@@ -199,36 +234,48 @@ def get_network_topology(assets, scan_results=None):
                 "label": "VLAN/Subnet"
             })
 
+        # Iterate over subnet_assets and bind each item to asset.
         for asset in subnet_assets:
             host_node_id = f"host_{asset.ip_address}"
+            # Handle the branch where host_node_id not in seen_nodes evaluates to true.
             if host_node_id not in seen_nodes:
                 # Try to parse open ports from the last completed scan if results are passed
                 open_ports = []
                 connected_to_traceroute = False
                 
+                # Handle the branch where scan_results evaluates to true.
                 if scan_results:
+                    # Iterate over scan_results and bind each item to scan.
                     for scan in scan_results:
+                        # Handle the branch where not scan.result_data evaluates to true.
                         if not scan.result_data:
                             continue
+                        # Run this block with structured exception handling.
                         try:
                             import json
                             data = json.loads(scan.result_data)
+                            # Iterate over data.get('hosts', []) and bind each item to host.
                             for host in data.get("hosts", []):
+                                # Handle the branch where host.get('address') == asset.ip_address evaluates to true.
                                 if host.get("address") == asset.ip_address:
                                     open_ports = host.get("ports", [])
                                     # Check traceroute
                                     if "trace" in host and host["trace"]:
                                         trace = host["trace"]
                                         prev_hop_id = gateway_id
+                                        # Iterate over trace and bind each item to hop.
                                         for hop in trace:
                                             hop_ip = hop.get("ipaddr")
+                                            # Handle the branch where not hop_ip evaluates to true.
                                             if not hop_ip:
                                                 continue
                                             hop_node_id = (
                                                 gateway_id
                                                 if hop_ip == gateway_ip
+                                                # Handle the fallback branch when the preceding condition does not match.
                                                 else f"hop_{hop_ip}"
                                             )
+                                            # Handle the branch where hop_node_id not in seen_nodes evaluates to true.
                                             if hop_node_id not in seen_nodes:
                                                 nodes.append({
                                                     "id": hop_node_id,
@@ -259,8 +306,10 @@ def get_network_topology(assets, scan_results=None):
                                         })
                                         connected_to_traceroute = True
                                         break
+                        # Handle an exception raised by the preceding protected block.
                         except Exception:
                             pass
+                        # Handle the branch where connected_to_traceroute evaluates to true.
                         if connected_to_traceroute:
                             break
                 
@@ -275,17 +324,22 @@ def get_network_topology(assets, scan_results=None):
                 
                 # Check for active anomalies
                 has_anomaly = False
+                # Handle the branch where asset.ip_address in anomaly_ips evaluates to true.
                 if asset.ip_address in anomaly_ips:
                     has_anomaly = True
+                # Handle the branch where asset.mac_address and asset.mac_address.lower() in anomaly_macs evaluates to true.
                 if asset.mac_address and asset.mac_address.lower() in anomaly_macs:
                     has_anomaly = True
                 
+                # Handle the branch where has_anomaly evaluates to true.
                 if has_anomaly:
                     color = {"background": "#e53e3e", "border": "#9b2c2c"}
                     title = "Active Anomalies"
+                # Handle the branch where not asset.is_trusted evaluates to true.
                 elif not asset.is_trusted:
                     color = {"background": "#dd6b20", "border": "#9c4221"}
                     title = "Untrusted Device"
+                # Handle the fallback branch when the preceding condition does not match.
                 else:
                     color = {"background": "#2b6cb0", "border": "#1a365d"}
                     title = "Trusted Endpoint"
@@ -313,6 +367,7 @@ def get_network_topology(assets, scan_results=None):
                 })
                 seen_nodes.add(host_node_id)
                 
+                # Handle the branch where not connected_to_traceroute evaluates to true.
                 if not connected_to_traceroute:
                     # Connect directly to subnet node
                     edges.append({

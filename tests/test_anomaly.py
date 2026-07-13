@@ -1,7 +1,9 @@
 from models import db, Asset, SecurityAnomaly, AssetObservation
 from services.anomaly_service import evaluate_host_anomalies
 
+# Verify that rogue device detection behaves as expected.
 def test_rogue_device_detection(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         # Scanned host is completely unknown
         host = {
@@ -21,7 +23,9 @@ def test_rogue_device_detection(app):
         assert anomaly is not None
         assert anomaly.ip_address == "192.168.1.50"
 
+# Verify that mac spoofing detection behaves as expected.
 def test_mac_spoofing_detection(app):
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         # Create a trusted asset
         asset = Asset(

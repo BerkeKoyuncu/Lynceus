@@ -30,6 +30,7 @@
         <div class="topbar-inner">
 
             <div class="topbar-left">
+                {# Render this branch when current_user.is_authenticated evaluates to true. #}
                 {% if current_user.is_authenticated %}
                 <button type="button" id="sidebar-toggle-btn" class="sidebar-toggle-btn" aria-label="Toggle Sidebar">
                     <i data-lucide="menu"></i>
@@ -54,12 +55,14 @@
                                     style="width: 12px; height: 12px;"></i></span>
                         </span>
                         <script>
+                            // Handle the branch where the JavaScript condition evaluates to true.
                             if ((localStorage.getItem('theme') || 'light') === 'dark') {
                                 document.getElementById('theme-checkbox').checked = true;
                             }
                         </script>
                     </label>
                 </div>
+                {# Render this branch when current_user.is_authenticated evaluates to true. #}
                 {% if current_user.is_authenticated %}
                 <details class="user-menu">
                     <summary>
@@ -84,6 +87,7 @@
     <script>
         (function () {
             const sidebarState = localStorage.getItem('sidebar-state') || 'expanded';
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (sidebarState === 'collapsed') {
                 document.documentElement.classList.add('sidebar-collapsed-pref');
             }
@@ -91,6 +95,7 @@
     </script>
 
     <div class="{% if current_user.is_authenticated %}app-layout{% else %}auth-layout{% endif %}">
+        {# Render this branch when current_user.is_authenticated evaluates to true. #}
         {% if current_user.is_authenticated %}
         <aside class="sidebar" id="app-sidebar">
             <!-- Sidebar Group: Dashboard -->
@@ -161,6 +166,7 @@
                             <span>Network Topology</span>
                         </a>
                     </li>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <li>
                         <a href="{{ url_for('admin_panel', tab='scans') }}"
@@ -236,6 +242,7 @@
                             <span>Scan Credentials</span>
                         </a>
                     </li>
+                    {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
                     <li>
                         <a href="{{ url_for('settings', tab='freeze') }}"
@@ -265,11 +272,16 @@
         {% endif %}
 
         <main class="{% if current_user.is_authenticated %}main-content{% else %}auth-content{% endif %}">
+            {# Render this branch when current_user.is_authenticated evaluates to true. #}
             {% if current_user.is_authenticated %}
+            {# Render this branch when request.endpoint not in ["login", "register"] evaluates to true. #}
             {% if request.endpoint not in ["login", "register"] %}
+            {# Create a scoped template context for messages = get_flashed_messages(with_categories=true). #}
             {% with messages = get_flashed_messages(with_categories=true) %}
+            {# Render this branch when messages evaluates to true. #}
             {% if messages %}
             <div class="flash-wrapper">
+                {# Render one iteration for each item in category, message in messages. #}
                 {% for category, message in messages %}
                 <div class="flash-message {{ category }}">
                     {{ message }}
@@ -281,6 +293,7 @@
             {% endif %}
             {% endif %}
 
+            {# Render the content template block. #}
             {% block content %}{% endblock %}
         </main>
     </div>
@@ -290,21 +303,26 @@
         // Accordion Dropdown functionality
         function toggleSidebarGroup(groupId, forceState) {
             const groupList = document.getElementById(groupId);
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (!groupList) return;
             const header = groupList.previousElementSibling;
             const arrow = header.querySelector('.sidebar-group-arrow');
 
             let willExpand = false;
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (forceState !== undefined) {
                 willExpand = forceState;
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 willExpand = !groupList.classList.contains('expanded');
             }
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (willExpand) {
                 groupList.classList.add('expanded');
                 header.classList.add('expanded');
                 localStorage.setItem('sidebar-group-' + groupId, 'open');
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 groupList.classList.remove('expanded');
                 header.classList.remove('expanded');
@@ -312,12 +330,15 @@
             }
         }
 
+        // Handle the registered browser event when it is emitted.
         document.addEventListener("DOMContentLoaded", () => {
             const checkbox = document.getElementById("theme-checkbox");
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (checkbox) {
                 const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
                 checkbox.checked = currentTheme === "dark";
 
+                // Handle the registered browser event when it is emitted.
                 checkbox.addEventListener("change", () => {
                     const newTheme = checkbox.checked ? "dark" : "light";
                     document.documentElement.setAttribute("data-theme", newTheme);
@@ -330,6 +351,7 @@
             const toggleBtn = document.getElementById("sidebar-toggle-btn");
             const layout = document.querySelector(".app-layout");
 
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (sidebar && toggleBtn && layout) {
                 // Apply preferences initially
                 if (document.documentElement.classList.contains("sidebar-collapsed-pref")) {
@@ -337,6 +359,7 @@
                     layout.classList.add("sidebar-collapsed");
                 }
 
+                // Handle the registered browser event when it is emitted.
                 toggleBtn.addEventListener("click", () => {
                     sidebar.classList.toggle("collapsed");
                     layout.classList.toggle("sidebar-collapsed");
@@ -348,16 +371,21 @@
 
             // Auto-expand group if it contains an active link on page load
             const groups = ['group-dashboard', 'group-scan', 'group-honeypot', 'group-system'];
+            // Process one client-side item during each collection iteration.
             groups.forEach(groupId => {
                 const groupList = document.getElementById(groupId);
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!groupList) return;
                 const hasActive = groupList.querySelector('.active');
                 const savedState = localStorage.getItem('sidebar-group-' + groupId);
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (hasActive) {
                     toggleSidebarGroup(groupId, true);
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else if (savedState === 'open') {
                     toggleSidebarGroup(groupId, true);
+                // Handle the fallback branch when earlier client-side conditions do not match.
                 } else {
                     toggleSidebarGroup(groupId, false);
                 }
@@ -371,21 +399,26 @@
             // --- Generic Table Column Sorting ---
             function makeTablesSortable() {
                 const tables = document.querySelectorAll("table");
+                // Process one client-side item during each collection iteration.
                 tables.forEach(table => {
                     let headers = table.querySelectorAll("th");
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (headers.length === 0) {
                         const firstRow = table.querySelector("tr");
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (firstRow) {
                             headers = firstRow.querySelectorAll("td");
                         }
                     }
 
+                    // Process one client-side item during each collection iteration.
                     headers.forEach((th, index) => {
                         const txt = th.textContent.trim().toLowerCase();
 
                         const hasInput = th.querySelector("input[type='checkbox']");
                         const isAction = txt === "action" || txt === "actions" || txt === "";
 
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (hasInput || isAction) {
                             return;
                         }
@@ -393,6 +426,7 @@
                         th.classList.add("sortable-header");
 
                         let indicator = th.querySelector(".sort-indicator");
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (!indicator) {
                             indicator = document.createElement("span");
                             indicator.className = "sort-indicator";
@@ -400,16 +434,20 @@
                             th.appendChild(indicator);
                         }
 
+                        // Handle the registered browser event when it is emitted.
                         th.addEventListener("click", () => {
                             const currentDir = th.getAttribute("data-sort-dir") || "none";
                             let nextDir = "asc";
+                            // Handle the branch where the JavaScript condition evaluates to true.
                             if (currentDir === "asc") nextDir = "desc";
                             else if (currentDir === "desc") nextDir = "asc";
 
+                            // Process one client-side item during each collection iteration.
                             headers.forEach(h => {
                                 h.removeAttribute("data-sort-dir");
                                 h.classList.remove("sort-active");
                                 const ind = h.querySelector(".sort-indicator");
+                                // Handle the branch where the JavaScript condition evaluates to true.
                                 if (ind) ind.textContent = "↕";
                             });
 
@@ -423,21 +461,27 @@
                 });
             }
 
+            // Define the sortTableRows client-side operation.
             function sortTableRows(table, columnIndex, asc) {
                 let container = table.querySelector("tbody");
                 let hasTbody = true;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!container) {
                     container = table;
                     hasTbody = false;
                 }
 
                 const rows = Array.from(container.querySelectorAll("tr"));
+                // Define the dataRows client-side operation.
                 const dataRows = rows.filter(row => {
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (row.querySelector("th")) return false;
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (!hasTbody && rows.indexOf(row) === 0) return false;
                     return true;
                 });
 
+                // Run the callback for the associated client-side operation.
                 dataRows.sort((rowA, rowB) => {
                     const cellA = rowA.cells[columnIndex];
                     const cellB = rowB.cells[columnIndex];
@@ -451,15 +495,20 @@
                 dataRows.forEach(row => container.appendChild(row));
             }
 
+            // Define the compareValues client-side operation.
             function compareValues(valA, valB, asc) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (valA === valB) return 0;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (valA === "" || valA === "-") return asc ? 1 : -1;
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (valB === "" || valB === "-") return asc ? -1 : 1;
 
                 const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
                 const isIpA = ipRegex.test(valA);
                 const isIpB = ipRegex.test(valB);
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (isIpA && isIpB) {
                     const numA = ipToNumber(valA);
                     const numB = ipToNumber(valB);
@@ -469,6 +518,7 @@
                 const isNumA = !isNaN(parseFloat(valA)) && isFinite(valA);
                 const isNumB = !isNaN(parseFloat(valB)) && isFinite(valB);
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (isNumA && isNumB) {
                     const numA = parseFloat(valA);
                     const numB = parseFloat(valB);
@@ -478,6 +528,7 @@
                 const dateA = Date.parse(valA.replace(/-/g, "/"));
                 const dateB = Date.parse(valB.replace(/-/g, "/"));
 
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (!isNaN(dateA) && !isNaN(dateB)) {
                     return asc ? dateA - dateB : dateB - dateA;
                 }
@@ -485,6 +536,7 @@
                 return asc ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' }) : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
             }
 
+            // Define the ipToNumber client-side operation.
             function ipToNumber(ip) {
                 return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
             }

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <div class="auth-panel">
@@ -21,9 +22,12 @@
             inputmode="numeric" maxlength="6"
             style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold; border-color: var(--primary-color);">
 
+        {# Create a scoped template context for messages = get_flashed_messages(with_categories=true). #}
         {% with messages = get_flashed_messages(with_categories=true) %}
+        {# Render this branch when messages evaluates to true. #}
         {% if messages %}
         <div class="auth-flash-wrapper">
+            {# Render one iteration for each item in category, message in messages. #}
             {% for category, message in messages %}
             <div class="flash-message {{ category }}">
                 {{ message }}

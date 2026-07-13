@@ -14,9 +14,11 @@ from services.encryption_service import encrypt_val, decrypt_val, get_flask_secr
 db = SQLAlchemy()
 
 
+# Handle the enable sqlite foreign keys operation.
 @event.listens_for(Engine, "connect")
 def enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
     """Enable SQLite's declared foreign-key actions on every connection."""
+    # Handle the branch where not isinstance(dbapi_connection, sqlite3.Connection) evaluates to true.
     if not isinstance(dbapi_connection, sqlite3.Connection):
         return
 
@@ -31,9 +33,11 @@ ACTIVE_SCAN_STATUSES = {
     "termination_failed",
 }
 
+# Handle the utc now operation.
 def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
+# Group the state and behavior for User.
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -48,18 +52,22 @@ class User(UserMixin, db.Model):
 
     scan_results = db.relationship("ScanResult", backref="user", lazy=True)
 
+    # Handle the otp secret operation.
     @property
     def otp_secret(self):
         return decrypt_val(self._otp_secret)
 
+    # Handle the otp secret operation.
     @otp_secret.setter
     def otp_secret(self, value):
         self._otp_secret = encrypt_val(value)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<User {self.email}>"
 
 
+# Group the state and behavior for ScanResult.
 class ScanResult(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -116,15 +124,18 @@ class ScanResult(db.Model):
         db.Index("ix_scan_result_scheduled_for", "scheduled_for"),
     )
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<ScanResult {self.network_cidr} - {self.scan_type}>"
 
 
+# Group the state and behavior for ScanDispatchLock.
 class ScanDispatchLock(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     touched_at = db.Column(db.DateTime, nullable=True)
 
 
+# Group the state and behavior for ScanResolutionAudit.
 class ScanResolutionAudit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     scan_id = db.Column(db.Integer, nullable=False, index=True)
@@ -137,6 +148,7 @@ class ScanResolutionAudit(db.Model):
     resolved_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
 
+# Group the state and behavior for ScanSchedule.
 class ScanSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
@@ -160,10 +172,12 @@ class ScanSchedule(db.Model):
     audit_credentials = db.Column(db.Boolean, default=False, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<ScanSchedule {self.name} - {self.frequency}>"
 
 
+# Group the state and behavior for SystemSetting.
 class SystemSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), unique=True, nullable=False)
@@ -192,18 +206,22 @@ class SystemSetting(db.Model):
 
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the smtp password operation.
     @property
     def smtp_password(self):
         return decrypt_val(self._smtp_password)
 
+    # Handle the smtp password operation.
     @smtp_password.setter
     def smtp_password(self, value):
         self._smtp_password = encrypt_val(value)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<SystemSetting User {self.user_id}>"
 
 
+# Group the state and behavior for ScanCredential.
 class ScanCredential(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
@@ -213,26 +231,32 @@ class ScanCredential(db.Model):
     protocol = db.Column(db.String(20), default="any")  # 'ftp', 'redis', 'http_basic', 'any'
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the username operation.
     @property
     def username(self):
         return decrypt_val(self._username)
 
+    # Handle the username operation.
     @username.setter
     def username(self, value):
         self._username = encrypt_val(value)
 
+    # Handle the password operation.
     @property
     def password(self):
         return decrypt_val(self._password)
 
+    # Handle the password operation.
     @password.setter
     def password(self, value):
         self._password = encrypt_val(value)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<ScanCredential {self.name} - {self.protocol}>"
 
 
+# Group the state and behavior for HoneypotLog.
 class HoneypotLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip_address = db.Column(db.String(45), nullable=False)
@@ -241,20 +265,24 @@ class HoneypotLog(db.Model):
     headers = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<HoneypotLog {self.ip_address} - {self.path}>"
 
 
+# Group the state and behavior for HoneypotBlockedIP.
 class HoneypotBlockedIP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip_address = db.Column(db.String(45), unique=True, nullable=False)
     reason = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<HoneypotBlockedIP {self.ip_address}>"
 
 
+# Group the state and behavior for SecurityAnomaly.
 class SecurityAnomaly(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     anomaly_type = db.Column(db.String(50), nullable=False)  # 'mac_spoofing', 'ip_hijack', 'rogue_device'
@@ -265,10 +293,12 @@ class SecurityAnomaly(db.Model):
     created_at = db.Column(db.DateTime, default=utc_now)
     is_resolved = db.Column(db.Boolean, default=False)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<SecurityAnomaly {self.anomaly_type} - {self.ip_address}>"
 
 
+# Group the state and behavior for Asset.
 class Asset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=True)
@@ -287,10 +317,12 @@ class Asset(db.Model):
     last_seen = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
     created_at = db.Column(db.DateTime, default=utc_now)
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<Asset {self.name or self.ip_address}>"
 
 
+# Group the state and behavior for SecurityFinding.
 class SecurityFinding(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     asset_id = db.Column(db.Integer, db.ForeignKey("asset.id", ondelete="CASCADE"), nullable=True)
@@ -318,10 +350,12 @@ class SecurityFinding(db.Model):
     asset = db.relationship("Asset", backref=db.backref("findings", lazy=True, cascade="all, delete-orphan"))
     assigned_user = db.relationship("User", backref="assigned_findings", foreign_keys=[assigned_user_id])
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<SecurityFinding {self.ip_address}:{self.port} - {self.cve or self.service or 'Issue'}>"
 
 
+# Group the state and behavior for AssetObservation.
 class AssetObservation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     asset_id = db.Column(db.Integer, db.ForeignKey("asset.id", ondelete="CASCADE"), nullable=False)
@@ -337,10 +371,12 @@ class AssetObservation(db.Model):
     asset = db.relationship("Asset", backref=db.backref("observations", lazy=True, cascade="all, delete-orphan"))
     scan = db.relationship("ScanResult", backref=db.backref("observations", lazy=True, cascade="all, delete-orphan"))
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<AssetObservation {self.ip_address} - Asset {self.asset_id}>"
 
 
+# Group the state and behavior for SecurityRule.
 class SecurityRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
@@ -356,5 +392,6 @@ class SecurityRule(db.Model):
 
     user = db.relationship("User", backref=db.backref("security_rules", lazy=True, cascade="all, delete-orphan"))
 
+    # Handle the repr operation.
     def __repr__(self):
         return f"<SecurityRule {self.name} ({self.severity})>"

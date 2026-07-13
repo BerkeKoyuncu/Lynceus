@@ -8,11 +8,14 @@ from services.rule_service import seed_default_rules, validate_rule_conditions
 rules_bp = Blueprint("rules", __name__)
 
 
+# Handle the admin required operation.
 def admin_required(f):
     """Decorator that requires the current user to be an admin."""
+    # Handle the decorated operation.
     @wraps(f)
     @login_required
     def decorated(*args, **kwargs):
+        # Handle the branch where not current_user.is_admin evaluates to true.
         if not current_user.is_admin:
             flash("Access denied. Only administrators can manage security rules.", "error")
             return redirect(url_for("rules.list_rules"))
@@ -20,11 +23,13 @@ def admin_required(f):
     return decorated
 
 
+# List rules.
 @rules_bp.route("/rules", methods=["GET"])
 @login_required
 def list_rules():
     # Seed default rules for admin if not yet present
     admin_user = User.query.filter_by(is_admin=True).first()
+    # Handle the branch where admin_user evaluates to true.
     if admin_user:
         seed_default_rules(admin_user.id)
     # Show all rules (global/admin-managed Model A)
@@ -32,6 +37,7 @@ def list_rules():
     return render_template("rules.html", rules=rules)
 
 
+# Add rule.
 @rules_bp.route("/rules/add", methods=["POST"])
 @admin_required
 def add_rule():
@@ -44,11 +50,13 @@ def add_rule():
     remediation_text = request.form.get("remediation_text", "").strip()
     enabled = request.form.get("enabled") == "y"
 
+    # Handle the branch where not name or not port_service_condition evaluates to true.
     if not name or not port_service_condition:
         flash("Please fill in rule name and matching conditions.", "error")
         return redirect(url_for("rules.list_rules"))
 
     ok, err = validate_rule_conditions(port_service_condition, scope, severity, asset_criticality_condition)
+    # Handle the branch where not ok evaluates to true.
     if not ok:
         flash(f"Rule validation failed: {err}", "error")
         return redirect(url_for("rules.list_rules"))
@@ -71,6 +79,7 @@ def add_rule():
     return redirect(url_for("rules.list_rules"))
 
 
+# Handle the edit rule operation.
 @rules_bp.route("/rules/<int:rule_id>/edit", methods=["POST"])
 @admin_required
 def edit_rule(rule_id):
@@ -82,6 +91,7 @@ def edit_rule(rule_id):
     new_criticality = request.form.get("asset_criticality_condition", "*").strip()
 
     ok, err = validate_rule_conditions(new_condition, new_scope, new_severity, new_criticality)
+    # Handle the branch where not ok evaluates to true.
     if not ok:
         flash(f"Rule validation failed: {err}", "error")
         return redirect(url_for("rules.list_rules"))
@@ -100,6 +110,7 @@ def edit_rule(rule_id):
     return redirect(url_for("rules.list_rules"))
 
 
+# Handle the toggle rule operation.
 @rules_bp.route("/rules/<int:rule_id>/toggle", methods=["POST"])
 @admin_required
 def toggle_rule(rule_id):
@@ -111,6 +122,7 @@ def toggle_rule(rule_id):
     return redirect(url_for("rules.list_rules"))
 
 
+# Delete rule.
 @rules_bp.route("/rules/<int:rule_id>/delete", methods=["POST"])
 @admin_required
 def delete_rule(rule_id):

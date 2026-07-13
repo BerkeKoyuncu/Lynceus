@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 <link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/styles/vis-network.min.css" rel="stylesheet" type="text/css" />
 <style>
@@ -116,15 +117,19 @@
 
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script>
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", function() {
         fetch("/api/topology")
             .then(res => res.json())
+            // Run the callback for the associated client-side operation.
             .then(data => {
                 const nodes = new vis.DataSet(data.nodes);
                 const edges = new vis.DataSet(data.edges);
                 
                 const container = document.getElementById('topology-network');
+                // Create the structured client-side object used by this operation.
                 const graphData = { nodes: nodes, edges: edges };
+                // Create the structured client-side object used by this operation.
                 const options = {
                     nodes: {
                         shape: 'dot',
@@ -179,6 +184,7 @@
                         </div>
                     `;
                     
+                    // Handle the branch where the JavaScript condition evaluates to true.
                     if (node.details) {
                         content += `
                             <div class="detail-section">
@@ -215,6 +221,7 @@
                             </div>
                         `;
                         
+                        // Handle the branch where the JavaScript condition evaluates to true.
                         if (node.details.asset_id) {
                             content += `
                                 <div style="margin-top: 15px;">
@@ -230,6 +237,7 @@
                                 </div>
                             `;
                         }
+                    // Handle the fallback branch when earlier client-side conditions do not match.
                     } else {
                         content += `
                             <div class="detail-section">

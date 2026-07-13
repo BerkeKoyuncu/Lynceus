@@ -17,6 +17,7 @@ branch_labels = None
 depends_on = None
 
 
+# Handle the upgrade operation.
 def upgrade():
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -260,6 +261,7 @@ def upgrade():
         )
 
 
+# Handle the downgrade operation.
 def downgrade():
     # Drop in reverse dependency order
     op.drop_table('asset_observation')

@@ -56,9 +56,11 @@ CVE_CACHE = {}
 CVE_CACHE_TTL_SECONDS = 300
 
 
+# Handle the cache time operation.
 def _cache_time():
     return time.monotonic()
 
+# Parse version.
 def parse_version(v_str):
     import re
     # Extract digit sequences
@@ -66,31 +68,38 @@ def parse_version(v_str):
     return tuple(int(x) for x in nums) if nums else ()
 
 
+# Parse comparable version.
 def _parse_comparable_version(value):
     """Parse only the leading product version, excluding distro/banner suffixes."""
     import re
 
     text = (value or "").replace("\\", "")
     match = re.search(r"\d+(?:\.\d+)*(?:p\d+)?", text, re.IGNORECASE)
+    # Handle the branch where not match evaluates to true.
     if not match:
         return ()
     suffix = text[match.end():].lstrip()
+    # Handle the branch where re.match('^[-_.]?(?:alpha|beta|rc|pre|preview|dev|snapshot)\\d*\\b', suffix, re.IGNORECASE) evaluates to true.
     if re.match(r"^[-_.]?(?:alpha|beta|rc|pre|preview|dev|snapshot)\d*\b", suffix, re.IGNORECASE):
         return ()
     parsed = [int(part) for part in re.findall(r"\d+", match.group(0))]
+    # Repeat this block while len(parsed) > 1 and parsed[-1] == 0 remains true.
     while len(parsed) > 1 and parsed[-1] == 0:
         parsed.pop()
     return tuple(parsed)
 
 
+# Handle the cpe identity operation.
 def _cpe_identity(criteria):
     parts = (criteria or "").split(":")
+    # Handle the branch where len(parts) > 5 and parts[:3] == ['cpe', '2.3', 'a'] evaluates to true.
     if len(parts) > 5 and parts[:3] == ["cpe", "2.3", "a"]:
         return (
             "a",
             parts[3].replace("\\", "").lower(),
             parts[4].replace("\\", "").lower(),
         )
+    # Handle the branch where len(parts) > 4 and parts[0] == 'cpe' and parts[1].startswith('/a') evaluates to true.
     if len(parts) > 4 and parts[0] == "cpe" and parts[1].startswith("/a"):
         return (
             "a",
@@ -100,48 +109,66 @@ def _cpe_identity(criteria):
     return None
 
 
+# Handle the iter cpe matches operation.
 def _iter_cpe_matches(value):
+    # Handle the branch where isinstance(value, dict) evaluates to true.
     if isinstance(value, dict):
+        # Handle the branch where 'criteria' in value evaluates to true.
         if "criteria" in value:
             yield value
+        # Iterate over value.values() and bind each item to nested.
         for nested in value.values():
             yield from _iter_cpe_matches(nested)
+    # Handle the branch where isinstance(value, list) evaluates to true.
     elif isinstance(value, list):
+        # Iterate over value and bind each item to nested.
         for nested in value:
             yield from _iter_cpe_matches(nested)
 
 
+# Determine whether unsupported cpe logic.
 def _has_unsupported_cpe_logic(value):
+    # Handle the branch where isinstance(value, dict) evaluates to true.
     if isinstance(value, dict):
+        # Handle the branch where value.get('negate') is True evaluates to true.
         if value.get("negate") is True:
             return True
         operator = value.get("operator")
+        # Handle the branch where operator is not None and str(operator).upper() != 'OR' evaluates to true.
         if operator is not None and str(operator).upper() != "OR":
             return True
         return any(_has_unsupported_cpe_logic(nested) for nested in value.values())
+    # Handle the branch where isinstance(value, list) evaluates to true.
     if isinstance(value, list):
         return any(_has_unsupported_cpe_logic(nested) for nested in value)
     return False
 
 
+# Handle the cpe version state operation.
 def _cpe_version_state(user_version, match_obj, api_vendor, api_product):
     """Return affected/unaffected/unknown for one product CPE match."""
     expected_identity = ("a", api_vendor.lower(), api_product.lower())
+    # Handle the branch where _cpe_identity(match_obj.get('criteria')) != expected_identity evaluates to true.
     if _cpe_identity(match_obj.get("criteria")) != expected_identity:
         return "unknown"
+    # Handle the branch where match_obj.get('vulnerable', True) is not True evaluates to true.
     if match_obj.get("vulnerable", True) is not True:
         return "unknown"
 
     user_parsed = _parse_comparable_version(user_version)
+    # Handle the branch where not user_parsed evaluates to true.
     if not user_parsed:
         return "unknown"
 
     parts = match_obj.get("criteria", "").split(":")
     cpe_version = parts[5] if len(parts) > 5 and parts[1] == "2.3" else None
+    # Handle the branch where parts and len(parts) > 4 and parts[1].startswith('/a') evaluates to true.
     if parts and len(parts) > 4 and parts[1].startswith("/a"):
         cpe_version = parts[4]
+    # Handle the branch where cpe_version and cpe_version not in {'*', '-'} evaluates to true.
     if cpe_version and cpe_version not in {"*", "-"}:
         cpe_parsed = _parse_comparable_version(cpe_version)
+        # Handle the branch where not cpe_parsed evaluates to true.
         if not cpe_parsed:
             return "unknown"
         return "affected" if user_parsed == cpe_parsed else "unaffected"
@@ -153,16 +180,22 @@ def _cpe_version_state(user_version, match_obj, api_vendor, api_product):
         "versionStartExcluding": lambda boundary: user_parsed > boundary,
     }
     parsed_boundaries = {}
+    # Iterate over boundaries and bind each item to key.
     for key in boundaries:
+        # Handle the branch where key in match_obj evaluates to true.
         if key in match_obj:
             parsed_boundaries[key] = _parse_comparable_version(match_obj[key])
+            # Handle the branch where not parsed_boundaries[key] evaluates to true.
             if not parsed_boundaries[key]:
                 return "unknown"
+    # Iterate over parsed_boundaries.items() and bind each item to (key, boundary).
     for key, boundary in parsed_boundaries.items():
+        # Handle the branch where not boundaries[key](boundary) evaluates to true.
         if not boundaries[key](boundary):
             return "unaffected"
     return "affected"
 
+# Determine whether version affected.
 def is_version_affected(user_ver, match_obj, api_product):
     cpe_uri = match_obj.get("criteria", "")
     
@@ -171,16 +204,20 @@ def is_version_affected(user_ver, match_obj, api_product):
         return False
         
     parts = cpe_uri.split(":")
+    # Handle the branch where len(parts) > 5 evaluates to true.
     if len(parts) > 5:
         cpe_ver = parts[5]
+        # Handle the branch where cpe_ver != '*' and cpe_ver != '-' evaluates to true.
         if cpe_ver != "*" and cpe_ver != "-":
             # Exact or substring comparison
             clean_user = user_ver.lower().replace("p", "").replace("v", "")
             clean_cpe = cpe_ver.lower().replace("p", "").replace("v", "")
+            # Handle the branch where clean_user not in clean_cpe and clean_cpe not in clean_user evaluates to true.
             if clean_user not in clean_cpe and clean_cpe not in clean_user:
                 return False
   
     user_parsed = parse_version(user_ver)
+    # Handle the branch where not user_parsed evaluates to true.
     if not user_parsed:
         # Cannot parse version — mark as needs_review, not confirmed
         return False
@@ -188,31 +225,40 @@ def is_version_affected(user_ver, match_obj, api_product):
     # Check boundaries
     if "versionEndIncluding" in match_obj:
         end_parsed = parse_version(match_obj["versionEndIncluding"])
+        # Handle the branch where end_parsed and user_parsed > end_parsed evaluates to true.
         if end_parsed and user_parsed > end_parsed:
             return False
             
+    # Handle the branch where 'versionEndExcluding' in match_obj evaluates to true.
     if "versionEndExcluding" in match_obj:
         end_parsed = parse_version(match_obj["versionEndExcluding"])
+        # Handle the branch where end_parsed and user_parsed >= end_parsed evaluates to true.
         if end_parsed and user_parsed >= end_parsed:
             return False
             
+    # Handle the branch where 'versionStartIncluding' in match_obj evaluates to true.
     if "versionStartIncluding" in match_obj:
         start_parsed = parse_version(match_obj["versionStartIncluding"])
+        # Handle the branch where start_parsed and user_parsed < start_parsed evaluates to true.
         if start_parsed and user_parsed < start_parsed:
             return False
             
+    # Handle the branch where 'versionStartExcluding' in match_obj evaluates to true.
     if "versionStartExcluding" in match_obj:
         start_parsed = parse_version(match_obj["versionStartExcluding"])
+        # Handle the branch where start_parsed and user_parsed <= start_parsed evaluates to true.
         if start_parsed and user_parsed <= start_parsed:
             return False
             
     return True
 
+# Handle the fetch cves for query operation.
 def fetch_cves_for_query(product, version=None, cpe_list=None):
     """
     Queries the CIRCL CVE API for a service and version, using CPE list to extract accurate vendor/product fields if available.
     Returns: {"success": True/False, "cves": [...], "error": ...}
     """
+    # Handle the branch where not product or product == '-' evaluates to true.
     if not product or product == "-":
         return {"success": True, "cves": []}
         
@@ -220,17 +266,23 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     product_clean = product.lower().strip()
     
     cache_key = (product_clean, version_clean, tuple(cpe_list) if cpe_list else ())
+    # Handle the branch where cache_key in CVE_CACHE evaluates to true.
     if cache_key in CVE_CACHE:
         cached = CVE_CACHE[cache_key]
+        # Handle the branch where isinstance(cached, dict) and 'result' in cached and ('expires_at' in cached) evaluates to true.
         if isinstance(cached, dict) and "result" in cached and "expires_at" in cached:
+            # Handle the branch where cached['expires_at'] > _cache_time() evaluates to true.
             if cached["expires_at"] > _cache_time():
                 return copy.deepcopy(cached["result"])
             CVE_CACHE.pop(cache_key, None)
             cached = None
+        # Handle the branch where cached is None evaluates to true.
         if cached is None:
             pass
+        # Handle the branch where isinstance(cached, dict) evaluates to true.
         elif isinstance(cached, dict):
             return copy.deepcopy(cached)
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             return {"success": True, "cves": copy.deepcopy(cached)}
 
@@ -238,11 +290,15 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     cpe_product = None
     cpe_version = None
 
+    # Handle the branch where cpe_list evaluates to true.
     if cpe_list:
+        # Iterate over cpe_list and bind each item to cpe_str.
         for cpe_str in cpe_list:
+            # Handle the branch where not cpe_str evaluates to true.
             if not cpe_str:
                 continue
             parts = cpe_str.split(":")
+            # Handle the branch where len(parts) >= 4 evaluates to true.
             if len(parts) >= 4:
                 # 2.3 format: cpe:2.3:a:vendor:product:version:...
                 if parts[0] == "cpe" and parts[1] == "2.3" and parts[2] == "a" and len(parts) >= 5:
@@ -260,11 +316,14 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     # Prioritize CPE version if available and valid
     if cpe_version and cpe_version not in ["*", "-"]:
         target_version = cpe_version
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         target_version = version_clean
 
+    # Handle the branch where cpe_vendor and cpe_product evaluates to true.
     if cpe_vendor and cpe_product:
         vendor, api_product = cpe_vendor, cpe_product
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
 
@@ -274,15 +333,18 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     
     # Try querying using the parsed/cpe vendor and product
     url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
+    # Run this block with structured exception handling.
     try:
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "Lynceus Vulnerability Scanner"}
         )
+        # Manage urllib.request.urlopen(req, timeout=5) within this scoped block.
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode("utf-8"))
         all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
         request_succeeded = True
+    # Handle an exception raised by the preceding protected block.
     except Exception as e:
         first_error = str(e)
 
@@ -290,22 +352,28 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
     if (not request_succeeded or not all_items) and cpe_list:
         vendor, api_product = VENDOR_PRODUCT_MAP.get(product_clean, (product_clean, product_clean))
         url = f"https://vulnerability.circl.lu/api/search/{vendor}/{api_product}"
+        # Run this block with structured exception handling.
         try:
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": "Lynceus Vulnerability Scanner"}
             )
+            # Manage urllib.request.urlopen(req, timeout=5) within this scoped block.
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode("utf-8"))
             all_items = data.get("results", {}).get("nvd", []) + data.get("results", {}).get("cvelistv5", [])
             request_succeeded = True
+        # Handle an exception raised by the preceding protected block.
         except Exception as e:
+            # Handle the branch where not first_error evaluates to true.
             if not first_error:
                 first_error = str(e)
 
+    # Handle the branch where not request_succeeded evaluates to true.
     if not request_succeeded:
         return {"success": False, "cves": [], "error": first_error or "API query failed"}
 
+    # Run this block with structured exception handling.
     try:
         seen_cves = set()
         filtered_cves = []
@@ -313,31 +381,41 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
         inconclusive_cves = set()
         product_confirmed = False
 
+        # Iterate over all_items and bind each item to item.
         for item in all_items:
+            # Handle the branch where not isinstance(item, list) or len(item) < 2 evaluates to true.
             if not isinstance(item, list) or len(item) < 2:
                 continue
 
             cve_id = item[0].upper()
+            # Handle the branch where cve_id in seen_cves evaluates to true.
             if cve_id in seen_cves:
                 continue
             cve_record = item[1]
 
             descriptions = cve_record.get("containers", {}).get("cna", {}).get("descriptions", [])
             summary = "No description available."
+            # Iterate over descriptions and bind each item to desc.
             for desc in descriptions:
+                # Handle the branch where desc.get('lang') == 'en' evaluates to true.
                 if desc.get("lang") == "en":
                     summary = desc.get("value")
                     break
 
             cvss_score = None
             metrics = cve_record.get("containers", {}).get("cna", {}).get("metrics", [])
+            # Iterate over metrics and bind each item to metric.
             for metric in metrics:
+                # Iterate over ['cvssV4_0', 'cvssV3_1', 'cvssV3_0', 'cvssV2_0'] and bind each item to key.
                 for key in ["cvssV4_0", "cvssV3_1", "cvssV3_0", "cvssV2_0"]:
+                    # Handle the branch where key in metric evaluates to true.
                     if key in metric:
                         score = metric[key].get("baseScore")
+                        # Handle the branch where score is not None evaluates to true.
                         if score is not None:
                             cvss_score = score
                             break
+                # Handle the branch where cvss_score is not None evaluates to true.
                 if cvss_score is not None:
                     break
 
@@ -345,6 +423,7 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
             # evidence may be emitted as confirmed-unaffected.
             is_affected = True
             is_definite = False
+            # Handle the branch where target_version evaluates to true.
             if target_version:
                 is_affected = False
                 cpe_nodes = cve_record.get("containers", {}).get("cna", {}).get("cpeApplicability", [])
@@ -354,10 +433,13 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                     == ("a", vendor.lower(), api_product.lower())
                 ]
 
+                # Handle the branch where product_matches evaluates to true.
                 if product_matches:
                     product_confirmed = True
+                    # Handle the branch where _has_unsupported_cpe_logic(cpe_nodes) evaluates to true.
                     if _has_unsupported_cpe_logic(cpe_nodes):
                         states = ["unknown"]
+                    # Handle the fallback branch when the preceding condition does not match.
                     else:
                         states = [
                             _cpe_version_state(
@@ -365,28 +447,36 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
                             )
                             for match in product_matches
                         ]
+                    # Handle the branch where 'affected' in states evaluates to true.
                     if "affected" in states:
                         is_affected = True
                         is_definite = True
+                    # Handle the branch where states and all((state == 'unaffected' for state in states)) evaluates to true.
                     elif states and all(state == "unaffected" for state in states):
+                        # Handle the branch where cve_id not in inconclusive_cves evaluates to true.
                         if cve_id not in inconclusive_cves:
                             confirmed_unaffected_cves.add(cve_id)
+                    # Handle the fallback branch when the preceding condition does not match.
                     else:
                         inconclusive_cves.add(cve_id)
                         confirmed_unaffected_cves.discard(cve_id)
+                # Handle the fallback branch when the preceding condition does not match.
                 else:
                     # CPE not found, check description as fallback
                     if api_product in summary.lower():
                         is_affected = True
                         is_definite = False
+                    # Handle the fallback branch when the preceding condition does not match.
                     else:
                         is_affected = False
                     inconclusive_cves.add(cve_id)
                     confirmed_unaffected_cves.discard(cve_id)
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 is_affected = True
                 is_definite = False
 
+            # Handle the branch where is_affected evaluates to true.
             if is_affected:
                 confirmed_unaffected_cves.discard(cve_id)
                 seen_cves.add(cve_id)
@@ -413,9 +503,11 @@ def fetch_cves_for_query(product, version=None, cpe_list=None):
             "result": copy.deepcopy(result),
         }
         return copy.deepcopy(result)
+    # Handle an exception raised by the preceding protected block.
     except Exception as e:
         return {"success": False, "cves": [], "error": str(e)}
 
+# Create credential audit finding.
 def create_credential_audit_finding(asset, ip_address, port_info, audit_res, scan_id=None):
     """
     Creates or updates a SecurityFinding for a confirmed weak-credential vulnerability.
@@ -433,19 +525,23 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
     existing = SecurityFinding.query.filter_by(
         asset_id=asset.id, fingerprint=fp
     ).first()
+    # Handle the branch where not existing evaluates to true.
     if not existing:
         existing = SecurityFinding.query.filter_by(
             asset_id=asset.id, ip_address=ip_address, port=p_num,
             protocol=protocol, source_type="credential_audit"
         ).first()
 
+    # Handle the branch where existing evaluates to true.
     if existing:
         existing.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
         existing.evidence = message
         existing.fingerprint = fp
         existing.scan_id = scan_id
+        # Handle the branch where existing.status in {'resolved', 'not_observed'} evaluates to true.
         if existing.status in {"resolved", "not_observed"}:
             existing.status = "open"
+    # Handle the fallback branch when the preceding condition does not match.
     else:
         new_finding = SecurityFinding(
             asset_id=asset.id,
@@ -467,11 +563,13 @@ def create_credential_audit_finding(asset, ip_address, port_info, audit_res, sca
         db.session.add(new_finding)
     db.session.commit()
 
+# Determine whether ftp auth rejection.
 def _is_ftp_auth_rejection(error):
     import re
 
     message = str(error).strip().lower()
     reply_code = re.match(r"^(\d{3})\b", message)
+    # Handle the branch where reply_code and reply_code.group(1) != '530' evaluates to true.
     if reply_code and reply_code.group(1) != "530":
         return False
     policy_markers = (
@@ -482,6 +580,7 @@ def _is_ftp_auth_rejection(error):
         "account expired",
         "not allowed",
     )
+    # Handle the branch where any((marker in message for marker in policy_markers)) evaluates to true.
     if any(marker in message for marker in policy_markers):
         return False
     return any(
@@ -498,10 +597,13 @@ def _is_ftp_auth_rejection(error):
     )
 
 
+# Handle the audit ftp operation.
 def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
     credentials = []
+    # Handle the branch where custom_credentials evaluates to true.
     if custom_credentials:
         credentials.extend(custom_credentials)
+    # Handle the branch where use_defaults evaluates to true.
     if use_defaults:
         credentials.extend([
             ("anonymous", "anonymous@domain.com"),
@@ -511,78 +613,109 @@ def audit_ftp(ip, port=21, custom_credentials=None, use_defaults=True):
         ])
     import ftplib
     rejected = 0
+    # Iterate over credentials and bind each item to (username, password).
     for username, password in credentials:
         ftp = None
+        # Run this block with structured exception handling.
         try:
             ftp = ftplib.FTP()
             ftp.connect(ip, port, timeout=2)
             ftp.login(username, password)
             return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
+        # Handle an exception raised by the preceding protected block.
         except ftplib.error_perm as error:
+            # Handle the branch where _is_ftp_auth_rejection(error) evaluates to true.
             if _is_ftp_auth_rejection(error):
                 rejected += 1
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 return {"status": "skipped", "message": f"FTP credential audit could not complete: {error}"}
+        # Handle an exception raised by the preceding protected block.
         except (OSError, EOFError, ftplib.Error) as error:
             return {"status": "skipped", "message": f"FTP credential audit could not complete: {error}"}
+        # Run cleanup that must occur after the protected block.
         finally:
+            # Handle the branch where ftp is not None evaluates to true.
             if ftp is not None:
+                # Run this block with structured exception handling.
                 try:
                     ftp.close()
+                # Handle an exception raised by the preceding protected block.
                 except OSError:
                     pass
+    # Handle the branch where credentials and rejected == len(credentials) evaluates to true.
     if credentials and rejected == len(credentials):
         return {"status": "safe", "message": "FTP rejected all tested credentials"}
     return {"status": "skipped", "message": "No FTP credentials were available to test"}
 
+# Handle the redis command operation.
 def _redis_command(*parts):
     encoded_parts = [str(part).encode("utf-8") for part in parts]
     chunks = [f"*{len(encoded_parts)}\r\n".encode()]
+    # Iterate over encoded_parts and bind each item to part.
     for part in encoded_parts:
         chunks.append(f"${len(part)}\r\n".encode())
         chunks.append(part + b"\r\n")
     return b"".join(chunks)
 
 
+# Handle the audit redis operation.
 def audit_redis(ip, port=6379, custom_passwords=None, use_defaults=True):
     passwords = []
+    # Handle the branch where custom_passwords evaluates to true.
     if custom_passwords:
         passwords.extend(custom_passwords)
+    # Handle the branch where use_defaults evaluates to true.
     if use_defaults:
         passwords.extend(["", "admin", "password", "redis", "root"])
     rejected = 0
+    # Iterate over passwords and bind each item to pwd.
     for pwd in passwords:
         s = None
+        # Run this block with structured exception handling.
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(2)
             s.connect((ip, port))
+            # Handle the branch where pwd == '' evaluates to true.
             if pwd == "":
                 s.sendall(b"PING\r\n")
                 resp = s.recv(1024)
+                # Handle the branch where b'+PONG' in resp evaluates to true.
                 if b"+PONG" in resp:
                     return {"status": "vulnerable", "message": "No password set (Unauthenticated access)."}
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 s.sendall(_redis_command("AUTH", pwd))
                 resp = s.recv(1024)
+                # Handle the branch where b'+OK' in resp evaluates to true.
                 if b"+OK" in resp:
                     return {"status": "vulnerable", "message": "A weak Redis password was successfully authenticated."}
+            # Handle the branch where resp.startswith((b'-NOAUTH', b'-WRONGPASS')) or b'invalid password' in resp.lower() evaluates to true.
             if resp.startswith((b"-NOAUTH", b"-WRONGPASS")) or b"invalid password" in resp.lower():
                 rejected += 1
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 return {"status": "skipped", "message": "Redis returned an unexpected authentication response"}
+        # Handle an exception raised by the preceding protected block.
         except (OSError, socket.timeout) as error:
             return {"status": "skipped", "message": f"Redis credential audit could not complete: {error}"}
+        # Run cleanup that must occur after the protected block.
         finally:
+            # Handle the branch where s is not None evaluates to true.
             if s is not None:
+                # Run this block with structured exception handling.
                 try:
                     s.close()
+                # Handle an exception raised by the preceding protected block.
                 except OSError:
                     pass
+    # Handle the branch where passwords and rejected == len(passwords) evaluates to true.
     if passwords and rejected == len(passwords):
         return {"status": "safe", "message": "Redis rejected all tested passwords"}
     return {"status": "skipped", "message": "No Redis passwords were available to test"}
 
+# Handle the audit http basic operation.
 def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_defaults=True):
     import urllib.request
     import urllib.error
@@ -590,29 +723,38 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
     import re
     
     url = f"{'https' if is_ssl else 'http'}://{ip}:{port}/"
+    # Run this block with structured exception handling.
     try:
         req = urllib.request.Request(url, method="GET")
         response = urllib.request.urlopen(req, timeout=2)
         response.close()
         return {"status": "safe", "message": "No authentication required"}
+    # Handle an exception raised by the preceding protected block.
     except urllib.error.HTTPError as e:
+        # Run this block with structured exception handling.
         try:
+            # Handle the branch where e.code != 401 evaluates to true.
             if e.code != 401:
                 return {"status": "skipped", "message": f"Returned status {e.code}"}
             authenticate_header = (e.headers or {}).get("WWW-Authenticate", "")
+            # Handle the branch where not re.search('(?:^|,)\\s*basic(?:\\s|$)', authenticate_header, re.I) evaluates to true.
             if not re.search(r"(?:^|,)\s*basic(?:\s|$)", authenticate_header, re.I):
                 return {
                     "status": "skipped",
                     "message": "The endpoint does not advertise HTTP Basic authentication.",
                 }
+        # Run cleanup that must occur after the protected block.
         finally:
             e.close()
+    # Handle an exception raised by the preceding protected block.
     except Exception as e:
         return {"status": "skipped", "message": f"Connection failed: {str(e)}"}
         
     credentials = []
+    # Handle the branch where custom_credentials evaluates to true.
     if custom_credentials:
         credentials.extend(custom_credentials)
+    # Handle the branch where use_defaults evaluates to true.
     if use_defaults:
         credentials.extend([
             ("admin", "admin"),
@@ -625,7 +767,9 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
         ])
     
     rejected = 0
+    # Iterate over credentials and bind each item to (username, password).
     for username, password in credentials:
+        # Run this block with structured exception handling.
         try:
             req = urllib.request.Request(url, method="GET")
             auth_str = f"{username}:{password}"
@@ -635,14 +779,18 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
             resp = urllib.request.urlopen(req, timeout=2)
             status_code = resp.code
             resp.close()
+            # Handle the branch where 200 <= status_code < 300 evaluates to true.
             if 200 <= status_code < 300:
                 return {"status": "vulnerable", "message": f"Weak credentials confirmed for user '{username}'."}
             return {
                 "status": "skipped",
                 "message": f"Credential verification returned HTTP status {status_code}.",
             }
+        # Handle an exception raised by the preceding protected block.
         except urllib.error.HTTPError as error:
+            # Run this block with structured exception handling.
             try:
+                # Handle the branch where error.code == 401 evaluates to true.
                 if error.code == 401:
                     rejected += 1
                     continue
@@ -650,33 +798,43 @@ def audit_http_basic(ip, port=80, is_ssl=False, custom_credentials=None, use_def
                     "status": "skipped",
                     "message": f"Credential verification returned HTTP status {error.code}.",
                 }
+            # Run cleanup that must occur after the protected block.
             finally:
                 error.close()
+        # Handle an exception raised by the preceding protected block.
         except Exception as error:
             return {
                 "status": "skipped",
                 "message": f"HTTP credential audit could not complete: {error}",
             }
+    # Handle the branch where credentials and rejected == len(credentials) evaluates to true.
     if credentials and rejected == len(credentials):
         return {"status": "safe", "message": "HTTP Basic rejected all tested credentials"}
     return {"status": "skipped", "message": "No HTTP Basic credentials were available to test"}
 
+# Handle the detect device type operation.
 def detect_device_type(hostname, mac_vendor, ports_list):
     return classify_device_type(hostname, mac_vendor, ports_list)
 
+# Handle the format local datetime operation.
 def format_local_datetime(dt):
+    # Handle the branch where not dt evaluates to true.
     if not dt:
         return ""
     # Standard format: YYYY-MM-DD HH:MM:SS
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
+# Check and send scan alert.
 def check_and_send_scan_alert(scan_result):
     setting = SystemSetting.query.filter_by(user_id=scan_result.user_id).first()
+    # Handle the branch where not setting or not setting.smtp_server or (not setting.smtp_sender) or (not setting.alert_recipient) evaluates to true.
     if not setting or not setting.smtp_server or not setting.smtp_sender or not setting.alert_recipient:
         return
         
+    # Run this block with structured exception handling.
     try:
         current_data = json.loads(scan_result.result_data) if scan_result.result_data else {}
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return
         
@@ -694,20 +852,26 @@ def check_and_send_scan_alert(scan_result):
     added_ports_info = []
     
     previous_hosts = []
+    # Handle the branch where previous_scan and previous_scan.result_data evaluates to true.
     if previous_scan and previous_scan.result_data:
+        # Run this block with structured exception handling.
         try:
             prev_data = json.loads(previous_scan.result_data)
             previous_hosts = prev_data.get("hosts", [])
+        # Handle an exception raised by the preceding protected block.
         except Exception:
             pass
             
     map_prev = {h["address"]: h for h in previous_hosts}
     
+    # Iterate over current_hosts and bind each item to host.
     for host in current_hosts:
         ip = host.get("address")
         curr_ports = [p for p in host.get("ports", []) if p.get("state") == "open"]
         
+        # Handle the branch where ip not in map_prev evaluates to true.
         if ip not in map_prev:
+            # Handle the branch where curr_ports evaluates to true.
             if curr_ports:
                 added_hosts_info.append({
                     "address": ip,
@@ -715,6 +879,7 @@ def check_and_send_scan_alert(scan_result):
                     "ports": curr_ports
                 })
                 new_ports_detected = True
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             prev_ports = {
                 ((p.get("protocol") or "tcp").lower(), int(p.get("port") or 0)): p
@@ -722,12 +887,15 @@ def check_and_send_scan_alert(scan_result):
                 if p.get("state") == "open"
             }
             host_added_ports = []
+            # Iterate over curr_ports and bind each item to p.
             for p in curr_ports:
                 p_num = int(p["port"])
                 p_proto = (p.get("protocol") or "tcp").lower()
+                # Handle the branch where (p_proto, p_num) not in prev_ports evaluates to true.
                 if (p_proto, p_num) not in prev_ports:
                     host_added_ports.append(p)
                     new_ports_detected = True
+            # Handle the branch where host_added_ports evaluates to true.
             if host_added_ports:
                 added_ports_info.append({
                     "address": ip,
@@ -735,11 +903,13 @@ def check_and_send_scan_alert(scan_result):
                     "ports": host_added_ports
                 })
 
+    # Handle the branch where new_ports_detected evaluates to true.
     if new_ports_detected:
         subject = f"[SECURITY ALERT] New Ports/Hosts Detected on {scan_result.network_cidr}"
         local_time_str = format_local_datetime(datetime.now(timezone.utc).replace(tzinfo=None))
         
         hosts_list_html = ""
+        # Iterate over added_hosts_info and bind each item to h.
         for h in added_hosts_info:
             ports_str = ", ".join(f"{p['port']}/{p['protocol']} ({p['service']})" for p in h["ports"])
             hosts_list_html += f"""
@@ -751,6 +921,7 @@ def check_and_send_scan_alert(scan_result):
             """
             
         ports_list_html = ""
+        # Iterate over added_ports_info and bind each item to p.
         for p in added_ports_info:
             ports_str = ", ".join(f"{x['port']}/{x['protocol']} ({x['service']})" for x in p["ports"])
             ports_list_html += f"""
@@ -769,6 +940,7 @@ def check_and_send_scan_alert(scan_result):
             </div>
         """
         
+        # Handle the branch where added_hosts_info evaluates to true.
         if added_hosts_info:
             body_html += f"""
             <h3 style="color: #c53030; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #fed7d7; padding-bottom: 5px; margin-bottom: 10px;">🆕 New Hosts Online ({len(added_hosts_info)})</h3>
@@ -786,6 +958,7 @@ def check_and_send_scan_alert(scan_result):
             </table>
             """
             
+        # Handle the branch where added_ports_info evaluates to true.
         if added_ports_info:
             body_html += f"""
             <h3 style="color: #dd6b20; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #fefeeb; padding-bottom: 5px; margin-bottom: 10px;">🔌 New Ports on Existing Hosts ({len(added_ports_info)})</h3>
@@ -822,10 +995,14 @@ def check_and_send_scan_alert(scan_result):
         }
         send_notification_email_async(setting_dict, subject, body_html)
 
+# Handle the scheduler heartbeat loop operation.
 def _scheduler_heartbeat_loop(app, scan_id, claim_token, stop_event):
     interval = app.config["SCHEDULER_HEARTBEAT_SECONDS"]
+    # Repeat this block while not stop_event.wait(interval) remains true.
     while not stop_event.wait(interval):
+        # Run this block with structured exception handling.
         try:
+            # Manage app.app_context() within this scoped block.
             with app.app_context():
                 updated = ScanResult.query.filter(
                     ScanResult.id == scan_id,
@@ -837,19 +1014,25 @@ def _scheduler_heartbeat_loop(app, scan_id, claim_token, stop_event):
                     synchronize_session=False,
                 )
                 db.session.commit()
+                # Handle the branch where updated != 1 evaluates to true.
                 if updated != 1:
                     return
+        # Handle an exception raised by the preceding protected block.
         except Exception:
             # A transient DB lock should not kill the heartbeat permanently.
             try:
                 db.session.rollback()
+            # Handle an exception raised by the preceding protected block.
             except Exception:
                 pass
 
 
+# Handle the scheduler claim is current operation.
 def scheduler_claim_is_current(scan_id, claim_token):
+    # Handle the branch where not claim_token evaluates to true.
     if not claim_token:
         return True
+    # Manage db.session.no_autoflush within this scoped block.
     with db.session.no_autoflush:
         return db.session.query(ScanResult.id).filter(
             ScanResult.id == scan_id,
@@ -864,8 +1047,10 @@ _progress_checkpoint_retry_after = {}
 _progress_checkpoint_lock = threading.Lock()
 
 
+# Handle the independent scheduler claim is current operation.
 def _independent_scheduler_claim_is_current(scan_id, claim_token):
     ownership_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
+    # Run this block with structured exception handling.
     try:
         return ownership_session.query(ScanResult.id).filter(
             ScanResult.id == scan_id,
@@ -873,37 +1058,47 @@ def _independent_scheduler_claim_is_current(scan_id, claim_token):
             ScanResult.scheduler_dispatch_state == "started",
             ScanResult.scheduler_claim_token == claim_token,
         ).first() is not None
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         return False
+    # Run cleanup that must occur after the protected block.
     finally:
         ownership_session.close()
 
 
+# Handle the scheduler progress checkpoint operation.
 def scheduler_progress_checkpoint(scan_id, claim_token, force=False, phase=None):
     """Fence work and throttle progress writes outside the business session."""
+    # Handle the branch where not claim_token evaluates to true.
     if not claim_token:
         return True
+    # Handle the branch where phase is not None evaluates to true.
     if phase is not None:
         force = True
 
     key = (scan_id, claim_token)
     monotonic_now = time.monotonic()
     interval = current_app.config["SCHEDULER_PROGRESS_INTERVAL_SECONDS"]
+    # Manage _progress_checkpoint_lock within this scoped block.
     with _progress_checkpoint_lock:
         last_update = _progress_checkpoint_times.get(key)
         retry_after = _progress_checkpoint_retry_after.get(key)
+    # Handle the branch where retry_after is not None and monotonic_now < retry_after evaluates to true.
     if retry_after is not None and monotonic_now < retry_after:
         return _independent_scheduler_claim_is_current(scan_id, claim_token)
+    # Handle the branch where not force and last_update is not None and (monotonic_now - last_update < interval) evaluates to true.
     if not force and last_update is not None and monotonic_now - last_update < interval:
         return _independent_scheduler_claim_is_current(scan_id, claim_token)
 
     progress_session = sessionmaker(bind=db.engine, expire_on_commit=False)()
+    # Run this block with structured exception handling.
     try:
         progress_values = {
             ScanResult.scheduler_progress_at: datetime.now(timezone.utc).replace(
                 tzinfo=None
             )
         }
+        # Handle the branch where phase is not None evaluates to true.
         if phase is not None:
             progress_values[ScanResult.scheduler_execution_phase] = phase
         updated = progress_session.query(ScanResult).filter(
@@ -913,6 +1108,7 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False, phase=None)
             ScanResult.scheduler_claim_token == claim_token,
         ).update(progress_values, synchronize_session=False)
         progress_session.commit()
+    # Handle an exception raised by the preceding protected block.
     except Exception:
         progress_session.rollback()
         # A transient progress-write lock must not commit or roll back the
@@ -920,30 +1116,39 @@ def scheduler_progress_checkpoint(scan_id, claim_token, force=False, phase=None)
         with _progress_checkpoint_lock:
             _progress_checkpoint_retry_after[key] = monotonic_now + min(interval, 5)
         return _independent_scheduler_claim_is_current(scan_id, claim_token)
+    # Run cleanup that must occur after the protected block.
     finally:
         progress_session.close()
 
+    # Handle the branch where updated != 1 evaluates to true.
     if updated != 1:
         return False
+    # Manage _progress_checkpoint_lock within this scoped block.
     with _progress_checkpoint_lock:
         _progress_checkpoint_times[key] = monotonic_now
         _progress_checkpoint_retry_after.pop(key, None)
     return True
 
 
+# Handle the clear scheduler progress checkpoint operation.
 def _clear_scheduler_progress_checkpoint(scan_id, claim_token):
+    # Handle the branch where not claim_token evaluates to true.
     if not claim_token:
         return
+    # Manage _progress_checkpoint_lock within this scoped block.
     with _progress_checkpoint_lock:
         _progress_checkpoint_times.pop((scan_id, claim_token), None)
         _progress_checkpoint_retry_after.pop((scan_id, claim_token), None)
 
 
+# Handle the reconcile scan worker exit operation.
 def _reconcile_scan_worker_exit(
     app, scan_id, claim_token, reconcile_termination_failed=True
 ):
+    # Handle the branch where not claim_token evaluates to true.
     if not claim_token:
         return
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         owner_filter = (
             ScanResult.id == scan_id,
@@ -963,6 +1168,7 @@ def _reconcile_scan_worker_exit(
             synchronize_session=False,
         )
         terminated = 0
+        # Handle the branch where reconcile_termination_failed evaluates to true.
         if reconcile_termination_failed:
             terminated = ScanResult.query.filter(
                 *owner_filter,
@@ -975,18 +1181,24 @@ def _reconcile_scan_worker_exit(
                 },
                 synchronize_session=False,
             )
+        # Handle the branch where cancelled or terminated evaluates to true.
         if cancelled or terminated:
             db.session.commit()
+        # Handle the fallback branch when the preceding condition does not match.
         else:
             db.session.rollback()
 
 
+# Handle the execute scan operation.
 def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=None):
     heartbeat_stop = None
     attempt_registered = False
     transition_started = False
+    # Run this block with structured exception handling.
     try:
+        # Handle the branch where scheduler_claim_token evaluates to true.
         if scheduler_claim_token:
+            # Manage app.app_context() within this scoped block.
             with app.app_context():
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 started = ScanResult.query.filter(
@@ -1005,13 +1217,16 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                     },
                     synchronize_session=False,
                 )
+                # Handle the branch where started != 1 evaluates to true.
                 if started != 1:
                     db.session.rollback()
                     return
                 db.session.commit()
                 transition_started = True
 
+            # Handle the branch where not allow_scan_process_start(scan_id, scheduler_claim_token) evaluates to true.
             if not allow_scan_process_start(scan_id, scheduler_claim_token):
+                # Manage app.app_context() within this scoped block.
                 with app.app_context():
                     conflict_payload = json.dumps({
                         "command": "N/A",
@@ -1043,7 +1258,9 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                 return
             attempt_registered = True
 
+            # Manage app.app_context() within this scoped block.
             with app.app_context():
+                # Handle the branch where not _independent_scheduler_claim_is_current(scan_id, scheduler_claim_token) evaluates to true.
                 if not _independent_scheduler_claim_is_current(
                     scan_id, scheduler_claim_token
                 ):
@@ -1063,13 +1280,18 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
             scheduler_claim_token=scheduler_claim_token,
             already_started=bool(scheduler_claim_token),
         )
+    # Handle an exception raised by the preceding protected block.
     except ScanOwnershipLost:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             app.logger.info(
                 "Scan %s stopped because claim ownership was lost.", scan_id
             )
+    # Handle an exception raised by the preceding protected block.
     except Exception as error:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
+            # Handle the branch where transition_started and scheduler_claim_token evaluates to true.
             if transition_started and scheduler_claim_token:
                 failure_payload = json.dumps({
                     "command": "N/A",
@@ -1091,12 +1313,16 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                 )
                 db.session.commit()
             app.logger.exception("Scan worker %s failed", scan_id)
+    # Run cleanup that must occur after the protected block.
     finally:
+        # Handle the branch where heartbeat_stop is not None evaluates to true.
         if heartbeat_stop is not None:
             heartbeat_stop.set()
+        # Handle the branch where attempt_registered evaluates to true.
         if attempt_registered:
             end_scan_process_attempt(scan_id, scheduler_claim_token)
         _clear_scheduler_progress_checkpoint(scan_id, scheduler_claim_token)
+        # Handle the branch where transition_started evaluates to true.
         if transition_started:
             _reconcile_scan_worker_exit(
                 app,
@@ -1104,14 +1330,18 @@ def execute_scan(app, scan_id, audit_credentials=False, scheduler_claim_token=No
                 scheduler_claim_token,
                 reconcile_termination_failed=attempt_registered,
             )
+            # Run this block with structured exception handling.
             try:
                 from app import _dispatch_pending_scheduled_scans
+                # Manage app.app_context() within this scoped block.
                 with app.app_context():
                     _dispatch_pending_scheduled_scans(app)
+            # Handle an exception raised by the preceding protected block.
             except Exception:
                 pass
 
 
+# Handle the execute scan body operation.
 def _execute_scan_body(
     app,
     scan_id,
@@ -1123,22 +1353,29 @@ def _execute_scan_body(
     Executes the Nmap scan in a background thread and updates the database,
     evaluating anomalies and rules engine criteria.
     """
+    # Manage app.app_context() within this scoped block.
     with app.app_context():
         scan_result = ScanResult.query.get(scan_id)
+        # Handle the branch where not scan_result evaluates to true.
         if not scan_result:
             return
 
+        # Handle the branch where scan_result.status == 'cancelled' evaluates to true.
         if scan_result.status == "cancelled":
             return
 
+        # Handle the branch where scheduler_claim_token evaluates to true.
         if scheduler_claim_token:
+            # Handle the branch where scan_result.scheduler_claim_token != scheduler_claim_token or scan_result.status != 'running' evaluates to true.
             if (
                 scan_result.scheduler_claim_token != scheduler_claim_token
                 or scan_result.status != "running"
             ):
                 return
+        # Handle the branch where not already_started evaluates to true.
         elif not already_started:
             scan_result.status = "running"
+            # Handle the branch where scan_result.scheduler_dispatch_state is not None evaluates to true.
             if scan_result.scheduler_dispatch_state is not None:
                 scan_result.scheduler_dispatch_state = "started"
                 scan_result.scheduler_started_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1153,18 +1390,22 @@ def _execute_scan_body(
         admin_setting = SystemSetting.query.filter_by(user_id=admin_user.id).first() if admin_user else None
         
         global_excludes = ""
+        # Handle the branch where admin_setting and admin_setting.scan_exclusions_active and admin_setting.scan_exclude_targets evaluates to true.
         if admin_setting and admin_setting.scan_exclusions_active and admin_setting.scan_exclude_targets:
             global_excludes = admin_setting.scan_exclude_targets.strip()
         scan_excludes = scan_result.exclude_targets.strip() if scan_result.exclude_targets else ""
         
         combined_excludes = []
+        # Handle the branch where global_excludes evaluates to true.
         if global_excludes:
             combined_excludes.append(global_excludes)
+        # Handle the branch where scan_excludes evaluates to true.
         if scan_excludes:
             combined_excludes.append(scan_excludes)
             
         combined_excludes_str = ",".join(combined_excludes) if combined_excludes else None
 
+        # Handle the report nmap progress operation.
         def report_nmap_progress(phase):
             return scheduler_progress_checkpoint(
                 scan_id,
@@ -1184,6 +1425,7 @@ def _execute_scan_body(
             process_token=scheduler_claim_token,
         )
 
+        # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, force=True, phase='post_processing') evaluates to true.
         if not scheduler_progress_checkpoint(
             scan_id,
             scheduler_claim_token,
@@ -1193,11 +1435,13 @@ def _execute_scan_body(
             return
 
         db.session.refresh(scan_result)
+        # Handle the branch where scheduler_claim_token and scan_result.scheduler_claim_token != scheduler_claim_token evaluates to true.
         if (
             scheduler_claim_token
             and scan_result.scheduler_claim_token != scheduler_claim_token
         ):
             return
+        # Handle the branch where scan_result.status == 'cancelled' evaluates to true.
         if scan_result.status == "cancelled":
             return
 
@@ -1212,9 +1456,12 @@ def _execute_scan_body(
         ).order_by(ScanResult.id.desc()).first()
 
         prev_hosts_map = {}
+        # Handle the branch where previous_scan and previous_scan.result_data evaluates to true.
         if previous_scan and previous_scan.result_data:
+            # Run this block with structured exception handling.
             try:
                 prev_data = json.loads(previous_scan.result_data)
+                # Iterate over prev_data.get('hosts', []) and bind each item to h.
                 for h in prev_data.get("hosts", []):
                     prev_hosts_map[h["address"]] = {
                         (
@@ -1224,10 +1471,13 @@ def _execute_scan_body(
                         for p in h.get("ports", [])
                         if p.get("state") == "open"
                     }
+            # Handle an exception raised by the preceding protected block.
             except Exception:
                 pass
 
+        # Handle the branch where nmap_result['success'] evaluates to true.
         if nmap_result["success"]:
+            # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='asset_processing') evaluates to true.
             if not scheduler_progress_checkpoint(
                 scan_id, scheduler_claim_token, phase="asset_processing"
             ):
@@ -1237,6 +1487,7 @@ def _execute_scan_body(
             # No updates to existing asset details (like IP or MAC) are written to DB yet,
             # preserving the baseline state needed for accurate anomaly detection.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 ip = host.get("address")
@@ -1245,12 +1496,15 @@ def _execute_scan_body(
                 hostname = host.get("hostname")
 
                 asset_match = None
+                # Handle the branch where mac evaluates to true.
                 if mac:
                     mac_clean = mac.strip().lower()
                     asset_match = Asset.query.filter(Asset.mac_address.ilike(mac_clean)).first()
+                # Handle the branch where not asset_match evaluates to true.
                 if not asset_match:
                     asset_match = Asset.query.filter_by(ip_address=ip).first()
 
+                # Handle the branch where not asset_match evaluates to true.
                 if not asset_match:
                     # Create as Untrusted Asset immediately so it has an ID
                     asset_match = Asset(
@@ -1268,6 +1522,7 @@ def _execute_scan_body(
                     db.session.add(asset_match)
                     db.session.commit()
                     host["is_new_rogue"] = True
+                # Handle the fallback branch when the preceding condition does not match.
                 else:
                     host["is_new_rogue"] = False
 
@@ -1288,6 +1543,7 @@ def _execute_scan_body(
                     open_ports=host.get("ports", [])
                 )
 
+            # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='anomaly_evaluation') evaluates to true.
             if not scheduler_progress_checkpoint(
                 scan_id, scheduler_claim_token, phase="anomaly_evaluation"
             ):
@@ -1296,23 +1552,29 @@ def _execute_scan_body(
             # Evaluates anomalies using pre-scan snapshots, making it sequence-independent
             # and preserving correct IP change detection logic.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 anomaly_res = evaluate_host_anomalies(host, scan_result.id)
+                # Handle the branch where anomaly_res evaluates to true.
                 if anomaly_res:
                     host["mac_anomaly"] = anomaly_res
 
+            # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='asset_update') evaluates to true.
             if not scheduler_progress_checkpoint(
                 scan_id, scheduler_claim_token, phase="asset_update"
             ):
                 return
             # Pass 3: Update Asset details in DB with the newly scanned values.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 asset_id = host.get("_asset_id")
+                # Handle the branch where asset_id evaluates to true.
                 if asset_id:
                     asset_match = db.session.get(Asset, asset_id)
+                    # Handle the branch where asset_match evaluates to true.
                     if asset_match:
                         ip = host.get("address")
                         mac = host.get("mac_address")
@@ -1320,32 +1582,42 @@ def _execute_scan_body(
                         hostname = host.get("hostname")
 
                         asset_match.last_seen = datetime.now(timezone.utc).replace(tzinfo=None)
+                        # Handle the branch where asset_match.ip_address != ip evaluates to true.
                         if asset_match.ip_address != ip:
                             asset_match.ip_address = ip
+                        # Handle the branch where mac and (not asset_match.mac_address) evaluates to true.
                         if mac and not asset_match.mac_address:
                             asset_match.mac_address = mac.strip().lower()
+                        # Handle the branch where vendor and (not asset_match.mac_vendor) evaluates to true.
                         if vendor and not asset_match.mac_vendor:
                             asset_match.mac_vendor = vendor
+                        # Handle the branch where hostname and (not asset_match.name or asset_match.name.startswith('Device ')) evaluates to true.
                         if hostname and (not asset_match.name or asset_match.name.startswith("Device ")):
                             asset_match.name = hostname
+                        # Handle the branch where asset_match.device_type == 'Unknown' or not asset_match.device_type evaluates to true.
                         if asset_match.device_type == "Unknown" or not asset_match.device_type:
                             asset_match.device_type = detect_device_type(hostname, vendor, host.get("ports", []))
 
             db.session.commit()
 
+            # Handle the branch where not scheduler_claim_is_current(scan_id, scheduler_claim_token) evaluates to true.
             if not scheduler_claim_is_current(scan_id, scheduler_claim_token):
                 return
             # Send Email Alert for anomalies if found
             anomalies_found = [h["mac_anomaly"] for h in hosts if "mac_anomaly" in h]
+            # Handle the branch where anomalies_found evaluates to true.
             if anomalies_found:
                 admin_user = User.query.filter_by(is_admin=True).first()
+                # Handle the branch where admin_user evaluates to true.
                 if admin_user:
                     setting = SystemSetting.query.filter_by(user_id=admin_user.id).first()
+                    # Handle the branch where setting and setting.smtp_server and setting.smtp_sender and setting.alert_recipient evaluates to true.
                     if setting and setting.smtp_server and setting.smtp_sender and setting.alert_recipient:
                         subject = f"[SECURITY ALERT] Network Anomaly Detected on {scan_result.network_cidr}"
                         local_time_str = format_local_datetime(datetime.now(timezone.utc).replace(tzinfo=None))
                         
                         anomalies_list_html = ""
+                        # Iterate over anomalies_found and bind each item to anom.
                         for anom in anomalies_found:
                             anom_type_str = {
                                 "mac_spoofing": "MAC Spoofing",
@@ -1394,6 +1666,7 @@ def _execute_scan_body(
                         }
                         send_notification_email_async(setting_dict, subject, body_html)
 
+        # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='credential_audit') evaluates to true.
         if not scheduler_progress_checkpoint(
             scan_id, scheduler_claim_token, phase="credential_audit"
         ):
@@ -1404,31 +1677,44 @@ def _execute_scan_body(
             custom_redis = []
             custom_http = []
 
+            # Handle the branch where scan_result.credential_ids evaluates to true.
             if scan_result.credential_ids:
+                # Run this block with structured exception handling.
                 try:
                     cred_ids = [int(x.strip()) for x in scan_result.credential_ids.split(",") if x.strip()]
+                    # Handle the branch where cred_ids evaluates to true.
                     if cred_ids:
                         selected_creds = ScanCredential.query.filter(ScanCredential.id.in_(cred_ids)).all()
+                        # Iterate over selected_creds and bind each item to cred.
                         for cred in selected_creds:
+                            # Handle the branch where cred.protocol == 'ftp' or cred.protocol == 'any' evaluates to true.
                             if cred.protocol == "ftp" or cred.protocol == "any":
                                 custom_ftp.append((cred.username or "", cred.password or ""))
+                            # Handle the branch where cred.protocol == 'redis' or cred.protocol == 'any' evaluates to true.
                             if cred.protocol == "redis" or cred.protocol == "any":
                                 custom_redis.append(cred.password or "")
+                            # Handle the branch where cred.protocol == 'http_basic' or cred.protocol == 'any' evaluates to true.
                             if cred.protocol == "http_basic" or cred.protocol == "any":
                                 custom_http.append((cred.username or "", cred.password or ""))
+                # Handle an exception raised by the preceding protected block.
                 except Exception:
                     pass
 
+            # Iterate over hosts and bind each item to host.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
                 ports_list = host.get("ports", [])
                 audited_endpoints = {}
+                # Iterate over ports_list and bind each item to port_info.
                 for port_info in ports_list:
+                    # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                     if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                         return
+                    # Handle the branch where port_info.get('state') != 'open' evaluates to true.
                     if port_info.get("state") != "open":
                         continue
                     p_num = int(port_info.get("port") or 0)
@@ -1436,20 +1722,28 @@ def _execute_scan_body(
                     protocol = (port_info.get("protocol") or "tcp").lower()
 
                     audit_res = None
+                    # Handle the branch where p_num == 21 or 'ftp' in service evaluates to true.
                     if p_num == 21 or "ftp" in service:
+                        # Handle the branch where audit_credentials or custom_ftp evaluates to true.
                         if audit_credentials or custom_ftp:
                             audit_res = audit_ftp(ip, p_num, custom_credentials=custom_ftp if custom_ftp else None, use_defaults=audit_credentials)
+                    # Handle the branch where p_num == 6379 or 'redis' in service evaluates to true.
                     elif p_num == 6379 or "redis" in service:
+                        # Handle the branch where audit_credentials or custom_redis evaluates to true.
                         if audit_credentials or custom_redis:
                             audit_res = audit_redis(ip, p_num, custom_passwords=custom_redis if custom_redis else None, use_defaults=audit_credentials)
+                    # Handle the branch where protocol == 'tcp' and (p_num in [80, 8080, 443, 8443] or 'http' in service) evaluates to true.
                     elif protocol == "tcp" and (p_num in [80, 8080, 443, 8443] or "http" in service):
+                        # Handle the branch where audit_credentials or custom_http evaluates to true.
                         if audit_credentials or custom_http:
                             is_ssl = p_num in [443, 8443] or "https" in service
                             audit_res = audit_http_basic(ip, p_num, is_ssl, custom_credentials=custom_http if custom_http else None, use_defaults=audit_credentials)
 
+                    # Handle the branch where audit_res evaluates to true.
                     if audit_res:
                         port_info["credential_audit"] = audit_res
                         status = audit_res.get("status")
+                        # Handle the branch where status in ['safe', 'vulnerable'] evaluates to true.
                         if status in ["safe", "vulnerable"]:
                             audited_endpoints[(protocol, p_num)] = status
                         # Create a finding immediately if vulnerability confirmed
@@ -1457,17 +1751,21 @@ def _execute_scan_body(
                             create_credential_audit_finding(asset, ip, port_info, audit_res, scan_id=scan_result.id)
                 host["_audited_endpoints"] = audited_endpoints
 
+        # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='rule_evaluation') evaluates to true.
         if not scheduler_progress_checkpoint(
             scan_id, scheduler_claim_token, phase="rule_evaluation"
         ):
             return
         # 5. Policy rule evaluation (runs AFTER credential audits so Redis rule can read audit results)
         if nmap_result["success"]:
+            # Iterate over hosts and bind each item to host.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 ip = host.get("address")
                 asset_match = Asset.query.filter_by(ip_address=ip).first()
+                # Handle the branch where asset_match evaluates to true.
                 if asset_match:
                     prev_ports = prev_hosts_map.get(ip)
                     host["_preserved_rule_fingerprints"] = evaluate_rules_for_host(
@@ -1478,24 +1776,31 @@ def _execute_scan_body(
                         scan_id=scan_result.id,
                     )
 
+        # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='cve_evaluation') evaluates to true.
         if not scheduler_progress_checkpoint(
             scan_id, scheduler_claim_token, phase="cve_evaluation"
         ):
             return
         # 6. Dynamic CVE findings check
         if nmap_result["success"]:
+            # Iterate over hosts and bind each item to host.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
+                # Handle the branch where not asset evaluates to true.
                 if not asset:
                     continue
                 cve_failed_ports = set()
                 confirmed_unaffected_cves = {}
+                # Iterate over host.get('ports', []) and bind each item to port_info.
                 for port_info in host.get("ports", []):
+                    # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                     if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                         return
+                    # Handle the branch where port_info.get('state') != 'open' evaluates to true.
                     if port_info.get("state") != "open":
                         continue
                     # Use 'product' for VENDOR_PRODUCT_MAP lookup (e.g. 'OpenSSH' not 'ssh')
@@ -1509,9 +1814,12 @@ def _execute_scan_body(
                     # Build lookup key: prefer product name, fall back to service name
                     lookup_key = product.lower().strip() if product else service.lower().strip()
 
+                    # Handle the branch where lookup_key and lookup_key != '-' evaluates to true.
                     if lookup_key and lookup_key != "-":
                         cves_res = fetch_cves_for_query(lookup_key, version=raw_version, cpe_list=cpe_list)
+                        # Handle the branch where cves_res.get('success') evaluates to true.
                         if cves_res.get("success"):
+                            # Handle the branch where cves_res.get('lookup_success') is True and cves_res.get('product_confirmed') is True and (cves_res.get('ver... evaluates to true.
                             if (
                                 cves_res.get("lookup_success") is True
                                 and cves_res.get("product_confirmed") is True
@@ -1521,6 +1829,7 @@ def _execute_scan_body(
                                     cves_res.get("confirmed_unaffected_cves", [])
                                 )
                             cves = cves_res.get("cves", [])
+                            # Handle the branch where cves evaluates to true.
                             if cves:
                                 evaluate_cve_findings(
                                     asset=asset,
@@ -1529,11 +1838,13 @@ def _execute_scan_body(
                                     cve_list=cves,
                                     scan_id=scan_result.id
                                 )
+                        # Handle the fallback branch when the preceding condition does not match.
                         else:
                             cve_failed_ports.add((protocol, p_num))
                 host["_cve_failed_ports"] = cve_failed_ports
                 host["_confirmed_unaffected_cves"] = confirmed_unaffected_cves
 
+        # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token, phase='reconciliation') evaluates to true.
         if not scheduler_progress_checkpoint(
             scan_id, scheduler_claim_token, phase="reconciliation"
         ):
@@ -1550,11 +1861,14 @@ def _execute_scan_body(
             )
             online_ips = {h.get("address") for h in hosts if h.get("status") == "up"}
             scanned_endpoints = nmap_result.get("scanned_endpoints", [])
+            # Iterate over hosts and bind each item to host.
             for host in hosts:
+                # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
                 if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                     return
                 ip = host.get("address")
                 asset = Asset.query.filter_by(ip_address=ip).first()
+                # Handle the branch where asset evaluates to true.
                 if asset:
                     host_online = ip in online_ips or host.get("status") == "up"
                     current_open_endpoints = [
@@ -1595,6 +1909,7 @@ def _execute_scan_body(
 
         # Clear internal runtime parameters to prevent JSON serialization errors (tuple keys, sets, etc.)
         for host in hosts:
+            # Handle the branch where not scheduler_progress_checkpoint(scan_id, scheduler_claim_token) evaluates to true.
             if not scheduler_progress_checkpoint(scan_id, scheduler_claim_token):
                 return
             host.pop("_asset_id", None)
@@ -1614,7 +1929,9 @@ def _execute_scan_body(
 
         serialized_result = json.dumps(result_payload, indent=4)
 
+        # Handle the branch where nmap_result['success'] evaluates to true.
         if nmap_result["success"]:
+            # Handle the branch where scheduler_claim_token evaluates to true.
             if scheduler_claim_token:
                 completed = ScanResult.query.filter(
                     ScanResult.id == scan_id,
@@ -1632,23 +1949,30 @@ def _execute_scan_body(
                     synchronize_session=False,
                 )
                 db.session.commit()
+                # Handle the branch where completed != 1 evaluates to true.
                 if completed != 1:
                     return
                 db.session.refresh(scan_result)
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 scan_result.result_data = serialized_result
                 scan_result.status = "completed"
+                # Handle the branch where scan_result.scheduler_dispatch_state is not None evaluates to true.
                 if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "completed"
                     scan_result.scheduler_execution_phase = "completed"
                 db.session.commit()
             
+            # Run this block with structured exception handling.
             try:
                 check_and_send_scan_alert(scan_result)
+            # Handle an exception raised by the preceding protected block.
             except Exception as e:
                 import sys
                 print(f"[Email Alert Error]: {str(e)}", file=sys.stderr)
+        # Handle the fallback branch when the preceding condition does not match.
         else:
+            # Handle the branch where scheduler_claim_token evaluates to true.
             if scheduler_claim_token:
                 ScanResult.query.filter(
                     ScanResult.id == scan_id,
@@ -1664,9 +1988,11 @@ def _execute_scan_body(
                     },
                     synchronize_session=False,
                 )
+            # Handle the fallback branch when the preceding condition does not match.
             else:
                 scan_result.result_data = serialized_result
                 scan_result.status = "failed"
+                # Handle the branch where scan_result.scheduler_dispatch_state is not None evaluates to true.
                 if scan_result.scheduler_dispatch_state is not None:
                     scan_result.scheduler_dispatch_state = "failed"
                     scan_result.scheduler_execution_phase = "failed"

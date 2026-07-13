@@ -11,6 +11,7 @@ from app import create_app
 from models import db, ScanResult, ScanSchedule, User
 
 
+# Handle the database app operation.
 def _database_app():
     fd, path = tempfile.mkstemp()
     app = create_app({
@@ -21,27 +22,37 @@ def _database_app():
     return fd, path, app
 
 
+# Handle the cleanup database operation.
 def _cleanup_database(fd, path):
     os.close(fd)
+    # Run this block with structured exception handling.
     try:
         os.unlink(path)
+    # Handle an exception raised by the preceding protected block.
     except OSError:
         pass
 
 
+# Verify that sqlite connections enable foreign keys behaves as expected.
 def test_sqlite_connections_enable_foreign_keys():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             enabled = db.session.execute(text("PRAGMA foreign_keys")).scalar_one()
             assert enabled == 1
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that schedule delete sets historical scan schedule to null behaves as expected.
 def test_schedule_delete_sets_historical_scan_schedule_to_null():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade()
             user = User(email="fk-test@example.com", password_hash="test")
@@ -79,6 +90,7 @@ def test_schedule_delete_sets_historical_scan_schedule_to_null():
                 "SELECT scheduled_for FROM scan_result WHERE id = ?",
                 (scan_id,),
             ).fetchone()[0]
+            # Manage pytest.raises(sqlite3.IntegrityError) within this scoped block.
             with pytest.raises(sqlite3.IntegrityError) as duplicate_error:
                 connection.execute(
                     "INSERT INTO scan_result ("
@@ -107,13 +119,17 @@ def test_schedule_delete_sets_historical_scan_schedule_to_null():
             db.session.commit()
 
             assert db.session.get(ScanResult, scan_id).schedule_id is None
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that status migration preserves values and repairs nullable orphan behaves as expected.
 def test_status_migration_preserves_values_and_repairs_nullable_orphan():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="c4f8a2d7e915")
 
@@ -138,6 +154,7 @@ def test_status_migration_preserves_values_and_repairs_nullable_orphan():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade()
 
@@ -154,13 +171,17 @@ def test_status_migration_preserves_values_and_repairs_nullable_orphan():
         assert status_row == ("cancellation_requested", "cancellation_requested")
         assert finding_asset_id is None
         assert violations == []
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that b5 orphan can reach integrity cleanup revision behaves as expected.
 def test_b5_orphan_can_reach_integrity_cleanup_revision():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="b5a93e3d9370")
 
@@ -173,6 +194,7 @@ def test_b5_orphan_can_reach_integrity_cleanup_revision():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade()
 
@@ -189,10 +211,12 @@ def test_b5_orphan_can_reach_integrity_cleanup_revision():
         assert asset_id is None
         assert revision == "e2b7c5d9a401"
         assert violations == []
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that required user orphan stops before dispatch state batch rebuild behaves as expected.
 @pytest.mark.parametrize(
     ("table_name", "insert_sql"),
     [
@@ -241,7 +265,9 @@ def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild(
     capsys,
 ):
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="d9a4e1c6f320")
 
@@ -250,6 +276,7 @@ def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild(
         connection.commit()
         connection.close()
 
+        # Manage app.app_context(), pytest.raises(SystemExit) within this scoped block.
         with app.app_context(), pytest.raises(SystemExit) as error:
             upgrade()
         assert error.value.code == 1
@@ -270,13 +297,17 @@ def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild(
 
         assert revision == "d9a4e1c6f320"
         assert dispatch_type == "VARCHAR(20)"
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that deployed b5 database runs new cleanup revision behaves as expected.
 def test_deployed_b5_database_runs_new_cleanup_revision():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="b5a93e3d9370")
 
@@ -295,6 +326,7 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade()
 
@@ -341,13 +373,17 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         assert scan_column_types["status"] == "VARCHAR(32)"
         assert scan_column_types["scheduler_dispatch_state"] == "VARCHAR(32)"
         assert audit_column_types["previous_status"] == "VARCHAR(32)"
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that e6 deduplicates drifted blocked ips before unique constraint behaves as expected.
 def test_e6_deduplicates_drifted_blocked_ips_before_unique_constraint():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="d4f8a1c6e902")
 
@@ -373,6 +409,7 @@ def test_e6_deduplicates_drifted_blocked_ips_before_unique_constraint():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="e6b3c9d0f417")
 
@@ -391,13 +428,17 @@ def test_e6_deduplicates_drifted_blocked_ips_before_unique_constraint():
             (12, "192.0.2.41", "distinct"),
         ]
         assert unique_indexes
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that drifted b5 duplicate ips upgrade directly to head behaves as expected.
 def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="b5a93e3d9370")
 
@@ -419,6 +460,7 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade()
 
@@ -430,13 +472,17 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         connection.close()
         assert rows == [(20, "198.51.100.20", "first")]
         assert revision == "e2b7c5d9a401"
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that upgrade to same b5 revision does not mutate drifted data behaves as expected.
 def test_upgrade_to_same_b5_revision_does_not_mutate_drifted_data():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="b5a93e3d9370")
 
@@ -458,6 +504,7 @@ def test_upgrade_to_same_b5_revision_does_not_mutate_drifted_data():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="b5a93e3d9370")
 
@@ -474,13 +521,17 @@ def test_upgrade_to_same_b5_revision_does_not_mutate_drifted_data():
             (31, "203.0.113.30", "duplicate"),
         ]
         assert revision == "b5a93e3d9370"
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that unsafe downgrade below b5 is blocked without data loss behaves as expected.
 def test_unsafe_downgrade_below_b5_is_blocked_without_data_loss():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context() within this scoped block.
         with app.app_context():
             upgrade(revision="3f235f89c673")
 
@@ -498,6 +549,7 @@ def test_unsafe_downgrade_below_b5_is_blocked_without_data_loss():
         connection.commit()
         connection.close()
 
+        # Manage app.app_context(), pytest.raises(SystemExit) within this scoped block.
         with app.app_context(), pytest.raises(SystemExit) as error:
             downgrade(revision="4b1d0851377a")
         assert error.value.code == 1
@@ -523,18 +575,23 @@ def test_unsafe_downgrade_below_b5_is_blocked_without_data_loss():
         assert log_time == "2026-07-12 12:00:00"
         assert blocked_time == "2026-07-12 13:00:00"
         assert revision == "3f235f89c673"
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)
 
 
+# Verify that offline downgrade below b5 is blocked behaves as expected.
 def test_offline_downgrade_below_b5_is_blocked():
     fd, path, app = _database_app()
+    # Run this block with structured exception handling.
     try:
+        # Manage app.app_context(), pytest.raises(SystemExit) within this scoped block.
         with app.app_context(), pytest.raises(SystemExit) as error:
             downgrade(
                 revision="c7e9d2f4a681:4b1d0851377a",
                 sql=True,
             )
         assert error.value.code == 1
+    # Run cleanup that must occur after the protected block.
     finally:
         _cleanup_database(fd, path)

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+{# Render the content template block. #}
 {% block content %}
 
 <h2>Create Scan Schedule</h2>
@@ -93,6 +94,7 @@
         </label>
     </div>
 
+    {# Render this branch when user_credentials evaluates to true. #}
     {% if user_credentials %}
     <div id="credential-selection-wrapper" style="margin-top: 15px; margin-bottom: 20px;">
         <label style="font-weight: 500; display: block; margin-bottom: 4px;">Credentials to Test (Optional)</label>
@@ -103,6 +105,7 @@
         <select id="credential_select_input" onchange="addCredentialBadge()"
             style="width: 100%; max-width: 400px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text);">
             <option value="">-- Choose credential to add --</option>
+            {# Render one iteration for each item in cred in user_credentials. #}
             {% for cred in user_credentials %}
             <option value="{{ cred.id }}"
                 data-protocol="{{ cred.protocol.upper() if cred.protocol != 'any' else 'Any' }}"
@@ -124,6 +127,7 @@
 </form>
 
 <script>
+    // Create the structured client-side object used by this operation.
     const scanInfo = {
         "fast": {
             title: "Fast Port Scan (TCP)",
@@ -183,14 +187,17 @@
         }
     };
 
+    // Define the updateScanDescription client-side operation.
     function updateScanDescription() {
         const select = document.getElementById("scan_type");
         const card = document.getElementById("scan-desc-card");
         const val = select.value;
         const portsWrapper = document.getElementById("ports-field-wrapper");
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!val || !scanInfo[val]) {
             card.style.display = "none";
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (portsWrapper) portsWrapper.style.display = "none";
             return;
         }
@@ -203,10 +210,13 @@
         const timingVal = timingSelect ? timingSelect.value : "4";
 
         let cmd = info.command;
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (cmd.includes("-T4")) {
             cmd = cmd.replace("-T4", `-T${timingVal}`);
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else if (cmd.includes("-T")) {
             cmd = cmd.replace(/-T\d/, `-T${timingVal}`);
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             cmd = cmd.replace("nmap ", `nmap -T${timingVal} `);
         }
@@ -216,21 +226,27 @@
 
         const privsEl = document.getElementById("desc-privs");
         privsEl.textContent = info.privs;
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (info.privs.includes("Administrator")) {
             privsEl.className = "privs-admin";
+        // Handle the fallback branch when earlier client-side conditions do not match.
         } else {
             privsEl.className = "privs-standard";
         }
 
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (portsWrapper) {
+            // Handle the branch where the JavaScript condition evaluates to true.
             if (val === "ping_sweep") {
                 portsWrapper.style.display = "none";
+            // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 portsWrapper.style.display = "block";
             }
         }
 
         const credsWrapper = document.getElementById("credential-selection-wrapper");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (credsWrapper) {
             credsWrapper.style.display = (val === "ping_sweep") ? "none" : "block";
         }
@@ -238,10 +254,13 @@
         card.style.display = "block";
     }
 
+    // Define the addCredentialBadge client-side operation.
     function addCredentialBadge() {
         const select = document.getElementById("credential_select_input");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!select) return;
         const val = select.value;
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (!val) return;
 
         const option = select.options[select.selectedIndex];
@@ -249,6 +268,7 @@
         const proto = option.getAttribute("data-protocol");
 
         const container = document.getElementById("credentials_badges_container");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (document.getElementById(`cred-badge-${val}`)) {
             select.value = "";
             return;
@@ -275,16 +295,22 @@
         select.value = "";
     }
 
+    // Define the removeCredentialBadge client-side operation.
     function removeCredentialBadge(val) {
         const badge = document.getElementById(`cred-badge-${val}`);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (badge) badge.remove();
 
         const input = document.getElementById(`cred-input-${val}`);
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (input) input.remove();
 
         const select = document.getElementById("credential_select_input");
+        // Handle the branch where the JavaScript condition evaluates to true.
         if (select) {
+            // Iterate over the selected client-side values.
             for (let i = 0; i < select.options.length; i++) {
+                // Handle the branch where the JavaScript condition evaluates to true.
                 if (select.options[i].value === val) {
                     select.options[i].disabled = false;
                     break;
@@ -293,6 +319,7 @@
         }
     }
 
+    // Handle the registered browser event when it is emitted.
     document.addEventListener("DOMContentLoaded", () => {
         updateScanDescription();
     });
