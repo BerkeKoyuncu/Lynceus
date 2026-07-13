@@ -1,11 +1,14 @@
 import os
 import sqlite3
 import tempfile
+from datetime import datetime
 
 import pytest
 from flask_migrate import downgrade, upgrade
+from sqlalchemy import text
 
 from app import create_app
+from models import db, ScanResult, ScanSchedule, User
 
 
 def _database_app():
@@ -24,6 +27,138 @@ def _cleanup_database(fd, path):
         os.unlink(path)
     except OSError:
         pass
+
+
+def test_sqlite_connections_enable_foreign_keys():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            enabled = db.session.execute(text("PRAGMA foreign_keys")).scalar_one()
+            assert enabled == 1
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_schedule_delete_sets_historical_scan_schedule_to_null():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade()
+            user = User(email="fk-test@example.com", password_hash="test")
+            db.session.add(user)
+            db.session.flush()
+            schedule = ScanSchedule(
+                user_id=user.id,
+                name="FK schedule",
+                input_ip="192.0.2.10",
+                subnet_mask="255.255.255.255",
+                scan_type="syn",
+                network_cidr="192.0.2.10/32",
+                frequency="daily",
+                next_run=datetime(2026, 7, 14, 10, 0, 0),
+            )
+            db.session.add(schedule)
+            db.session.flush()
+            scan = ScanResult(
+                user_id=user.id,
+                schedule_id=schedule.id,
+                input_ip="192.0.2.10",
+                subnet_mask="255.255.255.255",
+                scan_type="syn",
+                network_cidr="192.0.2.10/32",
+            )
+            db.session.add(scan)
+            db.session.commit()
+            scan_id = scan.id
+
+            db.session.delete(schedule)
+            db.session.commit()
+
+            assert db.session.get(ScanResult, scan_id).schedule_id is None
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_status_migration_preserves_values_and_repairs_nullable_orphan():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade(revision="c4f8a2d7e915")
+
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "INSERT INTO user (id, email, password_hash, is_admin, is_deleting) "
+            "VALUES (900, 'migration@example.com', 'test', 0, 0)"
+        )
+        connection.execute(
+            "INSERT INTO scan_result ("
+            "id, user_id, input_ip, subnet_mask, scan_type, network_cidr, "
+            "status, scheduler_dispatch_state"
+            ") VALUES (901, 900, '192.0.2.90', '255.255.255.255', "
+            "'syn', '192.0.2.90/32', 'cancellation_requested', "
+            "'cancellation_requested')"
+        )
+        connection.execute(
+            "INSERT INTO security_finding ("
+            "id, asset_id, ip_address, port, protocol, status"
+            ") VALUES (902, 999999, '192.0.2.90', 443, 'tcp', 'open')"
+        )
+        connection.commit()
+        connection.close()
+
+        with app.app_context():
+            upgrade()
+
+        connection = sqlite3.connect(path)
+        status_row = connection.execute(
+            "SELECT status, scheduler_dispatch_state FROM scan_result WHERE id = 901"
+        ).fetchone()
+        finding_asset_id = connection.execute(
+            "SELECT asset_id FROM security_finding WHERE id = 902"
+        ).fetchone()[0]
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        connection.close()
+
+        assert status_row == ("cancellation_requested", "cancellation_requested")
+        assert finding_asset_id is None
+        assert violations == []
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_b5_orphan_can_reach_integrity_cleanup_revision():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade(revision="b5a93e3d9370")
+
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "INSERT INTO security_finding ("
+            "id, asset_id, ip_address, port, protocol, status"
+            ") VALUES (950, 999999, '198.51.100.50', 22, 'tcp', 'open')"
+        )
+        connection.commit()
+        connection.close()
+
+        with app.app_context():
+            upgrade()
+
+        connection = sqlite3.connect(path)
+        asset_id = connection.execute(
+            "SELECT asset_id FROM security_finding WHERE id = 950"
+        ).fetchone()[0]
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        connection.close()
+
+        assert asset_id is None
+        assert revision == "e2b7c5d9a401"
+        assert violations == []
+    finally:
+        _cleanup_database(fd, path)
 
 
 def test_deployed_b5_database_runs_new_cleanup_revision():
@@ -78,7 +213,7 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         }
         connection.close()
         assert rows == [(3, "192.0.2.30", "keep me", "2026-07-12 14:00:00")]
-        assert revision == "d9a4e1c6f320"
+        assert revision == "e2b7c5d9a401"
         assert "ix_scan_result_scheduler_queue" in scan_indexes
         assert "ix_scan_result_scheduled_for" in scan_indexes
         assert {
@@ -91,6 +226,7 @@ def test_deployed_b5_database_runs_new_cleanup_revision():
         assert "is_deleting" in user_columns
         assert "scan_resolution_audit" in table_names
         assert scan_column_types["status"] == "VARCHAR(32)"
+        assert scan_column_types["scheduler_dispatch_state"] == "VARCHAR(32)"
         assert audit_column_types["previous_status"] == "VARCHAR(32)"
     finally:
         _cleanup_database(fd, path)
@@ -180,7 +316,7 @@ def test_drifted_b5_duplicate_ips_upgrade_directly_to_head():
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
         connection.close()
         assert rows == [(20, "198.51.100.20", "first")]
-        assert revision == "d9a4e1c6f320"
+        assert revision == "e2b7c5d9a401"
     finally:
         _cleanup_database(fd, path)
 

@@ -213,17 +213,31 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            **conf_args
-        )
+        is_sqlite = connection.dialect.name == "sqlite"
+        if is_sqlite:
+            # SQLite batch migrations recreate tables. Foreign-key enforcement
+            # must be disabled for that copy/drop cycle and is restored below.
+            cursor = connection.connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=OFF")
+            cursor.close()
 
-        _enforce_safe_downgrade_floor()
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                **conf_args
+            )
 
-        with context.begin_transaction():
-            _repair_pre_c7_blocked_ip_drift(connection)
-            context.run_migrations()
+            _enforce_safe_downgrade_floor()
+
+            with context.begin_transaction():
+                _repair_pre_c7_blocked_ip_drift(connection)
+                context.run_migrations()
+        finally:
+            if is_sqlite:
+                cursor = connection.connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
 
 
 if context.is_offline_mode():

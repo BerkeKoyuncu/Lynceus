@@ -4,11 +4,25 @@ from datetime import datetime, timezone
 import base64
 import hashlib
 import os
+import sqlite3
 from cryptography.fernet import Fernet
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from services.encryption_service import encrypt_val, decrypt_val, get_flask_secret_key, get_encryption_secret_key
 
 db = SQLAlchemy()
+
+
+@event.listens_for(Engine, "connect")
+def enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+    """Enable SQLite's declared foreign-key actions on every connection."""
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 ACTIVE_SCAN_STATUSES = {
     "pending",
@@ -56,7 +70,7 @@ class ScanResult(db.Model):
         nullable=True,
     )
     scheduled_for = db.Column(db.DateTime, nullable=True)
-    scheduler_dispatch_state = db.Column(db.String(20), nullable=True)
+    scheduler_dispatch_state = db.Column(db.String(32), nullable=True)
     scheduler_claimed_at = db.Column(db.DateTime, nullable=True)
     scheduler_claim_token = db.Column(db.String(36), nullable=True)
     scheduler_started_at = db.Column(db.DateTime, nullable=True)

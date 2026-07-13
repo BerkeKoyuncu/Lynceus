@@ -269,7 +269,7 @@ pip install -r requirements.txt
 ### 4. Configure the Database (Required)
 
 No database configuration is needed. Lynceus uses SQLite and stores its database
-in `database.db` in the project root.
+in `instance/database.db`.
 
 ### 5. Apply Database Migrations
 

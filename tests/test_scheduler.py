@@ -285,6 +285,7 @@ def test_stale_cleanup_preserves_recoverable_scheduler_job(app):
             is_active=True,
         )
         db.session.add(schedule)
+        db.session.flush()
         db.session.add(job)
         db.session.commit()
 
