@@ -165,6 +165,66 @@ def _repair_pre_c7_blocked_ip_drift(connection):
     ))
 
 
+def _preflight_required_sqlite_foreign_keys(connection):
+    """Stop before batch rebuilds when required ownership links are orphaned."""
+    if connection.dialect.name != "sqlite":
+        return
+    try:
+        target_revision = context.get_revision_argument()
+    except (KeyError, CommandError):
+        return
+    if isinstance(target_revision, (tuple, list)):
+        if len(target_revision) != 1:
+            return
+        target_revision = target_revision[0]
+
+    current_revision = context.get_context().get_current_revision()
+    script = ScriptDirectory.from_config(config)
+    if not _is_ancestor(script, current_revision, target_revision):
+        return
+
+    inspector = sa.inspect(connection)
+    tables = set(inspector.get_table_names())
+    required_links = (
+        ("scan_result", "user_id", "user"),
+        ("scan_schedule", "user_id", "user"),
+        ("system_setting", "user_id", "user"),
+        ("scan_credential", "user_id", "user"),
+        ("security_rule", "user_id", "user"),
+    )
+    violations = []
+    for child_table, foreign_key, parent_table in required_links:
+        if child_table not in tables or parent_table not in tables:
+            continue
+        child_columns = {
+            column["name"] for column in inspector.get_columns(child_table)
+        }
+        if "id" not in child_columns or foreign_key not in child_columns:
+            continue
+        rows = connection.execute(sa.text(
+            f'SELECT child.id, child."{foreign_key}" '
+            f'FROM "{child_table}" AS child '
+            f'LEFT JOIN "{parent_table}" AS parent '
+            f'ON parent.id = child."{foreign_key}" '
+            f'WHERE child."{foreign_key}" IS NOT NULL AND parent.id IS NULL '
+            'LIMIT 10'
+        )).fetchall()
+        violations.extend(
+            (child_table, row[0], foreign_key, row[1], parent_table)
+            for row in rows
+        )
+
+    if violations:
+        details = ", ".join(
+            f"{table}[id={row_id}].{foreign_key}={value} -> {parent}.id"
+            for table, row_id, foreign_key, value, parent in violations
+        )
+        raise CommandError(
+            "Required SQLite foreign-key orphans must be resolved before "
+            f"schema migration; no schema changes were started: {details}"
+        )
+
+
 def run_migrations_offline():
     """Run migrations in 'offline' mode.
 
@@ -231,6 +291,7 @@ def run_migrations_online():
             _enforce_safe_downgrade_floor()
 
             with context.begin_transaction():
+                _preflight_required_sqlite_foreign_keys(connection)
                 _repair_pre_c7_blocked_ip_drift(connection)
                 context.run_migrations()
         finally:

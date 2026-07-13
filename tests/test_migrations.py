@@ -62,6 +62,7 @@ def test_schedule_delete_sets_historical_scan_schedule_to_null():
             scan = ScanResult(
                 user_id=user.id,
                 schedule_id=schedule.id,
+                scheduled_for=datetime(2026, 7, 14, 9, 0, 0),
                 input_ip="192.0.2.10",
                 subnet_mask="255.255.255.255",
                 scan_type="syn",
@@ -70,6 +71,37 @@ def test_schedule_delete_sets_historical_scan_schedule_to_null():
             db.session.add(scan)
             db.session.commit()
             scan_id = scan.id
+            user_id = user.id
+            schedule_id = schedule.id
+
+            connection = sqlite3.connect(path)
+            scheduled_for = connection.execute(
+                "SELECT scheduled_for FROM scan_result WHERE id = ?",
+                (scan_id,),
+            ).fetchone()[0]
+            with pytest.raises(sqlite3.IntegrityError) as duplicate_error:
+                connection.execute(
+                    "INSERT INTO scan_result ("
+                    "user_id, schedule_id, scheduled_for, input_ip, subnet_mask, "
+                    "scan_type, network_cidr"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        user_id,
+                        schedule_id,
+                        scheduled_for,
+                        "192.0.2.11",
+                        "255.255.255.255",
+                        "syn",
+                        "192.0.2.11/32",
+                    ),
+                )
+            assert (
+                "UNIQUE constraint failed: "
+                "scan_result.schedule_id, scan_result.scheduled_for"
+                in str(duplicate_error.value)
+            )
+            connection.rollback()
+            connection.close()
 
             db.session.delete(schedule)
             db.session.commit()
@@ -157,6 +189,42 @@ def test_b5_orphan_can_reach_integrity_cleanup_revision():
         assert asset_id is None
         assert revision == "e2b7c5d9a401"
         assert violations == []
+    finally:
+        _cleanup_database(fd, path)
+
+
+def test_required_user_orphan_stops_before_dispatch_state_batch_rebuild():
+    fd, path, app = _database_app()
+    try:
+        with app.app_context():
+            upgrade(revision="d9a4e1c6f320")
+
+        connection = sqlite3.connect(path)
+        connection.execute(
+            "INSERT INTO scan_result ("
+            "id, user_id, input_ip, subnet_mask, scan_type, network_cidr, status"
+            ") VALUES (975, 999999, '203.0.113.75', '255.255.255.255', "
+            "'syn', '203.0.113.75/32', 'pending')"
+        )
+        connection.commit()
+        connection.close()
+
+        with app.app_context(), pytest.raises(SystemExit) as error:
+            upgrade()
+        assert error.value.code == 1
+
+        connection = sqlite3.connect(path)
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
+        dispatch_type = {
+            row[1]: row[2]
+            for row in connection.execute("PRAGMA table_info(scan_result)").fetchall()
+        }["scheduler_dispatch_state"]
+        connection.close()
+
+        assert revision == "d9a4e1c6f320"
+        assert dispatch_type == "VARCHAR(20)"
     finally:
         _cleanup_database(fd, path)
 
