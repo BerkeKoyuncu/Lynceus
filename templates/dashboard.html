@@ -639,12 +639,19 @@
                 <p class="risk-desc">
                     {# Render this branch when risk_score == 0 evaluates to true. #}
                     {% if risk_score == 0 %}
-                    Perfect security state! No active threats or configuration issues detected.
+                    No active evidence or coverage gaps currently contribute to risk.
                     {# Render this branch when risk_score < 35 evaluates to true. #}
-                    {% elif risk_score < 35 %} Overall network posture is good. Address low severity recommendations to
-                        optimize. {% elif risk_score < 70 %} Moderate security risk. Review untrusted devices and
-                        configuration anomalies soon. {% else %} Critical attention required! Active threat events or
-                        anomalous activities detected. {% endif %} </p>
+                    {% elif risk_score < 35 %} Overall network posture is good. Review the low-impact evidence and
+                        coverage gaps below. {% elif risk_score < 70 %} Moderate security risk. Prioritize the highest-risk
+                        assets and active findings. {% else %} Immediate attention is required for high-impact evidence
+                        or active anomalous behavior. {% endif %}
+                </p>
+                <p class="text-muted" style="margin: 8px 0 0; font-size: 11px;">
+                    Evidence {{ risk_components.evidence }}
+                    &bull; Exposure breadth +{{ risk_components.breadth }}
+                    &bull; Coverage gaps +{{ risk_components.operational }}
+                    &bull; Recent activity +{{ risk_components.intrusions }}
+                </p>
             </div>
         </div>
 
@@ -721,6 +728,15 @@
                                 <span style="color: var(--error-text); font-weight: 700;">Untrusted</span>
                                 {% endif %}
                             </span>
+                        </div>
+                        <div class="risk-asset-sub-row" style="margin-top: 4px;">
+                            <span>Findings {{ asset.finding_score }}</span>
+                            <span>&bull;</span>
+                            <span>Anomalies {{ asset.anomaly_score }}</span>
+                            <span>&bull;</span>
+                            <span>Trust {{ asset.trust_score }}</span>
+                            <span>&bull;</span>
+                            <span>Impact &times;{{ asset.criticality_multiplier }}</span>
                         </div>
                     </div>
                     {# Render this branch when current_user.is_admin evaluates to true. #}

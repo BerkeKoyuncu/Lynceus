@@ -498,6 +498,58 @@ def admin_toggle_asset_trust(asset_id):
         return redirect(url_for("admin.asset_map"))
     return redirect(url_for("admin.admin_assets"))
 
+# Update trust status for selected assets.
+@admin_bp.route("/admin/assets/bulk-trust", methods=["POST"])
+@login_required
+@admin_required
+def admin_bulk_update_asset_trust():
+    asset_ids = request.form.getlist("asset_ids")
+    trust_status = request.form.get("trust_status", "").strip().lower()
+    redirect_args = {
+        "search": request.form.get("filter_search", "").strip(),
+        "criticality": request.form.get("filter_criticality", "").strip(),
+        "device_type": request.form.get("filter_device_type", "").strip(),
+        "ip_assignment_type": request.form.get("filter_ip_assignment_type", "").strip(),
+    }
+
+    if not asset_ids:
+        flash("No assets selected.", "warning")
+        return redirect(url_for("admin.admin_assets", **redirect_args))
+
+    if trust_status not in {"trusted", "untrusted"}:
+        flash("Invalid trust status selected.", "error")
+        return redirect(url_for("admin.admin_assets", **redirect_args))
+
+    try:
+        int_ids = [int(asset_id) for asset_id in asset_ids]
+        assets = Asset.query.filter(Asset.id.in_(int_ids)).all()
+        is_trusted = trust_status == "trusted"
+
+        for asset in assets:
+            asset.is_trusted = is_trusted
+
+        if is_trusted:
+            trusted_ips = [asset.ip_address for asset in assets if asset.ip_address]
+            if trusted_ips:
+                SecurityAnomaly.query.filter(
+                    SecurityAnomaly.ip_address.in_(trusted_ips),
+                    SecurityAnomaly.is_resolved == False,
+                ).update({SecurityAnomaly.is_resolved: True}, synchronize_session=False)
+
+        db.session.commit()
+        flash(
+            f"Successfully marked {len(assets)} selected assets as {trust_status}.",
+            "success",
+        )
+    except (TypeError, ValueError):
+        db.session.rollback()
+        flash("Invalid asset selection.", "error")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to update asset trust: {str(e)}", "error")
+
+    return redirect(url_for("admin.admin_assets", **redirect_args))
+
 # Handle the admin resolve anomaly operation.
 @admin_bp.route("/admin/anomalies/<int:anomaly_id>/resolve", methods=["POST"])
 @login_required

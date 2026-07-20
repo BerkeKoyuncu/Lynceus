@@ -18,6 +18,25 @@
         letter-spacing: -0.5px;
     }
 
+    .bulk-findings-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .bulk-findings-form select {
+        min-width: 170px;
+        height: 38px;
+        padding: 8px 12px;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+    }
+
     .filter-bar {
         padding: 15px;
         margin-bottom: 20px;
@@ -356,6 +375,30 @@
             Manage discovered vulnerabilities, CVEs, and compliance violations.
         </p>
     </div>
+
+    {% if current_user.is_admin and findings %}
+    <form id="bulk-findings-form" method="POST"
+        action="{{ url_for('findings.bulk_update_findings') }}" class="bulk-findings-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="filter_status" value="{{ selected_status }}">
+        <input type="hidden" name="filter_severity" value="{{ selected_severity }}">
+        <input type="hidden" name="filter_search" value="{{ search }}">
+
+        <label for="bulk-finding-status" class="visually-hidden-label">New status</label>
+        <select id="bulk-finding-status" name="bulk_status" required>
+            <option value="">Select status...</option>
+            <option value="open">Open</option>
+            <option value="needs_review">Needs Review</option>
+            <option value="resolved">Resolved</option>
+            <option value="accepted_risk">Accepted Risk</option>
+            <option value="false_positive">False Positive</option>
+        </select>
+
+        <button type="submit" id="bulk-update-findings-btn" class="button" disabled>
+            Update Selected (0)
+        </button>
+    </form>
+    {% endif %}
 </div>
 
 <div class="filter-bar">
@@ -445,6 +488,11 @@
     <table class="findings-table">
         <thead>
             <tr>
+                {% if current_user.is_admin %}
+                <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="select-all-findings" aria-label="Select all findings">
+                </th>
+                {% endif %}
                 <th>Target IP / Port</th>
                 <th>Service &amp; Version</th>
                 <th>Vulnerability / CVE</th>
@@ -460,6 +508,12 @@
             {% for finding in findings %}
             <tr class="finding-row" tabindex="0" role="button" aria-expanded="false"
                 aria-controls="details-{{ finding.id }}" data-details-id="details-{{ finding.id }}">
+                {% if current_user.is_admin %}
+                <td style="width: 40px; text-align: center;">
+                    <input type="checkbox" class="finding-checkbox" name="finding_ids"
+                        value="{{ finding.id }}" form="bulk-findings-form" aria-label="Select finding">
+                </td>
+                {% endif %}
                 <td style="font-weight: 600;">
                     {{ finding.ip_address }}:{{ finding.port }}/{{ finding.protocol or 'tcp' }}
                 </td>
@@ -539,7 +593,7 @@
             </tr>
 
             <tr class="finding-details-row" id="details-{{ finding.id }}" aria-hidden="true">
-                <td colspan="7">
+                <td colspan="{{ 8 if current_user.is_admin else 7 }}">
                     <div class="details-content">
                         <div class="details-grid">
                             <div>
@@ -735,6 +789,44 @@
 
         const findingRows =
             document.querySelectorAll(".finding-row");
+
+        const selectAllFindings =
+            document.getElementById("select-all-findings");
+        const findingCheckboxes =
+            document.querySelectorAll(".finding-checkbox");
+        const bulkUpdateFindingsButton =
+            document.getElementById("bulk-update-findings-btn");
+
+        function updateBulkFindingsControls() {
+            const checkedCount =
+                document.querySelectorAll(".finding-checkbox:checked").length;
+
+            if (bulkUpdateFindingsButton) {
+                bulkUpdateFindingsButton.disabled = checkedCount === 0;
+                bulkUpdateFindingsButton.textContent =
+                    `Update Selected (${checkedCount})`;
+            }
+
+            if (selectAllFindings) {
+                selectAllFindings.checked =
+                    findingCheckboxes.length > 0 && checkedCount === findingCheckboxes.length;
+                selectAllFindings.indeterminate =
+                    checkedCount > 0 && checkedCount < findingCheckboxes.length;
+            }
+        }
+
+        if (selectAllFindings) {
+            selectAllFindings.addEventListener("change", function () {
+                findingCheckboxes.forEach(function (checkbox) {
+                    checkbox.checked = selectAllFindings.checked;
+                });
+                updateBulkFindingsControls();
+            });
+        }
+
+        findingCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener("change", updateBulkFindingsControls);
+        });
 
         // Process one client-side item during each collection iteration.
         findingRows.forEach(function (findingRow) {

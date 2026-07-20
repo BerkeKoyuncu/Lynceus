@@ -24,6 +24,15 @@ from services.runtime_paths import ensure_runtime_directories
 
 
 CREATE_NEW_CONSOLE = 0x00000010
+CONTROL_PANEL_ICON = "Lynceus-icon-dark-green.ico"
+
+
+# Resolve bundled and source-tree Control Panel assets.
+def control_panel_icon_path():
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        return Path(bundle_root) / "assets" / CONTROL_PANEL_ICON
+    return Path(__file__).resolve().parent / "assets" / CONTROL_PANEL_ICON
 
 
 # Determine whether windows admin.
@@ -64,6 +73,12 @@ class ControlPanel(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Lynceus Control Panel")
+        icon_path = control_panel_icon_path()
+        if icon_path.exists():
+            try:
+                self.iconbitmap(default=str(icon_path))
+            except tk.TclError:
+                pass
         self.geometry("620x520")
         self.minsize(620, 520)
         self.data_dir = ensure_runtime_directories()

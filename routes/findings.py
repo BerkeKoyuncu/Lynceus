@@ -7,6 +7,14 @@ from routes.admin import admin_required
 
 findings_bp = Blueprint("findings", __name__)
 
+EDITABLE_FINDING_STATUSES = {
+    "open",
+    "resolved",
+    "accepted_risk",
+    "false_positive",
+    "needs_review",
+}
+
 # List findings.
 @findings_bp.route("/findings")
 @login_required
@@ -61,9 +69,8 @@ def update_finding(finding_id):
 
     # Handle the branch where status is not None evaluates to true.
     if status is not None:
-        valid_statuses = ["open", "resolved", "accepted_risk", "false_positive", "needs_review"]
-        # Handle the branch where status not in valid_statuses evaluates to true.
-        if status not in valid_statuses:
+        # Reject system-managed and unknown statuses.
+        if status not in EDITABLE_FINDING_STATUSES:
             flash("Invalid status selected.", "error")
             return redirect(url_for("findings.list_findings", status=finding.status))
         finding.status = status
@@ -128,6 +135,48 @@ def update_finding(finding_id):
     db.session.commit()
     flash("Finding details updated successfully.", "success")
     return redirect(url_for("findings.list_findings", status=finding.status))
+
+# Update selected findings.
+@findings_bp.route("/findings/bulk-update", methods=["POST"])
+@login_required
+@admin_required
+def bulk_update_findings():
+    finding_ids = request.form.getlist("finding_ids")
+    new_status = request.form.get("bulk_status", "").strip()
+    redirect_args = {
+        "status": request.form.get("filter_status", "").strip(),
+        "severity": request.form.get("filter_severity", "").strip(),
+        "search": request.form.get("filter_search", "").strip(),
+    }
+
+    if not finding_ids:
+        flash("No findings selected.", "warning")
+        return redirect(url_for("findings.list_findings", **redirect_args))
+
+    if new_status not in EDITABLE_FINDING_STATUSES:
+        flash("Invalid status selected.", "error")
+        return redirect(url_for("findings.list_findings", **redirect_args))
+
+    try:
+        int_ids = [int(finding_id) for finding_id in finding_ids]
+        findings = SecurityFinding.query.filter(SecurityFinding.id.in_(int_ids)).all()
+
+        for finding in findings:
+            finding.status = new_status
+            # Bulk risk acceptance is indefinite; all other statuses must not
+            # retain a stale acceptance expiry date.
+            finding.acceptance_expiry = None
+
+        db.session.commit()
+        flash(f"Successfully updated {len(findings)} selected findings.", "success")
+    except (TypeError, ValueError):
+        db.session.rollback()
+        flash("Invalid finding selection.", "error")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to update findings: {str(e)}", "error")
+
+    return redirect(url_for("findings.list_findings", **redirect_args))
 
 # Delete finding.
 @findings_bp.route("/findings/<int:finding_id>/delete", methods=["POST"])

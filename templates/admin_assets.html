@@ -11,7 +11,21 @@
     {# Render this branch when current_user.is_admin evaluates to true. #}
     {% if current_user.is_admin %}
     <div style="display: flex; gap: 10px; align-items: center;">
-        <button type="submit" form="bulk-delete-form" id="bulk-delete-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected assets?')">
+        <button type="submit" form="bulk-assets-form"
+            formaction="{{ url_for('admin_bulk_update_asset_trust') }}" name="trust_status" value="trusted"
+            id="bulk-trust-btn" class="button"
+            style="display: none; align-items: center; gap: 6px; padding: 12px 18px;"
+            onclick="return confirm('Mark the selected assets as trusted? Their unresolved anomalies will also be resolved.')">
+            <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i> Mark Trusted
+        </button>
+        <button type="submit" form="bulk-assets-form"
+            formaction="{{ url_for('admin_bulk_update_asset_trust') }}" name="trust_status" value="untrusted"
+            id="bulk-untrust-btn" class="button btn-warning"
+            style="display: none; align-items: center; gap: 6px; padding: 12px 18px;"
+            onclick="return confirm('Mark the selected assets as untrusted?')">
+            <i data-lucide="shield-x" style="width: 16px; height: 16px;"></i> Mark Untrusted
+        </button>
+        <button type="submit" form="bulk-assets-form" id="bulk-delete-btn" class="button btn-danger" style="display: none; align-items: center; gap: 6px; padding: 12px 18px;" onclick="return confirm('Are you sure you want to delete the selected assets?')">
             <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> Delete Selected
         </button>
         <a href="{{ url_for('admin_new_asset') }}" class="button">
@@ -74,8 +88,13 @@
 
 <!-- Assets Table Container -->
 {% if current_user.is_admin %}
-<form id="bulk-delete-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+<form id="bulk-assets-form" method="POST" action="{{ url_for('admin_bulk_delete_assets') }}" style="display: none;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="filter_search" value="{{ search }}">
+    <input type="hidden" name="filter_criticality" value="{{ selected_criticality }}">
+    <input type="hidden" name="filter_device_type" value="{{ selected_device_type }}">
+    <input type="hidden" name="filter_ip_assignment_type" value="{{ selected_ip_assignment }}">
+</form>
 {% endif %}
 <div class="content-card" style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 25px; box-shadow: var(--shadow);">
     {# Render this branch when assets evaluates to true. #}
@@ -110,7 +129,7 @@
                 <tr>
                     {# Render this branch when current_user.is_admin evaluates to true. #}
                     {% if current_user.is_admin %}
-                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" form="bulk-delete-form" aria-label="Select asset"></td>
+                    <td style="text-align: center; width: 40px; vertical-align: middle;"><input type="checkbox" class="asset-checkbox" name="asset_ids" value="{{ asset.id }}" form="bulk-assets-form" aria-label="Select asset"></td>
                     {% endif %}
                     <td>
                         <strong style="font-size: 15px;">{{ asset.name or 'Unnamed Asset' }}</strong>
@@ -251,6 +270,8 @@
         const selectAllCheckbox = document.getElementById("select-all-assets");
         const assetCheckboxes = document.querySelectorAll(".asset-checkbox");
         const bulkDeleteBtn = document.getElementById("bulk-delete-btn");
+        const bulkTrustBtn = document.getElementById("bulk-trust-btn");
+        const bulkUntrustBtn = document.getElementById("bulk-untrust-btn");
 
         // Define the updateBulkDeleteButton client-side operation.
         function updateBulkDeleteButton() {
@@ -259,6 +280,10 @@
             if (checkedCount > 0) {
                 bulkDeleteBtn.style.display = "inline-flex";
                 bulkDeleteBtn.innerHTML = `<i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 6px;"></i> Delete Selected (${checkedCount})`;
+                bulkTrustBtn.style.display = "inline-flex";
+                bulkTrustBtn.innerHTML = `<i data-lucide="shield-check" style="width: 16px; height: 16px; margin-right: 6px;"></i> Mark Trusted (${checkedCount})`;
+                bulkUntrustBtn.style.display = "inline-flex";
+                bulkUntrustBtn.innerHTML = `<i data-lucide="shield-x" style="width: 16px; height: 16px; margin-right: 6px;"></i> Mark Untrusted (${checkedCount})`;
                 // Re-initialise Lucide icon inside the button since HTML changed
                 if (typeof lucide !== 'undefined') {
                     lucide.createIcons();
@@ -266,6 +291,8 @@
             // Handle the fallback branch when earlier client-side conditions do not match.
             } else {
                 bulkDeleteBtn.style.display = "none";
+                bulkTrustBtn.style.display = "none";
+                bulkUntrustBtn.style.display = "none";
             }
         }
 

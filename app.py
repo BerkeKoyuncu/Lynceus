@@ -293,6 +293,7 @@ def create_app(config=None):
                 "admin_unblock_ip": "admin.admin_unblock_ip",
                 "admin_clear_honeypot_logs": "admin.admin_clear_honeypot_logs",
                 "admin_toggle_asset_trust": "admin.admin_toggle_asset_trust",
+                "admin_bulk_update_asset_trust": "admin.admin_bulk_update_asset_trust",
                 "admin_resolve_anomaly": "admin.admin_resolve_anomaly",
                 "admin_delete_anomaly": "admin.admin_delete_anomaly",
                 "admin_bulk_delete_users": "admin.admin_bulk_delete_users",

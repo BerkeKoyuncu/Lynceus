@@ -58,6 +58,11 @@ $buildRoot = Join-Path $PSScriptRoot "build"
 $workRoot = Join-Path $buildRoot "work"
 $distRoot = Join-Path $buildRoot "dist"
 $outputRoot = Join-Path $PSScriptRoot "output"
+$controlIcon = Join-Path $PSScriptRoot "assets\Lynceus-icon-dark-green.ico"
+# Handle the branch where the Control Panel icon is missing.
+if (-not (Test-Path -LiteralPath $controlIcon)) {
+    throw "Control Panel icon was not found: $controlIcon"
+}
 # Iterate over the selected PowerShell values.
 foreach ($path in @($workRoot, $distRoot, $outputRoot)) {
     $resolvedParent = [System.IO.Path]::GetFullPath((Split-Path $path -Parent))
@@ -103,6 +108,8 @@ try {
     & $venvPython -m PyInstaller @commonPyInstallerArgs `
         --windowed `
         --name LynceusControl `
+        --icon $controlIcon `
+        --add-data "$controlIcon;assets" `
         (Join-Path $PSScriptRoot "control_panel.py")
     # Handle the branch where the PowerShell condition evaluates to true.
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller Control Panel build failed." }
