@@ -43,3 +43,6 @@ installer/output/
 # Local application secret
 .secret_key
 .secret_key_flask
+
+# Local scratch files
+scratch/
