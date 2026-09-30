@@ -531,7 +531,7 @@ Admin users can access:
 - The honeypot system can automatically block suspicious IP addresses.
 - Repeated failed login attempts can trigger automatic blocking.
 - SMTP credentials are stored in the local SQLite database.
-- The default Flask secret key in `app.py` should be changed before any real deployment.
+- Flask and OTP encryption keys are generated in the writable Lynceus runtime data directory unless their environment variables are supplied.
 - This project is designed for controlled lab or local network use, not exposed production deployment.
 
 ---

@@ -31,6 +31,20 @@ def test_runtime_data_directory_override_holds_database_and_secrets(tmp_path, mo
         assert Path(db.engine.url.database) == data_dir / "database.db"
 
 
+def test_source_runtime_secrets_are_kept_out_of_repository_root(tmp_path, monkeypatch):
+    from services import runtime_paths
+    from services.encryption_service import get_or_create_local_secret
+
+    monkeypatch.delenv("LYNCEUS_DATA_DIR", raising=False)
+    monkeypatch.setattr(runtime_paths, "PROJECT_ROOT", tmp_path)
+
+    assert runtime_paths.secret_dir() == tmp_path / "instance"
+    generated = get_or_create_local_secret(".test_secret")
+    assert generated
+    assert (tmp_path / "instance" / ".test_secret").is_file()
+    assert not (tmp_path / ".test_secret").exists()
+
+
 # Verify that admin password and 2fa can be reset independently behaves as expected.
 def test_admin_password_and_2fa_can_be_reset_independently(app, runner):
     original_otp = "JBSWY3DPEHPK3PXP"

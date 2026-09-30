@@ -36,12 +36,8 @@ def runtime_data_dir():
 
 # Handle the secret dir operation.
 def secret_dir():
-    """Preserve legacy source secrets while installed builds use ProgramData."""
-    override = os.environ.get("LYNCEUS_DATA_DIR")
-    # Handle the branch where override or is_frozen() evaluates to true.
-    if override or is_frozen():
-        return runtime_data_dir()
-    return PROJECT_ROOT
+    """Return the writable runtime directory used for generated local secrets."""
+    return runtime_data_dir()
 
 
 # Handle the ensure runtime directories operation.

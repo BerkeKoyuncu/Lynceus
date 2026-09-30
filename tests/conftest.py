@@ -4,8 +4,10 @@ from models import db, ScanDispatchLock, User, SystemSetting
 
 # Handle the app operation.
 @pytest.fixture
-def app():
+def app(monkeypatch):
     # Set testing configuration
+    monkeypatch.setenv("SECRET_KEY", "test_flask_secret_key")
+    monkeypatch.setenv("OTP_ENCRYPTION_KEY", "test_otp_encryption_key")
     app = create_app({
         "TESTING": True,
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
